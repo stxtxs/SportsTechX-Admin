@@ -85,7 +85,7 @@ function LockedCard({ section }: { section: LockedSection }) {
 						<div style={{ display: 'inline-grid', placeItems: 'center', width: 44, height: 44, borderRadius: '50%', background: 'var(--rk-accent)', color: '#fff', marginBottom: 12 }}><Lock size={18} /></div>
 						<div style={{ fontFamily: 'var(--rk-font-display)', fontSize: 22, color: 'var(--rk-title)' }}>Unlock this section</div>
 						<p style={{ fontSize: 13, color: 'var(--rk-fg-muted)', margin: '6px 0 14px' }}>This part of the report is available on a higher plan.</p>
-						<a href={`${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com'}/plans`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 999, background: 'var(--rk-accent)', color: '#fff', fontFamily: 'var(--rk-font-mono)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>See plans</a>
+						<a href={`${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com'}/plans`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 999, background: 'var(--rk-accent)', color: '#fff', fontFamily: 'var(--rk-font-mono)', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}>See plans</a>
 					</div>
 				</div>
 			</div>

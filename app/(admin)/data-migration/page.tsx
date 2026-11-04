@@ -40,12 +40,23 @@ const PHASES: { key: Phase; label: string; hint: string }[] = [
 const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com';
 const ENTITY_LABEL: Record<string, string> = { companies: 'Company', investors: 'Investor', ecosystem_entities: 'Ecosystem', deals: 'Deal', acquisitions: 'Acquisition' };
 const WHY: Record<string, string> = { name: 'Same name, different or missing website', duplicate_source: 'Two old records share this one (same website)' };
+// Deals and acquisitions match on their own keys, not a website (pipeline/entities/{deals,acquisitions}.ts).
+const WHY_BY_ENTITY: Record<string, string> = {
+	deals: 'Two old deals match this one (same company, round and date)',
+	acquisitions: 'Two old acquisitions match this one (same companies, year and amount)',
+};
+const why = (r: { entity: string; match_key: string }) => (r.match_key === 'duplicate_source' && WHY_BY_ENTITY[r.entity]) || WHY[r.match_key] || r.match_key;
 /** What each answer does, per reason — mirrors server/scripts/migration/pipeline/upsert.ts. */
 const EFFECT: Record<string, { same: string; diff: string }> = {
-	name: { same: 'Links them. The old record only fills empty fields here.', diff: 'Adds it to Atlas as a new record.' },
+	name: { same: 'Links them. The old record fills empty fields here and never overwrites what Atlas has.', diff: 'Adds it to Atlas as a new record.' },
 	duplicate_source: { same: 'It’s a duplicate. Nothing is added.', diff: 'Adds it to Atlas as its own record.' },
 };
 const EFFECT_FALLBACK = { same: 'Treats them as one record.', diff: 'Adds it to Atlas as a new record.' };
+const effect = (r: { entity: string; match_key: string }) => {
+	const fx = EFFECT[r.match_key] ?? EFFECT_FALLBACK;
+	// A website belongs to one company only, so the new one is added without it (upsert.ts).
+	return r.entity === 'companies' && r.match_key === 'duplicate_source' ? { ...fx, diff: 'Adds it as a new company, without the shared website (it stays with the one here).' } : fx;
+};
 // A deal's "name" is its company, so a deal links to the company page.
 const atlasHref = (entity: string, id: string, t: Snap) =>
 	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}`
@@ -124,9 +135,9 @@ export default function DataMigrationPage() {
 				) : (
 					<>
 						<div style={{ border: '1px solid var(--border)', background: 'var(--bg-2)', borderRadius: 8, padding: '12px 16px', marginBottom: 'var(--space-4)', fontSize: 13, lineHeight: 1.55 }}>
-							<b>What you need to do here:</b> only <b>Possible duplicates</b> needs an admin. Compare each pair and answer <b>Same</b> or <b>Different</b>.
-							If you’re not sure, leave it. The record simply stays out of Atlas, and nothing breaks.
-							The rest of the page is run by the dev team; you can read it, but there’s nothing to click.
+							<b>What you need to do here:</b> answer the <b>Possible duplicates</b> below, and any <b>Conflicts</b> if they appear. Each row says what its buttons do.
+							If you’re not sure about a row, leave it. The record simply stays out of Atlas, and nothing breaks.
+							Cutover, Tables and Runs are the dev team’s; there’s nothing there for you to click.
 						</div>
 
 						<Section title="Cutover" meta={PHASES.find((p) => p.key === phase)?.label}>
@@ -235,7 +246,7 @@ export default function DataMigrationPage() {
 							<details style={{ margin: '0 16px 12px', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
 								<summary style={{ cursor: 'pointer', color: 'var(--fg)' }}>How to decide</summary>
 								<ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-									<li><b>Same</b> when it’s clearly one thing: the same organisation under a slightly different name or website, matching founded year or description. Click the name on the right to open it in Atlas.</li>
+									<li><b>Same</b> when it’s clearly one thing: the same organisation under a slightly different name or website, matching founded year or description. Where the name on the right is a link, open it to see the record in Atlas.</li>
 									<li><b>Different</b> when they’re separate things that happen to share a website. Two events by one organiser, or two funds of one firm, are different.</li>
 									<li>Deals and acquisitions: <b>Same</b> only if it’s the same company, round and date.</li>
 									<li>Not sure? Skip it. A wrong <b>Different</b> creates a duplicate someone has to delete; a skipped row costs nothing.</li>
@@ -247,13 +258,13 @@ export default function DataMigrationPage() {
 									<tbody>
 										{shown.map((r) => {
 											const k = `r${r.entity}${r.source_id}`;
-											const fx = EFFECT[r.match_key] ?? EFFECT_FALLBACK;
+											const fx = effect(r);
 											return (
 												<tr key={`${r.entity}|${r.source_id}`}>
 													<td><div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ENTITY_LABEL[r.entity] ?? r.entity}</div><SnapCell s={r.source} /></td>
 													<td><SnapCell s={r.target} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null} /></td>
 													<td style={{ fontSize: 12, color: 'var(--fg-2)', maxWidth: 240 }}>
-														{WHY[r.match_key] ?? r.match_key}
+														{why(r)}
 														{view === 'pending' && (
 															<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 6, lineHeight: 1.45 }}>
 																<div><b>Same:</b> {fx.same}</div>

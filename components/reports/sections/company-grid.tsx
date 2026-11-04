@@ -37,7 +37,7 @@ function Card({ c }: { c: Co }) {
 	);
 	const box: React.CSSProperties = { borderRadius: 14, overflow: 'hidden', border: '1px solid var(--rk-border)', background: 'var(--rk-bg-card)', display: 'block', textDecoration: 'none', color: 'inherit' };
 	return c.slug || c.id
-		? <a href={`${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com'}/companies/${c.slug ?? c.id}`} target="_blank" rel="noopener noreferrer" className="rk-hoverlift" style={box}>{inner}</a>
+		? <a href={`${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com'}/companies/${c.slug ?? c.id}`} target="_blank" rel="noopener noreferrer" className="rk-hoverlift" style={box}>{inner}</a>
 		: <div className="rk-hoverlift" style={box}>{inner}</div>;
 }
 

@@ -79,5 +79,5 @@ function rewriteInAtlas(href: string | null | undefined): string {
 // Admin preview: Atlas paths live on the client app, not in the admin.
 export function rewriteReportHref(href: string | null | undefined): string {
 	const h = rewriteInAtlas(href);
-	return h.startsWith('/') && !h.startsWith('//') ? `${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com'}${h}` : h;
+	return h.startsWith('/') && !h.startsWith('//') ? `${process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com'}${h}` : h;
 }

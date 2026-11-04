@@ -37,7 +37,7 @@ const PHASES: { key: Phase; label: string; hint: string }[] = [
 	{ key: 'complete', label: 'Complete', hint: 'The old database is retired.' },
 ];
 
-const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com';
+const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 const ENTITY_LABEL: Record<string, string> = { companies: 'Company', investors: 'Investor', ecosystem_entities: 'Ecosystem', deals: 'Deal', acquisitions: 'Acquisition' };
 const WHY: Record<string, string> = { name: 'Same name, different or missing website', duplicate_source: 'Two old records share this one (same website)' };
 // Deals and acquisitions match on their own keys, not a website (pipeline/entities/{deals,acquisitions}.ts).

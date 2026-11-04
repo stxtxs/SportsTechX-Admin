@@ -22,7 +22,7 @@ import { ImageInput } from '@/components/image-input';
  * shown full screen on demand.
  */
 
-const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com';
+const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 const ATLAS_ORIGIN = new URL(ATLAS).origin;
 
 type Json = string | number | boolean | null | Json[] | { [k: string]: Json };

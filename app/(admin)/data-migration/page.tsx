@@ -38,10 +38,21 @@ const PHASES: { key: Phase; label: string; hint: string }[] = [
 ];
 
 const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com';
-const ENTITY_LABEL: Record<string, string> = { companies: 'Company', investors: 'Investor', ecosystem_entities: 'Ecosystem' };
+const ENTITY_LABEL: Record<string, string> = { companies: 'Company', investors: 'Investor', ecosystem_entities: 'Ecosystem', deals: 'Deal', acquisitions: 'Acquisition' };
 const WHY: Record<string, string> = { name: 'Same name, different or missing website', duplicate_source: 'Two old records share this one (same website)' };
+/** What each answer does, per reason — mirrors server/scripts/migration/pipeline/upsert.ts. */
+const EFFECT: Record<string, { same: string; diff: string }> = {
+	name: { same: 'Links them. The old record only fills empty fields here.', diff: 'Adds it to Atlas as a new record.' },
+	duplicate_source: { same: 'It’s a duplicate. Nothing is added.', diff: 'Adds it to Atlas as its own record.' },
+};
+const EFFECT_FALLBACK = { same: 'Treats them as one record.', diff: 'Adds it to Atlas as a new record.' };
+// A deal's "name" is its company, so a deal links to the company page.
 const atlasHref = (entity: string, id: string, t: Snap) =>
-	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}` : null;
+	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}`
+		: entity === 'deals' && t.slug ? `${ATLAS}/companies/${t.slug}` : null;
+const Hint = ({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) => (
+	<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: '0 0 12px', lineHeight: 1.5, ...style }}>{children}</p>
+);
 
 /** One side of a possible duplicate: just what tells two records apart. */
 function SnapCell({ s, href }: { s: Snap | null; href?: string | null }) {
@@ -112,7 +123,14 @@ export default function DataMigrationPage() {
 					</Section>
 				) : (
 					<>
+						<div style={{ border: '1px solid var(--border)', background: 'var(--bg-2)', borderRadius: 8, padding: '12px 16px', marginBottom: 'var(--space-4)', fontSize: 13, lineHeight: 1.55 }}>
+							<b>What you need to do here:</b> only <b>Possible duplicates</b> needs an admin. Compare each pair and answer <b>Same</b> or <b>Different</b>.
+							If you’re not sure, leave it. The record simply stays out of Atlas, and nothing breaks.
+							The rest of the page is run by the dev team; you can read it, but there’s nothing to click.
+						</div>
+
 						<Section title="Cutover" meta={PHASES.find((p) => p.key === phase)?.label}>
+							<Hint>Dev team only. These steps record how far the switch-off from the old system has got. Marking a step doesn’t run or change anything by itself.</Hint>
 							<ol style={{ display: 'flex', gap: 8, flexWrap: 'wrap', listStyle: 'none', padding: 0, margin: 0 }}>
 								{PHASES.map((p, i) => {
 									const idx = PHASES.findIndex((x) => x.key === phase);
@@ -121,7 +139,7 @@ export default function DataMigrationPage() {
 											<div style={{ fontSize: 12, fontWeight: 700 }}>{i + 1}. {p.label}{i < idx ? ' ✓' : ''}</div>
 											<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 4 }}>{p.hint}</div>
 											{i === idx + 1 && (
-												<button className="btn ghost" style={{ marginTop: 8, fontSize: 12 }} disabled={busy === 'phase'} onClick={() => void setPhase(p.key)}>Mark as reached</button>
+												<button className="btn ghost" style={{ marginTop: 8, fontSize: 12 }} disabled={busy === 'phase'} onClick={() => void setPhase(p.key)} title="Dev team only: records that this step is done. Runs nothing.">Mark as reached</button>
 											)}
 										</li>
 									);
@@ -133,7 +151,7 @@ export default function DataMigrationPage() {
 							</div>
 						</Section>
 
-						<Section title="Tables" meta="Latest apply vs latest dry run" padded={false}>
+						<Section title="Tables" meta="Read-only · latest apply vs latest dry run" padded={false}>
 							<table className="data-table">
 								<thead><tr><th>Table</th><th>Status</th><th>Last applied</th><th>Applied +new / ~updated</th><th>Last dry run</th><th>Pending +new / ~updated</th><th>Open conflicts</th></tr></thead>
 								<tbody>
@@ -161,6 +179,12 @@ export default function DataMigrationPage() {
 						</Section>
 
 						<Section title="Conflicts" meta="Changed on both sides — the new value is kept until you choose" padded={false}>
+							{(conflicts.data ?? []).length > 0 && (
+								<Hint style={{ margin: '0 16px 10px' }}>
+									Someone edited this field in both systems since the last sync. Atlas shows <b>This system now</b>.{' '}
+									<b>Use old</b> replaces it with the old system’s value right away. <b>Keep new</b> keeps what Atlas has and closes the conflict.
+								</Hint>
+							)}
 							<AsyncState loading={conflicts.isLoading} error={conflicts.error} empty={(conflicts.data ?? []).length === 0} emptyMsg="No open conflicts" onRetry={() => void conflicts.mutate()}>
 								<table className="data-table">
 									<thead><tr><th>Record</th><th>Field</th><th>Was</th><th>Old system now</th><th>This system now</th><th /></tr></thead>
@@ -176,8 +200,8 @@ export default function DataMigrationPage() {
 													{/* A tier isn't a column to copy back — it's set (with its end date) on the Users page. */}
 													{k.entity === 'profile_tier'
 														? <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Set the tier in Users, then </span>
-														: <button className="btn ghost" disabled={busy === `c${k.id}`} onClick={() => void resolve(k.id, 'use_old')}>Use old</button>}{' '}
-													<button className="btn ghost" disabled={busy === `c${k.id}`} onClick={() => void resolve(k.id, 'keep_new')}>Keep new</button>
+														: <button className="btn ghost" disabled={busy === `c${k.id}`} onClick={() => void resolve(k.id, 'use_old')} title="Writes the old system’s value into Atlas now">Use old</button>}{' '}
+													<button className="btn ghost" disabled={busy === `c${k.id}`} onClick={() => void resolve(k.id, 'keep_new')} title="Keeps Atlas’s value and closes this conflict">Keep new</button>
 												</td>
 											</tr>
 										))}
@@ -204,31 +228,48 @@ export default function DataMigrationPage() {
 							}
 							padded={false}
 						>
-							<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: '0 16px 10px' }}>
-								The old system has a record that may already exist here. Until someone decides, it is left out. <b>Same</b>: the old record fills only empty fields of the one here. <b>Different</b>: it is added as a new record.
-							</p>
+							<Hint style={{ margin: '0 16px 6px' }}>
+								Each row is a record from the old system that might already be in Atlas. Until someone answers, it’s kept out of Atlas.
+								Answers take effect at the <b>next sync</b>, which the dev team runs; until then you can <b>Undo</b>. Each row says what its buttons will do.
+							</Hint>
+							<details style={{ margin: '0 16px 12px', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+								<summary style={{ cursor: 'pointer', color: 'var(--fg)' }}>How to decide</summary>
+								<ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+									<li><b>Same</b> when it’s clearly one thing: the same organisation under a slightly different name or website, matching founded year or description. Click the name on the right to open it in Atlas.</li>
+									<li><b>Different</b> when they’re separate things that happen to share a website. Two events by one organiser, or two funds of one firm, are different.</li>
+									<li>Deals and acquisitions: <b>Same</b> only if it’s the same company, round and date.</li>
+									<li>Not sure? Skip it. A wrong <b>Different</b> creates a duplicate someone has to delete; a skipped row costs nothing.</li>
+								</ul>
+							</details>
 							<AsyncState loading={reviews.isLoading} error={reviews.error} empty={shown.length === 0} emptyMsg={view === 'pending' ? 'Nothing to verify' : 'None yet'} onRetry={() => void reviews.mutate()}>
 								<table className="data-table">
 									<thead><tr><th>Old system</th><th>Already here</th><th>Why flagged</th><th /></tr></thead>
 									<tbody>
 										{shown.map((r) => {
 											const k = `r${r.entity}${r.source_id}`;
+											const fx = EFFECT[r.match_key] ?? EFFECT_FALLBACK;
 											return (
 												<tr key={`${r.entity}|${r.source_id}`}>
 													<td><div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ENTITY_LABEL[r.entity] ?? r.entity}</div><SnapCell s={r.source} /></td>
 													<td><SnapCell s={r.target} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null} /></td>
-													<td style={{ fontSize: 12, color: 'var(--fg-2)', maxWidth: 200 }}>
+													<td style={{ fontSize: 12, color: 'var(--fg-2)', maxWidth: 240 }}>
 														{WHY[r.match_key] ?? r.match_key}
+														{view === 'pending' && (
+															<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 6, lineHeight: 1.45 }}>
+																<div><b>Same:</b> {fx.same}</div>
+																<div><b>Different:</b> {fx.diff}</div>
+															</div>
+														)}
 														{r.decided_by && <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>{r.decided_by} · {when(r.decided_at)}</div>}
 													</td>
 													<td style={{ whiteSpace: 'nowrap' }}>
 														{view === 'pending' ? (
 															<>
-																<button className="btn ghost" disabled={busy === k || !r.target} onClick={() => void decide(r, 'same')}>Same</button>{' '}
-																<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'separate')}>Different</button>
+																<button className="btn ghost" disabled={busy === k || !r.target} onClick={() => void decide(r, 'same')} title={r.target ? `Same: ${fx.same}` : 'The record here no longer exists'}>Same</button>{' '}
+																<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'separate')} title={`Different: ${fx.diff}`}>Different</button>
 															</>
 														) : (
-															<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'pending')}>Undo</button>
+															<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'pending')} title="Moves it back to “To verify”. Only matters before the next sync applies the answer.">Undo</button>
 														)}
 													</td>
 												</tr>
@@ -239,7 +280,7 @@ export default function DataMigrationPage() {
 							</AsyncState>
 						</Section>
 
-						<Section title="Runs" meta="Most recent 30" padded={false}>
+						<Section title="Runs" meta="Read-only · most recent 30" padded={false}>
 							<table className="data-table">
 								<thead><tr><th>Started</th><th>What</th><th>Mode</th><th>Result</th><th>Old snapshot</th></tr></thead>
 								<tbody>

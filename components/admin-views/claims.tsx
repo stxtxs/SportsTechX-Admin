@@ -47,7 +47,7 @@ interface Claim {
 }
 
 /** The report page lives in the Atlas app, not the admin panel. */
-const ATLAS_BASE = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com';
+const ATLAS_BASE = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 
 const TYPE_FILTERS: Array<{ label: string; key: string }> = [
 	{ label: 'All types', key: '' },

@@ -28,7 +28,7 @@ const check = process.argv.includes('--check');
 // Files the admin owns (editor chrome around the copy). Never touched here.
 const ADMIN_OWNED = new Set(['report-details-form.tsx', 'theme-controls.tsx', 'preview-overlay.tsx', 'gster26-editor.tsx']);
 
-const ATLAS = "process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://atlas.sportstechx.com'";
+const ATLAS = "process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com'";
 
 /** [from, to] pairs per file. `from` must occur exactly once in the client file. */
 const ADAPT = {

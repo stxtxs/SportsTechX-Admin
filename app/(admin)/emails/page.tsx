@@ -250,7 +250,7 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 								<tr key={r.id}>
 									<td style={{ whiteSpace: 'nowrap', fontSize: 12, color: 'var(--fg-muted)' }}>{new Date(r.enqueued_at).toLocaleString()}</td>
 									<td style={{ fontSize: 12 }}>{r.to_email}</td>
-									<td style={{ fontSize: 12.5 }}>{r.subject}<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.template}{r.source === 'admin_email' ? ' · sent by admin' : ''}</div></td>
+									<td style={{ fontSize: 12.5 }}>{r.subject}<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.template}{r.source === 'admin_email' ? ' · sent by admin' : r.source === 'admin_bulk' ? ' · bulk send by admin' : ''}</div></td>
 									<td><Tag variant={r.status === 'sent' ? 'pos' : r.status === 'failed' ? 'neg' : 'warn'}>{r.status}</Tag></td>
 									<td style={{ fontSize: 12 }}>{r.provider ?? '—'}</td>
 									<td>{r.delivery_status ? <Tag variant={r.delivery_status === 'delivered' ? 'pos' : r.delivery_status === 'delayed' ? 'warn' : 'neg'}>{r.delivery_status}</Tag> : <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>}</td>

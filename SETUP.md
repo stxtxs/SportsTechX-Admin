@@ -2,21 +2,21 @@
 
 Internal admin tools. Next.js 16 + React 19 + TypeScript + SWR + Supabase JS. Talks to the NestJS backend via the `/api/*` rewrite. Runs on port **3001** (so it doesn't collide with the user-facing client on 3000).
 
-> **The comprehensive multi-repo guide (server + client + admin + git workflow + migrations) lives at [`SportsTechX-Services/SETUP.md`](https://github.com/umananda-sportstechx/SportsTechX-Services/blob/development/SETUP.md).** This file covers just the admin-specific bits.
+> **The comprehensive multi-repo guide (server + client + admin + git workflow + migrations) lives at [`SportsTechX-Services/SETUP.md`](https://github.com/stxtxs/SportsTechX-Services/blob/development/SETUP.md).** This file covers just the admin-specific bits.
 
 ---
 
 ## Prerequisites
 
 - Node.js 20+ and npm 10+
-- Git, with SSH access to the [`umananda-sportstechx`](https://github.com/umananda-sportstechx) org
+- Git, with SSH access to the [`stxtxs`](https://github.com/stxtxs) repos
 - The backend running locally on `http://localhost:5000` (or a remote `BACKEND_URL`)
 - **An admin account on the backend.** Your `profiles.user_role` must be `'admin'`, or the app bounces you to `/forbidden`. Ask a team lead to promote you (`POST /api/admin/users/<your-id>/promote`).
 
 ## Clone
 
 ```bash
-git clone git@github-work:umananda-sportstechx/SportsTechX-Admin.git admin
+git clone git@github-work:stxtxs/SportsTechX-Admin.git admin
 cd admin
 ```
 
@@ -75,7 +75,7 @@ Read [CLAUDE.md](CLAUDE.md) first — it has the routing into all of the above.
 
 ## Git workflow
 
-See [`SportsTechX-Services/SETUP.md` § 9](https://github.com/umananda-sportstechx/SportsTechX-Services/blob/development/SETUP.md#9-git-workflow) for the full ladder.
+See [`SportsTechX-Services/SETUP.md` § 9](https://github.com/stxtxs/SportsTechX-Services/blob/development/SETUP.md#9-git-workflow) for the full ladder.
 
 **For now (until `development` + `staging` branches exist here):**
 

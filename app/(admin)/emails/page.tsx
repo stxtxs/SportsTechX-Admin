@@ -120,6 +120,12 @@ function Compose({ onSent }: { onSent: (batchId: string) => void }) {
 			const r = await api<{ queued: number; skipped: number; invalid: string[]; failed: string[] }>('POST', '/api/admin/emails/send', { ...payload(), batchId, recipients: to });
 			toast.success(`Queued ${r.queued}${r.skipped ? `, skipped ${r.skipped} (notifications off)` : ''}${r.invalid.length ? `, ${r.invalid.length} invalid` : ''}${r.failed.length ? `, ${r.failed.length} failed` : ''}.`);
 			if (r.invalid.length) toast.message(`Invalid addresses: ${r.invalid.slice(0, 10).join(', ')}${r.invalid.length > 10 ? '…' : ''}`);
+			if (r.failed.length) {
+				// Same batch id: a resend re-queues only these; everyone already queued is skipped.
+				setRecipients(r.failed.join('\n'));
+				toast.error(`${r.failed.length} could not be queued. They are left in the box: press Send again to retry just those.`);
+				return;
+			}
 			const sentBatch = batchId;
 			setBatchId(crypto.randomUUID());
 			setRecipients('');

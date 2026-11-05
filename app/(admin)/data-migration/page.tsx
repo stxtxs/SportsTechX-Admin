@@ -15,7 +15,8 @@ import { PageHeader, AsyncState, Section } from '@/components/atoms';
  */
 type Phase = 'dual_running' | 'old_frozen' | 'final_sync' | 'verified' | 'complete';
 interface TableRow { table_name: string; mode: 'dry_run' | 'apply'; started_at: string; extract_at: string | null; inserted: number; updated: number; skipped: number; reviewed: number; conflicts: number }
-interface Run { id: string; kind: string; mode: string; status: string; started_at: string; finished_at: string | null; extract_at: string | null }
+interface UnresolvedDeal { name: string; website: string; date: string | null; amount_usd: number | null; round: string | null; country: string | null }
+interface Run { id: string; kind: string; mode: string; status: string; started_at: string; finished_at: string | null; extract_at: string | null; summary?: { unresolved_deals?: UnresolvedDeal[] } | null }
 interface Status {
 	ready: boolean;
 	cutover?: { phase: Phase; frozen_at: string | null; verified_at: string | null; notes: string | null; updated_at: string; updated_by: string | null };
@@ -290,6 +291,36 @@ export default function DataMigrationPage() {
 								</table>
 							</AsyncState>
 						</Section>
+
+						{(() => {
+							// From the newest catalog run that recorded them (dry runs record them too).
+							const run = (status.data?.runs ?? []).find((r) => Array.isArray(r.summary?.unresolved_deals));
+							const rows = run?.summary?.unresolved_deals ?? [];
+							if (!run) return null;
+							return (
+								<Section title="Deals waiting for a company" meta={`${rows.length} · from the ${when(run.started_at)} sync`} padded={false}>
+									<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: 'var(--space-3) var(--space-4)', lineHeight: 1.5 }}>
+										These old deals are not in Atlas because their company is missing, or exists under a different website. To bring one over, open <b>Companies</b>: either create the company with the website shown, or set the existing company&apos;s website to it. The next sync then adds the deal on its own. You can also add the deal by hand on the company.
+									</p>
+									<table className="data-table">
+										<thead><tr><th>Company (old name)</th><th>Website on the deal</th><th>Date</th><th>Round</th><th>Amount</th><th>Country</th></tr></thead>
+										<tbody>
+											{rows.map((d, i) => (
+												<tr key={`${d.website}-${d.date}-${i}`}>
+													<td>{d.name || '—'}</td>
+													<td style={{ fontSize: 12 }}>{d.website || <span style={{ color: 'var(--fg-muted)' }}>none on the old deal</span>}</td>
+													<td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{d.date ? new Date(d.date).toLocaleDateString() : '—'}</td>
+													<td style={{ fontSize: 12 }}>{d.round ?? '—'}</td>
+													<td style={{ whiteSpace: 'nowrap' }}>{d.amount_usd ? `$${(d.amount_usd / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
+													<td style={{ fontSize: 12 }}>{d.country ?? '—'}</td>
+												</tr>
+											))}
+											{rows.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--fg-muted)' }}>Every old deal has a company in Atlas.</td></tr>}
+										</tbody>
+									</table>
+								</Section>
+							);
+						})()}
 
 						<Section title="Runs" meta="Read-only · most recent 30" padded={false}>
 							<table className="data-table">

@@ -8,9 +8,8 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, StatCard, Section } from '@/components/atoms';
-import { StatStrip } from '@/components/filters';
-import { PieDonut, PieLegend, toSegments } from '@/components/charts';
+import { PageHeader, AsyncState, Loading } from '@/components/atoms';
+import { RoundupPreview, Pills, type RoundupMode, type Perspective } from '@/components/market-roundup-preview';
 
 interface Edition { id: string; year: number; month: number; title: string | null; summary: string | null; is_published: boolean }
 interface NewsItem {
@@ -24,15 +23,36 @@ const MONTHS = [
 	[7, 'July'], [8, 'August'], [9, 'September'], [10, 'October'], [11, 'November'], [12, 'December'],
 ] as const;
 const NOW = new Date();
-const YEARS = Array.from({ length: 7 }, (_, i) => NOW.getUTCFullYear() - i);
-const defaultMonth = () => (NOW.getUTCMonth() === 0 ? { y: NOW.getUTCFullYear() - 1, m: 12 } : { y: NOW.getUTCFullYear(), m: NOW.getUTCMonth() });
+// IH: current year + 10 previous.
+const YEARS = Array.from({ length: 11 }, (_, i) => NOW.getUTCFullYear() - i);
+const prevCalendarMonth = () => (NOW.getUTCMonth() === 0 ? { year: NOW.getUTCFullYear() - 1, month: 12 } : { year: NOW.getUTCFullYear(), month: NOW.getUTCMonth() });
 
 export default function MarketRoundupAdminPage() {
+	// `null` until the admin picks a month: open on the latest month that HAS
+	// deals (the server resolves it when year/month are omitted), not blindly the
+	// previous calendar month — ingest lags, so that one is often empty.
+	const [sel, setSel] = useState<{ year: number; month: number } | null>(null);
+	const latest = useSWR<{ year: number; month: number }>(sel ? null : ['/api/market/roundup', { mode: 'funding' }]);
+	const cur = sel ?? (latest.data ? { year: latest.data.year, month: latest.data.month } : latest.error ? prevCalendarMonth() : null);
+	if (!cur) return <div><Header /><Loading /></div>;
+	return <MarketRoundupMonth year={cur.year} month={cur.month} onChange={setSel} />;
+}
+
+function Header() {
+	return (
+		<PageHeader
+			kicker="Client Market page"
+			title="Market roundup"
+			subtitle="Monthly Funding & M&A analytics (computed live from deal data, as the old Intelligence Hub roundup), plus the editorial header and curated news for the client /roundup page."
+		/>
+	);
+}
+
+function MarketRoundupMonth({ year, month, onChange }: { year: number; month: number; onChange: (v: { year: number; month: number }) => void }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const init = defaultMonth();
-	const [year, setYear] = useState(init.y);
-	const [month, setMonth] = useState(init.m);
+	const [mode, setMode] = useState<RoundupMode>('funding');
+	const [perspective, setPerspective] = useState<Perspective>('acquiree');
 	const [editItem, setEditItem] = useState<NewsItem | null>(null);
 	const [creating, setCreating] = useState(false);
 
@@ -53,19 +73,30 @@ export default function MarketRoundupAdminPage() {
 
 	return (
 		<div>
-			<PageHeader
-				kicker="Client Market page"
-				title="Market roundup"
-				subtitle="Monthly Funding & M&A analytics (computed live from deal data, as the old Intelligence Hub roundup), plus the editorial header and curated news for the client /roundup page."
-			/>
+			<Header />
 
-			<div className="filter-bar" style={{ marginBottom: 12 }}>
-				<Select value={String(month)} onChange={(v) => setMonth(Number(v))} width={160} options={MONTHS.map(([v, l]) => ({ value: String(v), label: l }))} />
-				<Select value={String(year)} onChange={(v) => setYear(Number(v))} width={110} options={YEARS.map((y) => ({ value: String(y), label: String(y) }))} />
+			{/* IH filter row: Funding / M&A tabs, month + year, M&A perspective. */}
+			<div className="card" style={{ padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+				<div role="tablist" style={{ display: 'flex' }}>
+					{([['funding', 'Funding'], ['ma', 'M&A']] as const).map(([k, l]) => (
+						<button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
+							style={{
+								padding: '8px 18px 9px', background: 'none', border: 0, cursor: 'pointer', fontSize: 14,
+								fontWeight: mode === k ? 700 : 500, color: mode === k ? 'var(--accent)' : 'var(--fg-muted)',
+								borderBottom: `3px solid ${mode === k ? 'var(--accent)' : 'transparent'}`,
+							}}>
+							{l}
+						</button>
+					))}
+				</div>
+				<Select ariaLabel="Month" value={String(month)} onChange={(v) => onChange({ year, month: Number(v) })} width={150} options={MONTHS.map(([v, l]) => ({ value: String(v), label: l }))} />
+				<Select ariaLabel="Year" value={String(year)} onChange={(v) => onChange({ year: Number(v), month })} width={110} options={YEARS.map((y) => ({ value: String(y), label: String(y) }))} />
+				{mode === 'ma' && <Pills value={perspective} onChange={setPerspective} options={[['acquiree', 'Acquiree'], ['acquirer', 'Acquirer']]} />}
 			</div>
 
-			<RoundupPreview year={year} month={month} />
+			<RoundupPreview year={year} month={month} mode={mode} perspective={perspective} />
 
+			<div style={{ height: 16 }} />
 			<EditionEditor key={`${year}-${month}`} year={year} month={month} edition={edition.data?.edition ?? null} onSaved={refresh} />
 
 			<div className="filter-bar" style={{ margin: '20px 0 12px' }}>
@@ -105,184 +136,6 @@ export default function MarketRoundupAdminPage() {
 				/>
 			)}
 		</div>
-	);
-}
-
-interface Grouping { label: string; deal_count: number; total_amount: number }
-interface RoundupData {
-	mode: 'funding' | 'ma'; perspective?: 'acquiree' | 'acquirer';
-	stats: { total_amount: number; count: number; largest_amount: number; largest_company: string | null; prev_total_amount: number; prev_count: number };
-	by_sector: Grouping[]; by_sub_sector?: Grouping[]; by_business_model: Grouping[]; by_geo: Grouping[];
-}
-interface PreviewDealRow {
-	id: string; amount_usd?: number | string | null;
-	// funding (GET /api/deals)
-	company_name?: string | null; company_website?: string | null; company_custom_logo_url?: string | null; round_type_name?: string | null;
-	hq_city?: string | null; hq_country?: string | null; // deals: the company's HQ; acquisitions: the acquiree's
-	// M&A (GET /api/acquisitions)
-	acquiree_name?: string | null; acquiree_website?: string | null; acquiree_website_snapshot?: string | null; acquiree_logo?: string | null;
-	acquirer_name?: string | null; acquirer_website?: string | null; acquirer_logo?: string | null; acquirer_city?: string | null; acquirer_country?: string | null;
-}
-
-const fmtUsdP = (n: number): string => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n).toLocaleString()}`);
-const pad2 = (n: number) => String(n).padStart(2, '0');
-function deltaPct(cur?: number, prev?: number): number | null {
-	if (cur == null || prev == null || prev === 0) return null;
-	return Math.round(((cur - prev) / prev) * 100);
-}
-
-/**
- * Monthly Funding & M&A roundup analytics — parity with the old Intelligence Hub
- * /analytics/monthly-roundup: KPIs with month-over-month change (incl. average
- * deal size), sector/sub-sector · business-model · country donuts each with a
- * complete-breakdown table (value + share), and the month's full deal table with
- * logos and locations (both parties for M&A). Computed live from the same public
- * endpoints the client /roundup uses, so admins see exactly what users see.
- */
-function RoundupPreview({ year, month }: { year: number; month: number }) {
-	const [mode, setMode] = useState<'funding' | 'ma'>('funding');
-	const [metric, setMetric] = useState<'amount' | 'count'>('amount');
-	const [sectorView, setSectorView] = useState<'sector' | 'sub'>('sector');
-	const [perspective, setPerspective] = useState<'acquiree' | 'acquirer'>('acquiree');
-	const [breakdown, setBreakdown] = useState<{ title: string; dimension: string; rows: Grouping[] } | null>(null);
-
-	const { data, isLoading, error } = useSWR<RoundupData>(['/api/market/roundup', { year, month, mode, ...(mode === 'ma' ? { perspective } : {}) }], { dedupingInterval: 10_000 });
-	const start = `${year}-${pad2(month)}-01`;
-	const end = `${year}-${pad2(month)}-${pad2(new Date(Date.UTC(year, month, 0)).getUTCDate())}`;
-	// The whole month, like the old roundup and the client /roundup (not just a top-10).
-	const dealsList = useSWR<{ data: PreviewDealRow[] }>(mode === 'funding'
-		? ['/api/deals', { from: start, to: end, sort: '-amount_usd', limit: 50 }]
-		: ['/api/acquisitions', { from: start, to: end, sort: '-amount_usd', limit: 50 }], { dedupingInterval: 10_000 });
-
-	const s = data?.stats;
-	const total = s?.total_amount ?? 0;
-	const count = s?.count ?? 0;
-	const avg = count > 0 ? total / count : 0;
-	const prevAvg = s && s.prev_count > 0 ? s.prev_total_amount / s.prev_count : undefined;
-	const val = (g: Grouping) => (metric === 'amount' ? g.total_amount : g.deal_count);
-	const fmtVal = (n: number) => (metric === 'amount' ? fmtUsdP(n) : n.toLocaleString());
-	const toSeg = (g: Grouping[]) => toSegments(g.slice(0, 8).map((x) => ({ label: x.label, value: val(x) })));
-	const sectorG = (sectorView === 'sector' ? data?.by_sector : (data?.by_sub_sector ?? data?.by_sector)) ?? [];
-	const noun = mode === 'ma' ? 'M&A' : 'Funding';
-	const donuts: { title: string; dimension: string; rows: Grouping[] }[] = data
-		? [
-			{ title: `${noun} by ${sectorView === 'sector' ? 'sector' : 'sub-sector'}`, dimension: sectorView === 'sector' ? 'Sector' : 'Sub-sector', rows: sectorG },
-			{ title: `${noun} by business model`, dimension: 'Business model', rows: data.by_business_model },
-			{ title: `${noun} by country`, dimension: 'Country', rows: data.by_geo },
-		]
-		: [];
-	const rows = dealsList.data?.data ?? [];
-	const amountCell = (r: PreviewDealRow) => (r.amount_usd == null || Number(r.amount_usd) === 0 ? 'Undisclosed' : fmtUsdP(Number(r.amount_usd)));
-	const breakdownSum = breakdown ? breakdown.rows.reduce((a, x) => a + val(x), 0) : 0;
-
-	return (
-		<Section title="Monthly roundup — Funding & M&A" meta="computed live — exactly what the client /roundup shows">
-			<div className="filter-bar" style={{ marginBottom: 12, gap: 8 }}>
-				<Select value={mode} onChange={(v) => setMode(v as 'funding' | 'ma')} width={120} options={[{ value: 'funding', label: 'Funding' }, { value: 'ma', label: 'M&A' }]} />
-				<Select value={metric} onChange={(v) => setMetric(v as 'amount' | 'count')} width={120} options={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Count' }]} />
-				<Select value={sectorView} onChange={(v) => setSectorView(v as 'sector' | 'sub')} width={140} options={[{ value: 'sector', label: 'Sector' }, { value: 'sub', label: 'Sub-sector' }]} />
-				{mode === 'ma' && <Select value={perspective} onChange={(v) => setPerspective(v as 'acquiree' | 'acquirer')} width={140} options={[{ value: 'acquiree', label: 'Acquiree' }, { value: 'acquirer', label: 'Acquirer' }]} />}
-			</div>
-			<AsyncState loading={isLoading} error={error} empty={!!data && count === 0} emptyMsg="No deals recorded for this month.">
-				<StatStrip cols={3}>
-					<StatCard label={mode === 'ma' ? 'M&A value' : 'Capital raised'} value={fmtUsdP(total)} delta={deltaPct(total, s?.prev_total_amount)} />
-					<StatCard label="Avg deal size" value={fmtUsdP(avg)} delta={deltaPct(avg, prevAvg)} />
-					<StatCard label={mode === 'ma' ? 'Acquisitions' : 'Disclosed deals'} value={count.toLocaleString()} delta={deltaPct(count, s?.prev_count)} />
-				</StatStrip>
-				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 16, marginTop: 16 }}>
-					{donuts.map((d) => (
-						<div className="card" key={d.title} style={{ padding: 16 }}>
-							<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-								<div style={{ fontWeight: 700, fontSize: 14 }}>{d.title}</div>
-								{d.rows.length > 0 && <button type="button" className="btn ghost" style={{ height: 24, padding: '0 8px', fontSize: 11 }} onClick={() => setBreakdown(d)}>Breakdown</button>}
-							</div>
-							{d.rows.length === 0 ? <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>No data.</div> : d.rows.every((x) => val(x) === 0) ? (
-								// Deals exist but none disclosed a value — an all-$0 donut renders blank.
-								<div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>
-									No disclosed values for these deals.{' '}
-									<button type="button" className="btn ghost" style={{ padding: 0, height: 'auto' }} onClick={() => setMetric('count')}>View by count</button>
-								</div>
-							) : (
-								<>
-									<div style={{ display: 'grid', placeItems: 'center' }}><PieDonut mode="donut" size={150} segments={toSeg(d.rows)} /></div>
-									<PieLegend segments={toSeg(d.rows)} />
-								</>
-							)}
-						</div>
-					))}
-				</div>
-				<div className="card" style={{ marginTop: 16, padding: 'var(--space-4)' }}>
-					<div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>
-						{mode === 'ma' ? 'Acquisitions this month' : 'Funding rounds this month'}{' '}
-						<span style={{ fontWeight: 400, color: 'var(--fg-muted)', fontSize: 12 }}>· {rows.length}{rows.length === 50 ? '+' : ''} · largest first</span>
-					</div>
-					{dealsList.isLoading ? <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Loading…</div> : rows.length === 0 ? <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>No {mode === 'ma' ? 'acquisitions' : 'rounds'} this month.</div> : (
-						<div style={{ overflowX: 'auto' }}>
-							<table className="data-table">
-								<thead>
-									{mode === 'ma'
-										? <tr><th style={{ width: 32 }}>#</th><th>Acquiree</th><th>Location</th><th>Acquirer</th><th>Location</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
-										: <tr><th style={{ width: 32 }}>#</th><th>Company</th><th>Location</th><th>Round</th><th style={{ textAlign: 'right' }}>Amount</th></tr>}
-								</thead>
-								<tbody>
-									{rows.map((r, i) => mode === 'ma' ? (
-										<tr key={r.id}>
-											<td className="num" style={{ color: 'var(--fg-muted)' }}>{i + 1}</td>
-											<td><Party name={r.acquiree_name} website={r.acquiree_website ?? r.acquiree_website_snapshot} logo={r.acquiree_logo} /></td>
-											<td>{place(r.hq_city, r.hq_country)}</td>
-											<td><Party name={r.acquirer_name} website={r.acquirer_website} logo={r.acquirer_logo} /></td>
-											<td>{place(r.acquirer_city, r.acquirer_country)}</td>
-											<td className="num">{amountCell(r)}</td>
-										</tr>
-									) : (
-										<tr key={r.id}>
-											<td className="num" style={{ color: 'var(--fg-muted)' }}>{i + 1}</td>
-											<td><Party name={r.company_name} website={r.company_website} logo={r.company_custom_logo_url} /></td>
-											<td>{place(r.hq_city, r.hq_country)}</td>
-											<td>{r.round_type_name ?? '—'}</td>
-											<td className="num">{amountCell(r)}</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					)}
-				</div>
-			</AsyncState>
-
-			{breakdown && (
-				<Modal title={`${breakdown.title} — complete breakdown`} onClose={() => setBreakdown(null)} width={560}>
-					<table className="data-table" style={{ width: '100%' }}>
-						<thead><tr><th>{breakdown.dimension}</th><th style={{ textAlign: 'right' }}>{metric === 'amount' ? 'Amount' : 'Deals'}</th><th style={{ textAlign: 'right' }}>Share</th></tr></thead>
-						<tbody>
-							{[...breakdown.rows].sort((a, b) => val(b) - val(a)).map((x) => (
-								<tr key={x.label}>
-									<td>{x.label}</td>
-									<td className="num">{fmtVal(val(x))}</td>
-									<td className="num">{breakdownSum > 0 ? `${((val(x) / breakdownSum) * 100).toFixed(1)}%` : '—'}</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</Modal>
-			)}
-		</Section>
-	);
-}
-
-/** "City, Country" — or whichever half exists. */
-const place = (city?: string | null, country?: string | null): string => [city, country].filter(Boolean).join(', ') || '—';
-
-/** A company cell: logo (custom, else the site favicon — like the old roundup) + name linked to its website. */
-function Party({ name, website, logo }: { name?: string | null; website?: string | null; logo?: string | null }) {
-	const host = website ? website.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] : null;
-	const src = logo || (host ? `https://www.google.com/s2/favicons?sz=64&domain=${host}` : null);
-	return (
-		<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-			{/* eslint-disable-next-line @next/next/no-img-element */}
-			{src && <img src={src} alt="" width={18} height={18} style={{ objectFit: 'contain', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
-			{host ? <a href={`https://${host}`} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>{name ?? host}</a> : <span>{name ?? '—'}</span>}
-		</span>
 	);
 }
 

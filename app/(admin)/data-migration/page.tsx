@@ -309,7 +309,7 @@ export default function DataMigrationPage() {
 												<tr key={`${d.website}-${d.date}-${i}`}>
 													<td>{d.name || '—'}</td>
 													<td style={{ fontSize: 12 }}>{d.website || <span style={{ color: 'var(--fg-muted)' }}>none on the old deal</span>}</td>
-													<td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{d.date ? new Date(d.date).toLocaleDateString() : '—'}</td>
+													<td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{d.date ? d.date.slice(0, 10) : '—'}</td>
 													<td style={{ fontSize: 12 }}>{d.round ?? '—'}</td>
 													<td style={{ whiteSpace: 'nowrap' }}>{d.amount_usd ? `$${(d.amount_usd / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
 													<td style={{ fontSize: 12 }}>{d.country ?? '—'}</td>

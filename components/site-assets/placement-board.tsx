@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { GripVertical, ImageOff, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { Eye, EyeOff, GripVertical, ImageOff, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import {
 	DndContext, DragOverlay, PointerSensor, closestCenter, pointerWithin,
 	useDraggable, useDroppable, useSensor, useSensors,
@@ -13,6 +13,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '@/lib/api';
 import { useConfirm } from '@/components/confirm';
 import { AsyncState, Section } from '@/components/atoms';
+import { Modal } from '@/components/modal';
 import {
 	ACCEPT, ASSETS_KEY, PLACEMENTS_KEY, discardUpload, uploadOne, uploadsDisabled,
 	type Asset, type Placement, type SectionSpec,
@@ -154,7 +155,8 @@ export function PlacementBoard({
 									name={name}
 									spec={spec}
 									cards={bySection(name)}
-									onAddEmpty={() => void addCard(name, null)}
+									assets={assets}
+									onAdd={(assetId) => void addCard(name, assetId)}
 									onSetOverlay={setOverlay}
 									reload={reload}
 								/>
@@ -228,35 +230,52 @@ function TrayTile({ asset }: { asset: Asset }) {
 // ---- a section ---------------------------------------------------------------
 
 function SectionDrop({
-	name, spec, cards, onAddEmpty, onSetOverlay, reload,
+	name, spec, cards, assets, onAdd, onSetOverlay, reload,
 }: {
 	name: string;
 	spec: SectionSpec;
 	cards: Placement[];
-	onAddEmpty: () => void;
+	assets: Asset[];
+	onAdd: (assetId: string | null) => void;
 	onSetOverlay: (placementId: string, assetId: string | null) => void;
 	reload: () => void;
 }) {
 	const { setNodeRef, isOver, active } = useDroppable({ id: `sec:${name}` });
+	const [picking, setPicking] = useState(false);
 	const ids = cards.map((c) => c.id);
-	// Only highlight for a drag this section can actually take: a tray tile, or
-	// one of its own cards being reordered. Lighting up for another section's
-	// card promised a move that onDragEnd then silently discarded.
-	const accepts = isTrayDrag(active?.id) || (active != null && ids.includes(String(active.id)));
+	const full = spec.max != null && cards.length >= spec.max;
+	// Only highlight for a drag this section can actually take: a tray tile (when
+	// a slot is free), or one of its own cards being reordered. Lighting up for
+	// another section's card promised a move that onDragEnd then discarded.
+	const accepts = (isTrayDrag(active?.id) && !full) || (active != null && ids.includes(String(active.id)));
 	const armed = isOver && accepts;
+	const hidden = cards.filter((c) => !c.is_active).length;
 
 	return (
 		<Section
 			title={spec.label}
-			meta={cards.length === 0
-				? `empty → the site shows ${spec.placeholderCount} placeholders`
-				: `${cards.length} card${cards.length === 1 ? '' : 's'}`}
-			action={spec.imageOptional ? (
-				<button type="button" className="btn ghost" onClick={onAddEmpty}>
-					<Plus size={12} /> Add without photo
+			meta={sectionMeta(spec, cards.length, hidden)}
+			action={(
+				<button
+					type="button"
+					className="btn ghost"
+					disabled={full}
+					title={full ? `All ${spec.max} slots are filled. Replace a card's image, or remove one.` : undefined}
+					onClick={() => setPicking(true)}
+				>
+					<Plus size={12} /> Add
 				</button>
-			) : undefined}
+			)}
 		>
+			{picking && (
+				<LibraryPicker
+					title={`Add to ${spec.label}`}
+					assets={assets}
+					noneLabel={spec.imageOptional ? 'Add without photo' : undefined}
+					onPick={(assetId) => { setPicking(false); onAdd(assetId); }}
+					onClose={() => setPicking(false)}
+				/>
+			)}
 			<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 10 }}>{spec.hint}</div>
 			<div
 				ref={setNodeRef}
@@ -273,7 +292,7 @@ function SectionDrop({
 				)}
 				<SortableContext items={ids} strategy={verticalListSortingStrategy}>
 					{cards.map((c) => (
-						<Card key={c.id} card={c} spec={spec} onSetOverlay={onSetOverlay} reload={reload} />
+						<Card key={c.id} card={c} spec={spec} assets={assets} onSetOverlay={onSetOverlay} reload={reload} />
 					))}
 				</SortableContext>
 			</div>
@@ -284,10 +303,11 @@ function SectionDrop({
 // ---- one placed card ---------------------------------------------------------
 
 function Card({
-	card, spec, onSetOverlay, reload,
+	card, spec, assets, onSetOverlay, reload,
 }: {
 	card: Placement;
 	spec: SectionSpec;
+	assets: Asset[];
 	onSetOverlay: (placementId: string, assetId: string | null) => void;
 	reload: () => void;
 }) {
@@ -299,6 +319,16 @@ function Card({
 		if (value === (copy[field] ?? '')) return;
 		try {
 			await api('PATCH', `${PLACEMENTS_KEY}/${card.id}`, { [field]: value || null });
+			reload();
+		} catch (e) {
+			toast.error((e as Error).message);
+		}
+	};
+
+	const [picking, setPicking] = useState(false);
+	const patch = async (body: Record<string, unknown>) => {
+		try {
+			await api('PATCH', `${PLACEMENTS_KEY}/${card.id}`, body);
 			reload();
 		} catch (e) {
 			toast.error((e as Error).message);
@@ -323,25 +353,45 @@ function Card({
 				transition,
 				opacity: isDragging ? 0.4 : 1,
 				display: 'flex', gap: 10, alignItems: 'flex-start',
-				border: '1px solid var(--border)', background: 'var(--bg-1)', padding: 8,
+				border: `1px ${card.is_active ? 'solid' : 'dashed'} var(--border)`,
+				background: card.is_active ? 'var(--bg-1)' : 'var(--bg-2)', padding: 8,
 			}}
 		>
 			<span {...attributes} {...listeners} style={{ cursor: 'grab', color: 'var(--fg-muted)', paddingTop: 4 }}>
 				<GripVertical size={14} />
 			</span>
 
-			{card.asset_url ? (
-				<img src={card.asset_url} alt="" style={{ width: 96, height: 72, objectFit: 'cover', background: 'var(--bg-3)', flex: 'none' }} />
-			) : (
-				<div
-					style={{ width: 96, height: 72, display: 'grid', placeItems: 'center', background: 'var(--bg-3)', color: 'var(--fg-muted)', flex: 'none' }}
-					title="No photo — allowed in this section"
-				>
-					<ImageOff size={16} />
-				</div>
+			{picking && (
+				<LibraryPicker
+					title="Choose the image for this card"
+					assets={assets}
+					noneLabel={spec.imageOptional && card.asset_url ? 'Remove photo' : undefined}
+					onPick={(assetId) => { setPicking(false); void patch({ asset_id: assetId }); }}
+					onClose={() => setPicking(false)}
+				/>
 			)}
 
-			<div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6 }}>
+			<button
+				type="button"
+				onClick={() => setPicking(true)}
+				title="Click to choose a different image from the library"
+				style={{ flex: 'none', padding: 0, border: 0, background: 'none', cursor: 'pointer', lineHeight: 0, opacity: card.is_active ? 1 : 0.45 }}
+			>
+				{card.asset_url ? (
+					<img src={card.asset_url} alt="" style={{ width: 96, height: 72, objectFit: 'cover', background: 'var(--bg-3)' }} />
+				) : (
+					<span style={{ width: 96, height: 72, display: 'grid', placeItems: 'center', background: 'var(--bg-3)', color: 'var(--fg-muted)' }}>
+						<ImageOff size={16} />
+					</span>
+				)}
+			</button>
+
+			<div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6, opacity: card.is_active ? 1 : 0.6 }}>
+				{!card.is_active && (
+					<div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--fg-muted)' }}>
+						Hidden · not shown on the site
+					</div>
+				)}
 				{spec.fields.map((f) => (
 					f.multiline ? (
 						<textarea
@@ -369,7 +419,16 @@ function Card({
 
 			{spec.overlay && <LogoSlot card={card} onSetOverlay={onSetOverlay} />}
 
-			<button type="button" className="btn ghost" onClick={() => void remove()} title="Remove from section">
+			<button
+				type="button"
+				className="btn ghost"
+				onClick={() => void patch({ is_active: !card.is_active })}
+				title={card.is_active ? 'Hide from the site (stays in this list)' : 'Show on the site again'}
+				aria-label={card.is_active ? 'Hide' : 'Show'}
+			>
+				{card.is_active ? <EyeOff size={12} /> : <Eye size={12} />}
+			</button>
+			<button type="button" className="btn ghost" onClick={() => void remove()} title="Remove from section" aria-label="Remove">
 				<Trash2 size={12} />
 			</button>
 		</div>
@@ -464,5 +523,108 @@ function LogoSlot({
 				</button>
 			)}
 		</div>
+	);
+}
+
+/** Section header line: count (or slots used), how many are hidden, and what
+ *  the site does when nothing visible is left. */
+function sectionMeta(spec: SectionSpec, total: number, hidden: number): string {
+	if (total === 0) return `empty → the site shows ${spec.placeholderCount} placeholders`;
+	const count = spec.max ? `${total} / ${spec.max} slots` : `${total} card${total === 1 ? '' : 's'}`;
+	if (hidden === 0) return count;
+	if (hidden === total) return `${count} · all hidden → the site shows its placeholders`;
+	return `${count} · ${hidden} hidden`;
+}
+
+// ---- library picker ----------------------------------------------------------
+
+/** Click-to-choose alternative to dragging from the tray: pick an image already
+ *  in the library, upload a new one, or (image-optional sections) go without. */
+function LibraryPicker({
+	title, assets, noneLabel, onPick, onClose,
+}: {
+	title: string;
+	assets: Asset[];
+	noneLabel?: string;
+	onPick: (assetId: string | null) => void;
+	onClose: () => void;
+}) {
+	const fileRef = useRef<HTMLInputElement>(null);
+	const [busy, setBusy] = useState(false);
+	const canUpload = !uploadsDisabled();
+
+	const upload = async (file: File | undefined) => {
+		if (!file || busy) return;
+		setBusy(true);
+		try {
+			const uploaded = await uploadOne(file);
+			if (!uploaded) return;
+			try {
+				const asset = await api<Asset>('POST', ASSETS_KEY, { ...uploaded, alt_text: '' });
+				onPick(asset.id);
+			} catch (e) {
+				toast.error((e as Error).message);
+				await discardUpload(uploaded.storage_path);
+			}
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	return (
+		<Modal
+			title={title}
+			onClose={onClose}
+			width={760}
+			footer={(
+				<div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', width: '100%' }}>
+					{noneLabel && (
+						<button type="button" className="btn ghost" onClick={() => onPick(null)} disabled={busy}>
+							<ImageOff size={12} /> {noneLabel}
+						</button>
+					)}
+					<input
+						ref={fileRef}
+						type="file"
+						accept={ACCEPT}
+						style={{ display: 'none' }}
+						onChange={(e) => { void upload(e.target.files?.[0]); e.target.value = ''; }}
+					/>
+					<button
+						type="button"
+						className="btn"
+						disabled={busy || !canUpload}
+						title={canUpload ? undefined : 'Uploads are disabled in local dev'}
+						onClick={() => fileRef.current?.click()}
+					>
+						{busy ? <Loader2 size={12} style={{ animation: 'site-assets-spin 0.9s linear infinite' }} /> : <Upload size={12} />} Upload new
+					</button>
+				</div>
+			)}
+		>
+			{assets.length === 0 ? (
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)', padding: 12 }}>
+					The library is empty. Upload a new image below.
+				</div>
+			) : (
+				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+					{assets.map((a) => (
+						<button
+							key={a.id}
+							type="button"
+							disabled={busy}
+							onClick={() => onPick(a.id)}
+							title={a.filename ?? a.url}
+							style={{ padding: 0, border: '1px solid var(--border)', background: 'var(--bg-2)', cursor: 'pointer', textAlign: 'left' }}
+						>
+							<img src={a.url} alt={a.alt_text} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', background: 'var(--bg-3)' }} />
+							<span style={{ display: 'block', padding: '4px 6px', fontSize: 10, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+								{a.filename ?? 'image'}{a.usage_count ? ` · used ${a.usage_count}×` : ''}
+							</span>
+						</button>
+					))}
+				</div>
+			)}
+		</Modal>
 	);
 }

@@ -12,6 +12,8 @@ export interface SectionSpec {
 	overlay?: boolean;
 	imageOptional?: boolean;
 	placeholderCount: number;
+	/** Fixed, positional slots (dashboards, solutions). Absent = unlimited. */
+	max?: number;
 }
 
 /** site -> section -> spec. Served by GET /schema so it can't drift from the

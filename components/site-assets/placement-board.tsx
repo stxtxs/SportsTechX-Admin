@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Eye, EyeOff, GripVertical, ImageOff, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import {
@@ -96,10 +96,15 @@ export function PlacementBoard({
 		if (activeId.startsWith('lib:')) {
 			const assetId = activeId.slice(4);
 			if (overId.startsWith('logo:')) return void setOverlay(overId.slice(5), assetId);
-			if (overId.startsWith('sec:')) return void addCard(overId.slice(4), assetId);
-			// Dropped onto an existing card - treat it as "add to that section".
-			const target = placements.find((p) => p.id === overId);
-			if (target) void addCard(target.section, assetId);
+			// Dropped on a section body, or on one of its cards: add to that section.
+			const section = overId.startsWith('sec:') ? overId.slice(4) : placements.find((p) => p.id === overId)?.section;
+			if (!section) return;
+			const max = sections.find(([n]) => n === section)?.[1].max;
+			if (max != null && bySection(section).length >= max) {
+				toast.error(`All ${max} slots are filled. Click a card's image to replace it.`);
+				return;
+			}
+			void addCard(section, assetId);
 			return;
 		}
 
@@ -292,7 +297,7 @@ function SectionDrop({
 				)}
 				<SortableContext items={ids} strategy={verticalListSortingStrategy}>
 					{cards.map((c) => (
-						<Card key={c.id} card={c} spec={spec} assets={assets} onSetOverlay={onSetOverlay} reload={reload} />
+						<Card key={c.id} card={c} slot={cards.indexOf(c) + 1} spec={spec} assets={assets} onSetOverlay={onSetOverlay} reload={reload} />
 					))}
 				</SortableContext>
 			</div>
@@ -303,9 +308,11 @@ function SectionDrop({
 // ---- one placed card ---------------------------------------------------------
 
 function Card({
-	card, spec, assets, onSetOverlay, reload,
+	card, slot, spec, assets, onSetOverlay, reload,
 }: {
 	card: Placement;
+	/** 1-based position in its section; shown as "Slot n" where slots are fixed. */
+	slot: number;
 	spec: SectionSpec;
 	assets: Asset[];
 	onSetOverlay: (placementId: string, assetId: string | null) => void;
@@ -335,7 +342,14 @@ function Card({
 		}
 	};
 
+	const slotted = spec.max != null;
 	const remove = async () => {
+		if (slotted) {
+			// Deleting would shift every later card into this slot on the site
+			// (slot = order). Clearing keeps the row, so the slot stays put.
+			if (!(await ask({ message: `Clear slot ${slot}? Its image is removed and the slot shows its built-in panel until you pick a new image. The image stays in the library.`, danger: true }))) return;
+			return void patch({ asset_id: null, overlay_asset_id: null, is_active: false });
+		}
 		if (!(await ask({ message: 'Remove this card from the section? The image stays in the library.', danger: true }))) return;
 		try {
 			await api('DELETE', `${PLACEMENTS_KEY}/${card.id}`);
@@ -366,7 +380,7 @@ function Card({
 					title="Choose the image for this card"
 					assets={assets}
 					noneLabel={spec.imageOptional && card.asset_url ? 'Remove photo' : undefined}
-					onPick={(assetId) => { setPicking(false); void patch({ asset_id: assetId }); }}
+					onPick={(assetId) => { setPicking(false); void patch(!card.asset_url && assetId ? { asset_id: assetId, is_active: true } : { asset_id: assetId }); }}
 					onClose={() => setPicking(false)}
 				/>
 			)}
@@ -387,6 +401,11 @@ function Card({
 			</button>
 
 			<div style={{ flex: 1, minWidth: 0, display: 'grid', gap: 6, opacity: card.is_active ? 1 : 0.6 }}>
+				{slotted && (
+					<div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--fg-2)' }}>
+						Slot {slot}
+					</div>
+				)}
 				{!card.is_active && (
 					<div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--fg-muted)' }}>
 						Hidden · not shown on the site
@@ -428,7 +447,7 @@ function Card({
 			>
 				{card.is_active ? <EyeOff size={12} /> : <Eye size={12} />}
 			</button>
-			<button type="button" className="btn ghost" onClick={() => void remove()} title="Remove from section" aria-label="Remove">
+			<button type="button" className="btn ghost" onClick={() => void remove()} title={slotted ? 'Clear this slot' : 'Remove from section'} aria-label={slotted ? 'Clear slot' : 'Remove'}>
 				<Trash2 size={12} />
 			</button>
 		</div>
@@ -552,6 +571,10 @@ function LibraryPicker({
 	const fileRef = useRef<HTMLInputElement>(null);
 	const [busy, setBusy] = useState(false);
 	const canUpload = !uploadsDisabled();
+	// Closed while an upload was in flight: the image still lands in the
+	// library, but the card is not added behind the admin's back.
+	const open = useRef(true);
+	useEffect(() => () => { open.current = false; }, []);
 
 	const upload = async (file: File | undefined) => {
 		if (!file || busy) return;
@@ -561,13 +584,13 @@ function LibraryPicker({
 			if (!uploaded) return;
 			try {
 				const asset = await api<Asset>('POST', ASSETS_KEY, { ...uploaded, alt_text: '' });
-				onPick(asset.id);
+				if (open.current) onPick(asset.id);
 			} catch (e) {
 				toast.error((e as Error).message);
 				await discardUpload(uploaded.storage_path);
 			}
 		} finally {
-			setBusy(false);
+			if (open.current) setBusy(false);
 		}
 	};
 

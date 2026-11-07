@@ -40,7 +40,7 @@ const secs = (n: number | null): string => {
 };
 const when = (v: string | null): string => (v ? new Date(v).toLocaleString() : '—');
 
-type EndpointKey = 'apolloBatch' | 'attioSync' | 'recommendations' | 'apolloEnrich' | 'digestEmail' | 'sweepStuck' | 'embedReports' | 'companySignals';
+type EndpointKey = 'apolloBatch' | 'attioSync' | 'recommendations' | 'apolloEnrich' | 'digestEmail' | 'slackDigest' | 'sweepStuck' | 'embedReports' | 'companySignals';
 
 const ENDPOINTS: Array<{ key: EndpointKey; label: string; desc: string; path: string; needsId?: boolean }> = [
 	{
@@ -73,6 +73,12 @@ const ENDPOINTS: Array<{ key: EndpointKey; label: string; desc: string; path: st
 		label: 'Send digest emails',
 		desc: 'Run the digest-email job now (otherwise daily at 09:00 UTC).',
 		path: '/api/admin/jobs/digest-email',
+	},
+	{
+		key: 'slackDigest',
+		label: 'Post Slack digest',
+		desc: 'Post the signups + activity digest to #atlas-updates now (otherwise daily at 09:00 Berlin).',
+		path: '/api/admin/jobs/slack-digest',
 	},
 	{
 		// POST /api/admin/embeddings/backfill-reports had no UI anywhere in the panel.

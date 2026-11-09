@@ -154,7 +154,7 @@ export default function ReportsAdminPage() {
 				<input className="search-input" placeholder="Topic tags, comma separated (e.g. Europe, Funding, Venues)" value={draft.tags} onChange={(e) => setDraft({ ...draft, tags: e.target.value })} style={{ marginTop: 8 }} />
 				<div style={{ marginTop: 8 }}>
 					<div className="co-stat-label" style={{ marginBottom: 4 }}>PDF</div>
-					<ReportPdfInput value={draft.pdf_url} onChange={(u) => setDraft({ ...draft, pdf_url: u })} />
+					<ReportPdfInput value={draft.pdf_url} onChange={(u) => setDraft({ ...draft, pdf_url: u })} downloadName={draft.slug || draft.title} />
 				</div>
 				<textarea
 					className="search-input"
@@ -336,7 +336,7 @@ function EditReportForm({ id, initial, onClose, onSaved }: { id: string; initial
 				</div>
 				<input className="search-input" placeholder="Drive link" value={f.drive_link} onChange={(e) => set('drive_link', e.target.value)} />
 				<input className="search-input" placeholder="Topic tags, comma separated (e.g. Europe, Funding, Venues)" value={f.tags} onChange={(e) => set('tags', e.target.value)} />
-				<div><div className="co-stat-label" style={{ marginBottom: 4 }}>PDF</div><ReportPdfInput value={f.pdf_url} onChange={(u) => set('pdf_url', u)} /></div>
+				<div><div className="co-stat-label" style={{ marginBottom: 4 }}>PDF</div><ReportPdfInput value={f.pdf_url} onChange={(u) => set('pdf_url', u)} downloadName={f.slug || f.title} /></div>
 				<div><div className="co-stat-label" style={{ marginBottom: 4 }}>Cover image</div><ImageInput value={f.cover_url} onChange={(u) => set('cover_url', u)} pathPrefix="reports/covers" /></div>
 				<textarea className="search-input" placeholder="Description" value={f.description} onChange={(e) => set('description', e.target.value)} style={{ minHeight: 70, resize: 'vertical' }} />
 				<textarea className="search-input" placeholder="Summary points (one per line)" value={f.summary_points} onChange={(e) => set('summary_points', e.target.value)} style={{ minHeight: 60, resize: 'vertical' }} />

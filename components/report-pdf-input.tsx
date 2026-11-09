@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Upload, Link2, Loader2, FileText, Check } from 'lucide-react';
+import { Upload, Link2, Loader2, FileText, Check, Download } from 'lucide-react';
 import { getSupabaseBrowser } from '@/lib/supabase';
 import { api } from '@/lib/api';
 
@@ -19,9 +19,11 @@ interface Props {
 	value: string;
 	onChange: (v: string) => void;
 	maxMb?: number;
+	/** File name for Download (e.g. the report slug); `.pdf` is added. */
+	downloadName?: string;
 }
 
-export function ReportPdfInput({ value, onChange, maxMb = 60 }: Props) {
+export function ReportPdfInput({ value, onChange, maxMb = 60, downloadName }: Props) {
 	const isPath = !!value && !/^https?:\/\//i.test(value);
 	const [mode, setMode] = useState<'url' | 'upload'>(isPath ? 'upload' : 'url');
 	const [draft, setDraft] = useState(value);
@@ -34,6 +36,20 @@ export function ReportPdfInput({ value, onChange, maxMb = 60 }: Props) {
 	const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 	const uploadsDisabled = !supabaseUrl || supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1');
 	const commit = () => { if (draft !== value) onChange(draft); };
+
+	// Pull the current stored file (to edit and re-upload). The link lasts 5 min.
+	const [downloading, setDownloading] = useState(false);
+	const doDownload = async () => {
+		if (downloading) return;
+		setDownloading(true);
+		try {
+			const q = new URLSearchParams({ path: value, ...(downloadName ? { name: downloadName } : {}) });
+			const { url } = await api<{ url: string }>('GET', `/api/admin/reports/pdf-download-url?${q}`);
+			window.location.assign(url); // served as an attachment: downloads, stays on this page
+		} catch (e) {
+			toast.error((e as Error).message || 'Download failed');
+		} finally { setDownloading(false); }
+	};
 
 	const doUpload = async (file: File) => {
 		if (uploading) return;
@@ -86,6 +102,11 @@ export function ReportPdfInput({ value, onChange, maxMb = 60 }: Props) {
 			{value && (
 				<div style={{ fontSize: 11, color: 'var(--fg-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
 					<FileText size={11} /> {isPath ? <span>{fileName} <span style={{ opacity: 0.6 }}>(stored)</span></span> : <a href={value} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>{fileName}</a>}
+					{isPath && (
+						<button type="button" className="btn ghost" onClick={() => void doDownload()} disabled={downloading} style={{ marginLeft: 6, padding: '2px 8px', fontSize: 11 }}>
+							{downloading ? <Loader2 size={11} style={{ animation: 'rpi-spin 1s linear infinite' }} /> : <Download size={11} />} Download
+						</button>
+					)}
 				</div>
 			)}
 		</div>

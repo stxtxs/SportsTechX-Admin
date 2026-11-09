@@ -199,7 +199,17 @@ function ListField({ name, value, like, onChange, depth }: { name: string; value
 
 // ---- page order (drag to reorder the parts between the hero and the closing quote) ----
 
-const ORDER_LABELS: Record<string, string> = { trends: 'Trends', peak: 'PEAK 2026', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem map', ngsc: 'NGSC', data: 'Data in Full' };
+/** Names for each report's page blocks in the Page order list (ids as the Atlas page renders them). */
+const ORDER_LABELS: Record<string, Record<string, string>> = {
+	gster26: { trends: 'Trends', peak: 'PEAK 2026', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem map', ngsc: 'NGSC', data: 'Data in Full' },
+	ftabr26: { trends: 'Insights & FIFA WC26 Recap', featured: 'Featured company', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem', soccerment: 'Soccerment feature', partners: 'Partner spotlights', data: 'Data in Full' },
+	'investors-survey26': { 'why-now': 'Why now', 'deal-sourcing-reality': 'Deal sources', 'sourcing-process': 'Process', 'outbound-and-tools': 'Outbound', closing: 'Implications', method: 'Method' },
+};
+const ORDER_NOTE: Record<string, string> = {
+	gster26: 'The hero stays first and the closing quote last.',
+	ftabr26: 'The hero stays first and the footer last.',
+	'investors-survey26': 'The cover stays first. Section numbers and the header links follow this order.',
+};
 
 function PageOrder({ order, onChange }: { order: string[]; onChange: (next: string[]) => void }) {
 	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -220,11 +230,12 @@ function PageOrder({ order, onChange }: { order: string[]; onChange: (next: stri
 
 function OrderRow({ id }: { id: string }) {
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+	const labels = ORDER_LABELS[useContext(SlugContext)] ?? {};
 	return (
 		<div ref={setNodeRef} {...attributes} {...listeners} className="g26-order"
 			style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--bg-1)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 600, touchAction: 'none' }}>
 			<GripVertical size={14} style={{ color: 'var(--fg-muted)' }} />
-			<span>{ORDER_LABELS[id] ?? id}</span>
+			<span>{labels[id] ?? id}</span>
 		</div>
 	);
 }
@@ -322,7 +333,7 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 					{defaults && Array.isArray(defaults.partOrder) && (
 						<>
 							<div style={{ fontWeight: 700, fontSize: 14, margin: '16px 0 4px' }}>Page order</div>
-							<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8 }}>Drag to reorder. The hero stays first and the closing quote last.</div>
+							<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8 }}>Drag to reorder. {ORDER_NOTE[slug] ?? ''}</div>
 							<PageOrder
 								order={[...new Set([...((Array.isArray(draft.partOrder) ? draft.partOrder : []) as string[]), ...(defaults.partOrder as string[])])]}
 								onChange={(next) => setDraft((d) => {

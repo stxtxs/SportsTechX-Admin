@@ -44,6 +44,8 @@ interface User {
 	trial_ends_at?: string | null;
 	active_subscription?: boolean;
 	expires_at?: string | null;
+	/** Active Stripe subscription that renews on `expires_at` (not cancelling). */
+	renews?: boolean;
 	login_count?: number;
 }
 interface UsersResponse { data: User[]; total: number; totalPages: number }
@@ -331,8 +333,10 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 									<td className="num">
 										{u.is_trial && u.trial_ends_at
 											? <span className={new Date(u.trial_ends_at) < new Date() ? 'tag' : 'tag warn'} title={`Trial ends ${fmtDate(u.trial_ends_at)}`}>{fmtDate(u.trial_ends_at)}</span>
+											: u.expires_at && u.renews
+												? <span className="tag" title={`Stripe subscription renews ${fmtDate(u.expires_at)}`}>renews {fmtDate(u.expires_at)}</span>
 											: u.expires_at
-												? <span className={new Date(u.expires_at) < new Date() ? 'tag' : 'tag warn'} title={`Access expires ${fmtDate(u.expires_at)}`}>{fmtDate(u.expires_at)}</span>
+												? <span className={new Date(u.expires_at) < new Date() ? 'tag' : 'tag warn'} title={`Access expires ${fmtDate(u.expires_at)}`}>ends {fmtDate(u.expires_at)}</span>
 												: (u.user_type && u.user_type !== 'explore')
 													? <span style={{ color: 'var(--fg-muted)', fontSize: 12 }} title="Paid tier with no subscription end — admin-granted / comped">Permanent</span>
 													: <span style={{ color: 'var(--fg-muted)' }}>—</span>}

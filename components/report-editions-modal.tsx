@@ -92,7 +92,7 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 						</select>
 						<input className="search-input" placeholder="Title (in this language)" value={draft.title} onChange={(e) => set('title', e.target.value)} />
 					</div>
-					<div><div className="co-stat-label" style={{ marginBottom: 4 }}>PDF</div><ReportPdfInput value={draft.pdf_url} onChange={(u) => set('pdf_url', u)} /></div>
+					<div><div className="co-stat-label" style={{ marginBottom: 4 }}>PDF</div><ReportPdfInput value={draft.pdf_url} onChange={(u) => set('pdf_url', u)} downloadName={`${draft.title || 'report'}-${draft.language_code}-${draft.access_tier}`} /></div>
 					<div><div className="co-stat-label" style={{ marginBottom: 4 }}>Cover image</div><ImageInput value={draft.cover_url} onChange={(u) => set('cover_url', u)} pathPrefix="reports/covers" /></div>
 					<input className="search-input" placeholder="Drive link" value={draft.drive_link} onChange={(e) => set('drive_link', e.target.value)} />
 					<textarea className="search-input" placeholder="Description" value={draft.description} onChange={(e) => set('description', e.target.value)} style={{ minHeight: 56, resize: 'vertical' }} />

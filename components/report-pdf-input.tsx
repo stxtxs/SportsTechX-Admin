@@ -81,6 +81,7 @@ export function ReportPdfInput({ value, onChange, maxMb = 60, downloadName }: Pr
 	const fileName = value ? value.split('/').pop() : '';
 	return (
 		<div style={{ display: 'grid', gap: 6 }}>
+			<style>{'@keyframes rpi-spin { to { transform: rotate(360deg); } }'}</style>
 			<div style={{ display: 'flex', gap: 4, padding: 3, background: 'var(--bg-2)', border: '1px solid var(--border)', width: 'fit-content' }}>
 				<button type="button" onClick={() => setMode('url')} style={tabBtn(mode === 'url')}><Link2 size={12} /> URL</button>
 				<button type="button" onClick={() => setMode('upload')} disabled={uploadsDisabled} title={uploadsDisabled ? 'Uploads disabled in local dev.' : undefined} style={tabBtn(mode === 'upload', uploadsDisabled)}><Upload size={12} /> Upload PDF</button>
@@ -96,7 +97,6 @@ export function ReportPdfInput({ value, onChange, maxMb = 60, downloadName }: Pr
 					<button type="button" className="btn ghost" disabled={uploading} onClick={() => fileRef.current?.click()}>
 						{uploading ? <><Loader2 size={12} style={{ animation: 'rpi-spin 1s linear infinite' }} /> Uploading…</> : <><Upload size={12} /> Choose PDF (max {maxMb} MB)</>}
 					</button>
-					<style>{'@keyframes rpi-spin { to { transform: rotate(360deg); } }'}</style>
 				</div>
 			)}
 			{value && (

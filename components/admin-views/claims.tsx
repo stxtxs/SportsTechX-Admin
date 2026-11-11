@@ -76,7 +76,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
 	const c = stats.data?.claims;
 	const usersResp = useSWR<{ data: Array<{ id: string; full_name?: string | null; display_name?: string | null; email: string; user_role: string }> }>(
-		['/api/admin/users', { limit: 100 }], { dedupingInterval: 5 * 60_000 });
+		['/api/admin/users', { role: 'admin', limit: 100 }], { dedupingInterval: 5 * 60_000 });
 	const admins = (usersResp.data?.data ?? []).filter((u) => u.user_role === 'admin');
 
 	const claims = data?.data ?? [];

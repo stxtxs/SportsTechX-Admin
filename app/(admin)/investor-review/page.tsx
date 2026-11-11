@@ -73,7 +73,7 @@ export default function InvestorReviewPage() {
 	);
 	const { data: stats } = useSWR<Stats>(['/api/admin/investor-review/stats', { from: statsRange.from, to: statsRange.to }], { dedupingInterval: 15_000 });
 	const { data: timeStats } = useSWR<TimeStats>(['/api/admin/work-sessions/stats', { queue: 'investor_review', from: statsRange.from, to: statsRange.to }], { dedupingInterval: 30_000 });
-	const { data: usersResp } = useSWR<UsersResponse>(['/api/admin/users', { limit: 100 }], { dedupingInterval: 300_000 });
+	const { data: usersResp } = useSWR<UsersResponse>(['/api/admin/users', { role: 'admin', limit: 100 }], { dedupingInterval: 300_000 });
 	const admins = (usersResp?.data ?? []).filter((u) => u.user_role === 'admin');
 	const adminName = (id: string | null) => {
 		if (!id) return '—';

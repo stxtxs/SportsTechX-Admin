@@ -47,17 +47,32 @@ const WHY_BY_ENTITY: Record<string, string> = {
 	acquisitions: 'Two old acquisitions match this one (same companies, year and amount)',
 };
 const why = (r: { entity: string; match_key: string }) => (r.match_key === 'duplicate_source' && WHY_BY_ENTITY[r.entity]) || WHY[r.match_key] || r.match_key;
-/** What each answer does, per reason — mirrors server/scripts/migration/pipeline/upsert.ts. */
-const EFFECT: Record<string, { same: string; diff: string }> = {
-	name: { same: 'Links them. The old record fills empty fields here and never overwrites what Atlas has.', diff: 'Adds it to Atlas as a new record.' },
-	duplicate_source: { same: 'It’s a duplicate. Nothing is added.', diff: 'Adds it to Atlas as its own record.' },
+/**
+ * The two answers, named by what they do. Underneath they are still 'same' and
+ * 'separate'; the effects mirror server/scripts/migration/pipeline/upsert.ts:
+ * a "same" never overwrites a value Atlas has (it can only fill an empty one,
+ * and a disagreement is raised as a conflict), and when two old rows point at
+ * one Atlas record the old row is simply dropped.
+ */
+interface Choice { label: string; result: string }
+const CHOICES: Record<string, { same: Choice; diff: Choice }> = {
+	name: {
+		same: { label: 'Same — link to Atlas', result: 'Treated as the Atlas record. It only fills fields that are empty in Atlas, never changes them.' },
+		diff: { label: 'Add as new record', result: 'Added to Atlas as a separate record.' },
+	},
+	duplicate_source: {
+		same: { label: 'Keep Atlas only', result: 'Keeps the Atlas record and its values. The old one is not added.' },
+		diff: { label: 'Add as new record', result: 'Added to Atlas as a separate record, next to this one.' },
+	},
 };
-const EFFECT_FALLBACK = { same: 'Treats them as one record.', diff: 'Adds it to Atlas as a new record.' };
-const effect = (r: { entity: string; match_key: string }) => {
-	const fx = EFFECT[r.match_key] ?? EFFECT_FALLBACK;
+const CHOICE_FALLBACK = { same: { label: 'Same — keep Atlas', result: 'Treated as the Atlas record; Atlas values are kept.' }, diff: { label: 'Add as new record', result: 'Added to Atlas as a separate record.' } };
+const choices = (r: { entity: string; match_key: string }) => {
+	const c = CHOICES[r.match_key] ?? CHOICE_FALLBACK;
 	// A website belongs to one company only, so the new one is added without it (upsert.ts).
-	return r.entity === 'companies' && r.match_key === 'duplicate_source' ? { ...fx, diff: 'Adds it as a new company, without the shared website (it stays with the one here).' } : fx;
+	return r.entity === 'companies' && r.match_key === 'duplicate_source'
+		? { ...c, diff: { ...c.diff, result: 'Added as a new company, without the shared website (it stays with the Atlas one).' } } : c;
 };
+const DECIDED_LABEL = (r: Review) => (r.decision === 'same' ? choices(r).same.label : choices(r).diff.label);
 // A deal's "name" is its company, so a deal links to the company page.
 const atlasHref = (entity: string, id: string, t: Snap) =>
 	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}`
@@ -66,16 +81,52 @@ const Hint = ({ children, style }: { children: React.ReactNode; style?: React.CS
 	<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: '0 0 12px', lineHeight: 1.5, ...style }}>{children}</p>
 );
 
-/** One side of a possible duplicate: just what tells two records apart. */
-function SnapCell({ s, href }: { s: Snap | null; href?: string | null }) {
-	if (!s) return <em style={{ color: 'var(--fg-muted)' }}>record no longer exists</em>;
+/** The fields that tell two records apart, labelled. A deal's or acquisition's
+ *  details line ("round · date · amount") is split so each part compares. */
+const DETAIL_LABELS: Record<string, string[]> = { deals: ['Round', 'Date', 'Amount'], acquisitions: ['Date', 'Amount'] };
+function fieldsOf(entity: string, s: Snap | null): [string, string][] {
+	if (!s) return [];
+	const out: [string, string][] = [['Name', s.name ?? ''], ['Website', s.website ?? s.linkedin_url ?? '']];
+	const labels = DETAIL_LABELS[entity];
+	if (labels) {
+		// Parts are recognised, not counted: a missing one (often the amount) is
+		// simply absent from the line, so it shows as empty on that side.
+		const parts = (s.description ?? '').split(' · ').filter(Boolean);
+		const kind = (v: string) => (v.startsWith('$') ? 'Amount' : /^\d{4}(-\d{2}){0,2}$/.test(v) ? 'Date' : 'Round');
+		for (const l of labels) out.push([l, parts.find((v) => kind(v) === l) ?? '']);
+	} else {
+		if (s.founded_year) out.push(['Founded', String(s.founded_year)]);
+		if (s.status && s.status !== 'active') out.push(['Status', s.status]);
+		if (s.description) out.push(['About', s.description]);
+	}
+	return out;
+}
+const norm = (v: string) => v.trim().toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+
+/** One side of the comparison; a value that differs from the other side is highlighted. */
+function CompareSide({ title, entity, s, other, href }: { title: string; entity: string; s: Snap | null; other: Snap | null; href?: string | null }) {
+	const theirs = new Map(fieldsOf(entity, other));
 	return (
-		<div style={{ maxWidth: 340 }}>
-			<div style={{ fontWeight: 600 }}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{s.name ?? '—'}</a> : s.name ?? '—'}</div>
-			<div style={{ fontSize: 11.5, color: 'var(--fg-muted)' }}>
-				{[s.website, s.founded_year && `founded ${s.founded_year}`, s.status && s.status !== 'active' && s.status].filter(Boolean).join(' · ') || 'no website'}
-			</div>
-			{s.description && <div style={{ fontSize: 11.5, color: 'var(--fg-2)', marginTop: 4, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.description}</div>}
+		<div style={{ flex: '1 1 260px', minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '10px 12px' }}>
+			<div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{title}</div>
+			{!s ? <em style={{ color: 'var(--fg-muted)', fontSize: 12.5 }}>This record no longer exists in Atlas.</em> : (
+				<dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 10px', margin: 0, fontSize: 12.5 }}>
+					{fieldsOf(entity, s).map(([label, value]) => {
+						const diff = other != null && theirs.has(label) && norm(theirs.get(label) ?? '') !== norm(value);
+						const isName = label === 'Name';
+						return (
+							<div key={label} style={{ display: 'contents' }}>
+								<dt style={{ color: 'var(--fg-muted)' }}>{label}</dt>
+								<dd style={{ margin: 0, minWidth: 0, overflowWrap: 'anywhere', fontWeight: isName ? 600 : 400, color: diff ? 'var(--warn)' : undefined, ...(label === 'About' ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}
+									title={diff ? 'Differs from the other side' : undefined}>
+									{isName && href ? <a href={href} target="_blank" rel="noopener noreferrer">{value || '—'}</a> : value || <em style={{ color: 'var(--fg-muted)' }}>empty</em>}
+									{diff && <span style={{ fontSize: 10.5, marginLeft: 6, fontWeight: 600 }}>differs</span>}
+								</dd>
+							</div>
+						);
+					})}
+				</dl>
+			)}
 		</div>
 	);
 }
@@ -233,62 +284,58 @@ export default function DataMigrationPage() {
 									</select>
 									<select className="search-input" value={view} onChange={(e) => setView(e.target.value as Decision)} aria-label="Show">
 										<option value="pending">To verify</option>
-										<option value="same">Marked same</option>
-										<option value="separate">Marked different</option>
+										<option value="same">Answered: same / keep Atlas</option>
+										<option value="separate">Answered: add as new</option>
 									</select>
 								</div>
 							}
 							padded={false}
 						>
-							<Hint style={{ margin: '0 16px 6px' }}>
-								Each row is a record from the old system that might already be in Atlas. Until someone answers, it’s kept out of Atlas.
-								Answers take effect at the <b>next sync</b>, which the dev team runs; until then you can <b>Undo</b>. Each row says what its buttons will do.
-							</Hint>
-							<details style={{ margin: '0 16px 12px', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
-								<summary style={{ cursor: 'pointer', color: 'var(--fg)' }}>How to decide</summary>
-								<ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-									<li><b>Same</b> when it’s clearly one thing: the same organisation under a slightly different name or website, matching founded year or description. Where the name on the right is a link, open it to see the record in Atlas.</li>
-									<li><b>Different</b> when they’re separate things that happen to share a website. Two events by one organiser, or two funds of one firm, are different.</li>
-									<li>Deals and acquisitions: <b>Same</b> only if it’s the same company, round and date.</li>
-									<li>Not sure? Skip it. A wrong <b>Different</b> creates a duplicate someone has to delete; a skipped row costs nothing.</li>
-								</ul>
-							</details>
+							<div style={{ margin: '0 16px 12px', padding: '10px 12px', background: 'var(--bg-2)', border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
+								<div style={{ color: 'var(--fg)', fontWeight: 600, marginBottom: 4 }}>Is the old record the same thing as the one in Atlas?</div>
+								<div>• <b>Atlas is never overwritten.</b> Differences are highlighted. If Atlas has the right values, choose the <b>Keep Atlas only</b> / <b>Same</b> answer.</div>
+								<div>• <b>Add as new record</b> only when they are genuinely two things (two funds of one firm, two different rounds). Deals: same company, round and date means the same deal.</div>
+								<div>• Not sure? Leave it: it stays out of Atlas. Answers apply at the next sync (run by the dev team); until then you can <b>Undo</b>.</div>
+							</div>
 							<AsyncState loading={reviews.isLoading} error={reviews.error} empty={shown.length === 0} emptyMsg={view === 'pending' ? 'Nothing to verify' : 'None yet'} onRetry={() => void reviews.mutate()}>
-								<table className="data-table">
-									<thead><tr><th>Old system</th><th>Already here</th><th>Why flagged</th><th /></tr></thead>
-									<tbody>
-										{shown.map((r) => {
-											const k = `r${r.entity}${r.source_id}`;
-											const fx = effect(r);
-											return (
-												<tr key={`${r.entity}|${r.source_id}`}>
-													<td><div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{ENTITY_LABEL[r.entity] ?? r.entity}</div><SnapCell s={r.source} /></td>
-													<td><SnapCell s={r.target} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null} /></td>
-													<td style={{ fontSize: 12, color: 'var(--fg-2)', maxWidth: 240 }}>
-														{why(r)}
-														{view === 'pending' && (
-															<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 6, lineHeight: 1.45 }}>
-																<div><b>Same:</b> {fx.same}</div>
-																<div><b>Different:</b> {fx.diff}</div>
-															</div>
-														)}
-														{r.decided_by && <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>{r.decided_by} · {when(r.decided_at)}</div>}
-													</td>
-													<td style={{ whiteSpace: 'nowrap' }}>
+								<div style={{ display: 'grid', gap: 10, padding: '0 16px 16px' }}>
+									{shown.map((r) => {
+										const k = `r${r.entity}${r.source_id}`;
+										const c = choices(r);
+										return (
+											<div key={`${r.entity}|${r.source_id}`} style={{ border: '1px solid var(--border)', padding: 12 }}>
+												<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, fontSize: 12 }}>
+													<span className="tag">{ENTITY_LABEL[r.entity] ?? r.entity}</span>
+													<span style={{ color: 'var(--fg-2)' }}>{why(r)}</span>
+													{r.decided_by && <span style={{ color: 'var(--fg-muted)', marginLeft: 'auto' }}>{DECIDED_LABEL(r)} · {r.decided_by} · {when(r.decided_at)}</span>}
+												</div>
+												<div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
+													<CompareSide title="Old system" entity={r.entity} s={r.source} other={r.target} />
+													<CompareSide title="In Atlas" entity={r.entity} s={r.target} other={r.source} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null} />
+													<div style={{ flex: '0 1 230px', display: 'grid', gap: 8, alignContent: 'start' }}>
 														{view === 'pending' ? (
 															<>
-																<button className="btn ghost" disabled={busy === k || !r.target} onClick={() => void decide(r, 'same')} title={r.target ? `Same: ${fx.same}` : 'The record here no longer exists'}>Same</button>{' '}
-																<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'separate')} title={`Different: ${fx.diff}`}>Different</button>
+																<div>
+																	<button className="btn" style={{ width: '100%' }} disabled={busy === k || !r.target} onClick={() => void decide(r, 'same')}>{c.same.label}</button>
+																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{r.target ? c.same.result : 'Not possible: the Atlas record no longer exists.'}</div>
+																</div>
+																<div>
+																	<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'separate')}>{c.diff.label}</button>
+																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{c.diff.result}</div>
+																</div>
 															</>
 														) : (
-															<button className="btn ghost" disabled={busy === k} onClick={() => void decide(r, 'pending')} title="Moves it back to “To verify”. Only matters before the next sync applies the answer.">Undo</button>
+															<div>
+																<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'pending')}>Undo</button>
+																<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>Moves it back to “To verify”. Only matters before the next sync applies it.</div>
+															</div>
 														)}
-													</td>
-												</tr>
-											);
-										})}
-									</tbody>
-								</table>
+													</div>
+												</div>
+											</div>
+										);
+									})}
+								</div>
 							</AsyncState>
 						</Section>
 

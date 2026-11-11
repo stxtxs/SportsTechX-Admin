@@ -82,7 +82,7 @@ export default function StartupsPipelinePage() {
 	const [statsRange, setStatsRange] = useState<RangeValue>({});
 	const { data: stats } = useSWR<Stats>(['/api/admin/startups-pipeline/stats', { from: statsRange.from, to: statsRange.to }], { dedupingInterval: 30_000 });
 	const { data: timeStats } = useSWR<TimeStats>(['/api/admin/work-sessions/stats', { queue: 'startups_pipeline', from: statsRange.from, to: statsRange.to }], { dedupingInterval: 30_000 });
-	const { data: usersResp } = useSWR<UsersResponse>(['/api/admin/users', { limit: 100 }], { dedupingInterval: 300_000 });
+	const { data: usersResp } = useSWR<UsersResponse>(['/api/admin/users', { role: 'admin', limit: 100 }], { dedupingInterval: 300_000 });
 	const admins = (usersResp?.data ?? []).filter((u) => u.user_role === 'admin');
 	const adminName = (id: string | null) => { if (!id) return '—'; const u = admins.find((a) => a.id === id); return u ? (u.full_name || u.display_name || u.email) : `${id.slice(0, 8)}…`; };
 	const timeFor = (id: string | null) => timeStats?.perAdmin.find((t) => t.admin_id === id);

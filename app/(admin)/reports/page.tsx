@@ -302,11 +302,14 @@ function EditReportForm({ id, initial, onClose, onSaved }: { id: string; initial
 				report_month: f.report_month ? Number(f.report_month) : null,
 				report_year: f.report_year ? Number(f.report_year) : null,
 				show_on_dashboard: f.show_on_dashboard,
-				drive_link: f.drive_link.trim() || undefined,
-				pdf_url: f.pdf_url.trim() || undefined,
-				cover_url: f.cover_url.trim() || undefined,
-				description: f.description.trim() || undefined,
-				summary_points: f.summary_points.trim() || undefined,
+				// `null`, not undefined: an emptied field must clear the stored value.
+				// Sending nothing left the old text in place, so a deleted
+				// description kept coming back on every reopen.
+				drive_link: f.drive_link.trim() || null,
+				pdf_url: f.pdf_url.trim() || null,
+				cover_url: f.cover_url.trim() || null,
+				description: f.description.trim() || null,
+				summary_points: f.summary_points.trim() || null,
 				// Always sent, so clearing the field clears the tags.
 				tags: parseTags(f.tags),
 			});

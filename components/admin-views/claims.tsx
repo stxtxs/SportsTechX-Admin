@@ -108,6 +108,11 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const reopen = (id: string) => act(id, () => api('POST', `/api/admin/claims/${id}/reopen`), 'Claim re-opened');
 	const unverify = (id: string) => act(id, () => api('POST', `/api/admin/claims/${id}/unverify`), 'Verification removed');
 	const regenerate = (id: string) => act(id, () => api('POST', `/api/admin/claims/${id}/regenerate-report`), 'Report regeneration queued');
+	// Manual send of the report-link email (the report job also sends it on its own).
+	const sendReport = (cl: Claim) => {
+		if (!window.confirm(`Email the report link to ${cl.claimant_email ?? 'the claimant'}?`)) return;
+		void act(cl.id, () => api('POST', `/api/admin/claims/${cl.id}/send-report`), 'Report link emailed');
+	};
 	const toggleActive = (id: string, active: boolean) => act(id, () => api('POST', `/api/admin/claims/${id}/toggle-active`, { active }), active ? 'Marked active' : 'Marked inactive');
 	const copyShare = (token: string) => { void navigator.clipboard.writeText(`${window.location.origin}/verified/${token}`); toast.success('Share link copied'); };
 
@@ -224,6 +229,9 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 										<a className="btn ghost" style={{ color: 'var(--pos)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
 											href={`${ATLAS_BASE}/verified-reports/${cl.report_id}`} target="_blank" rel="noopener noreferrer"
 											title="Open the verified-company (Locker Room) report in Atlas">View report <ExternalLink size={10} /></a>
+									)}
+									{cl.report_id && cl.report_status === 'ready' && (
+										<button className="btn ghost" disabled={pendingId === cl.id} onClick={() => sendReport(cl)} title="Email the claimant the link to this report">Email report</button>
 									)}
 									{cl.report_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Report generating…</span>}
 									{cl.report_status === 'error' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>Report failed — regenerate</span>}

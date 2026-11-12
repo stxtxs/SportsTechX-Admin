@@ -26,8 +26,13 @@ interface Status {
 	reviews?: { entity: string; pending: number; total: number }[];
 }
 interface Snap { name?: string | null; website?: string | null; linkedin_url?: string | null; founded_year?: number | null; description?: string | null; status?: string | null; slug?: string | null }
-type Decision = 'pending' | 'same' | 'separate';
-interface Review { entity: string; source_id: string; target_id: string | null; match_key: string; source: Snap; target: Snap | null; decision: Decision; decided_by: string | null; decided_at: string | null }
+type Decision = 'pending' | 'same' | 'separate' | 'use_old';
+interface Review {
+	entity: string; source_id: string; target_id: string | null; match_key: string; source: Snap; target: Snap | null;
+	decision: Decision; decided_by: string | null; decided_at: string | null;
+	/** The Atlas record's editable fields, raw — pre-fills the row's inputs. */
+	editable?: Record<string, unknown> | null;
+}
 interface Conflict { id: number; entity: string; target_id: string; label: string | null; col: string; base_value: unknown; old_value: unknown; new_value: unknown; created_at: string }
 
 const PHASES: { key: Phase; label: string; hint: string }[] = [
@@ -72,7 +77,13 @@ const choices = (r: { entity: string; match_key: string }) => {
 	return r.entity === 'companies' && r.match_key === 'duplicate_source'
 		? { ...c, diff: { ...c.diff, result: 'Added as a new company, without the shared website (it stays with the Atlas one).' } } : c;
 };
-const DECIDED_LABEL = (r: Review) => (r.decision === 'same' ? choices(r).same.label : choices(r).diff.label);
+/** The third answer: the old record is the right one. Same link as "same", but its
+ *  values are written over Atlas's (pipeline/upsert.ts, decision 'use_old'). */
+const USE_OLD: Choice = {
+	label: 'Use old record',
+	result: 'The old record is right: its values replace the Atlas record’s at the next sync (a field it leaves empty keeps Atlas’s). Same Atlas record, so its links stay.',
+};
+const DECIDED_LABEL = (r: Review) => (r.decision === 'same' ? choices(r).same.label : r.decision === 'use_old' ? USE_OLD.label : choices(r).diff.label);
 // A deal's "name" is its company, so a deal links to the company page.
 const atlasHref = (entity: string, id: string, t: Snap) =>
 	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}`
@@ -131,6 +142,80 @@ function CompareSide({ title, entity, s, other, href }: { title: string; entity:
 	);
 }
 
+/** The Atlas fields an admin can type into from a review row (server: EDITABLE in admin-migration.controller.ts). */
+type EditKind = 'text' | 'long' | 'year' | 'date' | 'money' | 'round';
+const EDIT_FIELDS: Record<string, { col: string; label: string; kind: EditKind }[]> = {
+	companies: [{ col: 'name', label: 'Name', kind: 'text' }, { col: 'website', label: 'Website', kind: 'text' }, { col: 'founded_year', label: 'Founded', kind: 'year' }, { col: 'description', label: 'About', kind: 'long' }],
+	investors: [{ col: 'name', label: 'Name', kind: 'text' }, { col: 'website', label: 'Website', kind: 'text' }, { col: 'year_launched', label: 'Launched', kind: 'year' }, { col: 'description', label: 'About', kind: 'long' }],
+	ecosystem_entities: [{ col: 'name', label: 'Name', kind: 'text' }, { col: 'website', label: 'Website', kind: 'text' }, { col: 'founded_year', label: 'Founded', kind: 'year' }, { col: 'description', label: 'About', kind: 'long' }],
+	deals: [{ col: 'round_type_id', label: 'Round', kind: 'round' }, { col: 'announced_date', label: 'Date', kind: 'date' }, { col: 'amount_usd', label: 'Amount (USD)', kind: 'money' }],
+	acquisitions: [{ col: 'acquisition_date', label: 'Date', kind: 'date' }, { col: 'acquisition_year', label: 'Year', kind: 'year' }, { col: 'amount_usd', label: 'Amount (USD)', kind: 'money' }],
+};
+
+/**
+ * Type the right values straight into the Atlas record. Pre-filled with what
+ * Atlas holds now; saving writes the changed fields immediately and answers the
+ * item "same", so the next sync only links the old record and never overwrites
+ * what was typed. The buttons beside it stay as one-click answers.
+ */
+function EditAtlas({ r, onSaved }: { r: Review; onSaved: () => Promise<unknown> }) {
+	const fields = EDIT_FIELDS[r.entity] ?? [];
+	const initial: Record<string, string> = Object.fromEntries(fields.map((f) => [f.col, r.editable?.[f.col] == null ? '' : String(r.editable[f.col])]));
+	const [vals, setVals] = useState(initial);
+	const [saving, setSaving] = useState(false);
+	const rounds = useSWR<{ id: string; name: string }[]>(fields.some((f) => f.kind === 'round') ? '/api/round-types' : null);
+	if (!fields.length) return null;
+	const changed = fields.filter((f) => vals[f.col] !== initial[f.col]);
+	const set = (col: string, v: string) => setVals((p) => ({ ...p, [col]: v }));
+	const save = async () => {
+		setSaving(true);
+		try {
+			const values = Object.fromEntries(changed.map((f) => [f.col, vals[f.col].trim() === '' ? null : vals[f.col]]));
+			await api('POST', '/api/admin/migration/reviews/save', { entity: r.entity, source_id: r.source_id, values });
+			toast.success('Saved to Atlas');
+			await onSaved();
+		} catch (e) { toast.error((e as Error).message); } finally { setSaving(false); }
+	};
+	const label: React.CSSProperties = { display: 'grid', gap: 3, fontSize: 11.5, color: 'var(--fg-muted)', minWidth: 0 };
+	return (
+		<div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+			<div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>Edit the Atlas record</div>
+			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+				{fields.map((f) => (
+					<label key={f.col} style={{ ...label, ...(f.kind === 'long' ? { gridColumn: '1 / -1' } : {}) }}>
+						{f.label}
+						{f.kind === 'round' ? (
+							<select className="search-input" value={vals[f.col]} onChange={(e) => set(f.col, e.target.value)}>
+								<option value="">—</option>
+								{(rounds.data ?? []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+							</select>
+						) : f.kind === 'long' ? (
+							<textarea className="search-input" rows={3} value={vals[f.col]} onChange={(e) => set(f.col, e.target.value)} style={{ resize: 'vertical', height: 'auto' }} />
+						) : (
+							<input
+								className="search-input"
+								type={f.kind === 'date' ? 'date' : f.kind === 'text' ? 'text' : 'number'}
+								step={f.kind === 'money' ? 'any' : undefined}
+								value={vals[f.col]}
+								onChange={(e) => set(f.col, e.target.value)}
+							/>
+						)}
+					</label>
+				))}
+			</div>
+			<div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+				<button className="btn" disabled={saving || changed.length === 0} onClick={() => void save()}>{saving ? 'Saving…' : 'Save to Atlas'}</button>
+				{changed.length > 0 && <button className="btn ghost" disabled={saving} onClick={() => setVals(initial)}>Reset</button>}
+				<span style={{ fontSize: 11.5, color: 'var(--fg-muted)', lineHeight: 1.4 }}>
+					{changed.length
+						? `Writes ${changed.length} field${changed.length > 1 ? 's' : ''} to the Atlas record now and answers “same”: the next sync only links the old record and never overwrites what you typed.`
+						: 'Change any field to correct the Atlas record directly.'}
+				</span>
+			</div>
+		</div>
+	);
+}
+
 const when = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : '—');
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? <em style={{ color: 'var(--fg-muted)' }}>empty</em> : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
@@ -171,7 +256,7 @@ export default function DataMigrationPage() {
 		try {
 			await api('POST', '/api/admin/migration/reviews/decide', { entity: r.entity, source_id: r.source_id, decision });
 			await Promise.all([reviews.mutate(), status.mutate()]);
-			toast.success(decision === 'same' ? 'Marked as the same record' : decision === 'separate' ? 'Marked as a different record' : 'Back to pending');
+			toast.success(decision === 'same' ? 'Marked as the same record' : decision === 'use_old' ? 'The old record will replace the Atlas values' : decision === 'separate' ? 'Marked as a different record' : 'Back to pending');
 		} catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
 	};
 	const pendingBy = status.data?.reviews ?? [];
@@ -285,6 +370,7 @@ export default function DataMigrationPage() {
 									<select className="search-input" value={view} onChange={(e) => setView(e.target.value as Decision)} aria-label="Show">
 										<option value="pending">To verify</option>
 										<option value="same">Answered: same / keep Atlas</option>
+										<option value="use_old">Answered: use old record</option>
 										<option value="separate">Answered: add as new</option>
 									</select>
 								</div>
@@ -293,7 +379,7 @@ export default function DataMigrationPage() {
 						>
 							<div style={{ margin: '0 16px 12px', padding: '10px 12px', background: 'var(--bg-2)', border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.55 }}>
 								<div style={{ color: 'var(--fg)', fontWeight: 600, marginBottom: 4 }}>Is the old record the same thing as the one in Atlas?</div>
-								<div>• <b>Atlas is never overwritten.</b> Differences are highlighted. If Atlas has the right values, choose the <b>Keep Atlas only</b> / <b>Same</b> answer.</div>
+								<div>• Differences are highlighted. If <b>Atlas</b> has the right values, choose <b>Keep Atlas only</b> / <b>Same</b>. If the <b>old record</b> is right, choose <b>Use old record</b>: its values replace Atlas’s.</div>
 								<div>• <b>Add as new record</b> only when they are genuinely two things (two funds of one firm, two different rounds). Deals: same company, round and date means the same deal.</div>
 								<div>• Not sure? Leave it: it stays out of Atlas. Answers apply at the next sync (run by the dev team); until then you can <b>Undo</b>.</div>
 							</div>
@@ -320,6 +406,10 @@ export default function DataMigrationPage() {
 																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{r.target ? c.same.result : 'Not possible: the Atlas record no longer exists.'}</div>
 																</div>
 																<div>
+																	<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k || !r.target} onClick={() => void decide(r, 'use_old')}>{USE_OLD.label}</button>
+																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{r.target ? USE_OLD.result : 'Not possible: the Atlas record no longer exists.'}</div>
+																</div>
+																<div>
 																	<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'separate')}>{c.diff.label}</button>
 																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{c.diff.result}</div>
 																</div>
@@ -332,6 +422,7 @@ export default function DataMigrationPage() {
 														)}
 													</div>
 												</div>
+												{view === 'pending' && r.target && r.editable && <EditAtlas key={`${r.entity}|${r.source_id}`} r={r} onSaved={() => Promise.all([reviews.mutate(), status.mutate()])} />}
 											</div>
 										);
 									})}

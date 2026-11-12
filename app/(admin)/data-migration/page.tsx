@@ -194,8 +194,10 @@ function EditAtlas({ r, onSaved }: { r: Review; onSaved: () => Promise<unknown> 
 						) : (
 							<input
 								className="search-input"
-								type={f.kind === 'date' ? 'date' : f.kind === 'text' ? 'text' : 'number'}
-								step={f.kind === 'money' ? 'any' : undefined}
+								// Text, not type=number: a number input reads "1,000,000" as '' and the
+								// save would clear the field. The server strips $ and commas itself.
+								type={f.kind === 'date' ? 'date' : 'text'}
+								inputMode={f.kind === 'money' ? 'decimal' : f.kind === 'year' ? 'numeric' : undefined}
 								value={vals[f.col]}
 								onChange={(e) => set(f.col, e.target.value)}
 							/>
@@ -422,7 +424,7 @@ export default function DataMigrationPage() {
 														)}
 													</div>
 												</div>
-												{view === 'pending' && r.target && r.editable && <EditAtlas key={`${r.entity}|${r.source_id}`} r={r} onSaved={() => Promise.all([reviews.mutate(), status.mutate()])} />}
+												{view === 'pending' && r.target && r.editable && <EditAtlas key={`${r.entity}|${r.source_id}|${JSON.stringify(r.editable)}`} r={r} onSaved={() => Promise.all([reviews.mutate(), status.mutate()])} />}
 											</div>
 										);
 									})}

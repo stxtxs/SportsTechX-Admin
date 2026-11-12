@@ -491,7 +491,7 @@ export default function DataMigrationPage() {
 													<td style={{ fontSize: 12 }}>{d.website || <span style={{ color: 'var(--fg-muted)' }}>none on the old deal</span>}</td>
 													<td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{d.date ? d.date.slice(0, 10) : '—'}</td>
 													<td style={{ fontSize: 12 }}>{d.round ?? '—'}</td>
-													<td style={{ whiteSpace: 'nowrap' }}>{d.amount_usd ? `$${(Number(d.amount_usd) / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
+													<td style={{ whiteSpace: 'nowrap' }}>{Number(d.amount_usd) > 0 ? `$${(Number(d.amount_usd) / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
 													<td style={{ fontSize: 12 }}>{d.country ?? '—'}</td>
 													<td style={{ fontSize: 12 }}>
 														{d.in_atlas ? (

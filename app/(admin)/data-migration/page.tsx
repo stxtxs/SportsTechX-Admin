@@ -26,6 +26,7 @@ interface Status {
 	tables?: TableRow[];
 	conflicts?: { entity: string; open: number }[];
 	reviews?: { entity: string; pending: number; total: number }[];
+	answers?: { decision: string; n: number }[];
 }
 interface Snap { name?: string | null; website?: string | null; linkedin_url?: string | null; founded_year?: number | null; description?: string | null; status?: string | null; slug?: string | null }
 type Decision = 'pending' | 'same' | 'separate' | 'use_old' | 'discard';
@@ -284,11 +285,14 @@ export default function DataMigrationPage() {
 		setBusy(`d${d.source_id}`);
 		try {
 			await api('POST', '/api/admin/migration/unresolved-deals/discard', { source_id: d.source_id });
-			await Promise.all([waiting.mutate(), reviews.mutate()]);
+			await Promise.all([waiting.mutate(), reviews.mutate(), status.mutate()]);
 			toast.success('Discarded. Undo it under Possible duplicates → “Answered: discarded”.');
 		} catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
 	};
 	const pendingBy = status.data?.reviews ?? [];
+	const answered = new Map((status.data?.answers ?? []).map((a) => [a.decision, a.n]));
+	const count = (d: Decision) => ` (${answered.get(d) ?? 0})`;
+	const answeredTotal = [...answered].reduce((n, [d, k]) => (d === 'pending' ? n : n + k), 0);
 
 	return (
 		<>
@@ -397,11 +401,11 @@ export default function DataMigrationPage() {
 										{pendingBy.map((r) => <option key={r.entity} value={r.entity}>{ENTITY_LABEL[r.entity] ?? r.entity} ({r.pending})</option>)}
 									</select>
 									<select className="search-input" value={view} onChange={(e) => setView(e.target.value as Decision)} aria-label="Show">
-										<option value="pending">To verify</option>
-										<option value="same">Answered: same / keep Atlas</option>
-										<option value="use_old">Answered: use old record</option>
-										<option value="separate">Answered: add as new</option>
-										<option value="discard">Answered: discarded</option>
+										<option value="pending">To verify{count('pending')}</option>
+										<option value="same">Answered: same / keep Atlas{count('same')}</option>
+										<option value="use_old">Answered: use old record{count('use_old')}</option>
+										<option value="separate">Answered: add as new{count('separate')}</option>
+										<option value="discard">Answered: discarded{count('discard')}</option>
 									</select>
 								</div>
 							}
@@ -414,7 +418,9 @@ export default function DataMigrationPage() {
 								<div>• The old record is wrong or unwanted? <b>Discard old record</b>: it is dropped from the migration for good, and Atlas stays as it is.</div>
 								<div>• Not sure? Leave it: it stays out of Atlas. Answers apply at the next sync (run by the dev team); until then you can <b>Undo</b>.</div>
 							</div>
-							<AsyncState loading={reviews.isLoading} error={reviews.error} empty={shown.length === 0} emptyMsg={view === 'pending' ? 'Nothing to verify' : 'None yet'} onRetry={() => void reviews.mutate()}>
+							<AsyncState loading={reviews.isLoading} error={reviews.error} empty={shown.length === 0} emptyMsg={view === 'pending'
+									? (answeredTotal ? `Nothing left to verify: all ${answeredTotal} items are answered. Pick an “Answered” view above to check or change them.` : 'Nothing to verify')
+									: 'None yet'} onRetry={() => void reviews.mutate()}>
 								<div style={{ display: 'grid', gap: 10, padding: '0 16px 16px' }}>
 									{shown.map((r) => {
 										const k = `r${r.entity}${r.source_id}`;

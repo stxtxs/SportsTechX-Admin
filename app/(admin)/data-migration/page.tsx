@@ -17,7 +17,7 @@ type Phase = 'dual_running' | 'old_frozen' | 'final_sync' | 'verified' | 'comple
 interface TableRow { table_name: string; mode: 'dry_run' | 'apply'; started_at: string; extract_at: string | null; inserted: number; updated: number; skipped: number; reviewed: number; conflicts: number }
 interface UnresolvedDeal { source_id?: string; name: string; website: string; date: string | null; amount_usd: number | null; round: string | null; country: string | null;
 	/** An Atlas deal this one may already be (server: GET admin/migration/unresolved-deals). */
-	in_atlas?: { company: string; slug: string | null; date: string; amount_usd: number | null; by: 'name' | 'amount' } | null }
+	in_atlas?: { company: string; slug: string | null; date: string; amount_usd: number | null } | null }
 interface Run { id: string; kind: string; mode: string; status: string; started_at: string; finished_at: string | null; extract_at: string | null; summary?: { unresolved_deals?: UnresolvedDeal[] } | null }
 interface Status {
 	ready: boolean;
@@ -489,8 +489,8 @@ export default function DataMigrationPage() {
 													<td style={{ fontSize: 12 }}>{d.country ?? '—'}</td>
 													<td style={{ fontSize: 12 }}>
 														{d.in_atlas ? (
-															<span title={d.in_atlas.by === 'name' ? 'Same company name, within a month' : 'Different company name, same date and amount: check it is the same company'}>
-																{d.in_atlas.by === 'name' ? 'Likely: ' : 'Maybe: '}
+															<span title="Near-identical company name, within a month, matching or undisclosed amount. Check it, then Discard this row.">
+																{'Likely: '}
 																{d.in_atlas.slug ? <a href={`${ATLAS}/companies/${d.in_atlas.slug}`} target="_blank" rel="noopener noreferrer">{d.in_atlas.company}</a> : d.in_atlas.company}
 																{' · '}{String(d.in_atlas.date).slice(0, 10)}{' · '}{Number(d.in_atlas.amount_usd) > 0 ? `$${(Number(d.in_atlas.amount_usd) / 1e6).toFixed(1)}M` : 'Undisclosed'}
 															</span>

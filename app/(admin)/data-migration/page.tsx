@@ -15,7 +15,9 @@ import { PageHeader, AsyncState, Section } from '@/components/atoms';
  */
 type Phase = 'dual_running' | 'old_frozen' | 'final_sync' | 'verified' | 'complete';
 interface TableRow { table_name: string; mode: 'dry_run' | 'apply'; started_at: string; extract_at: string | null; inserted: number; updated: number; skipped: number; reviewed: number; conflicts: number }
-interface UnresolvedDeal { name: string; website: string; date: string | null; amount_usd: number | null; round: string | null; country: string | null }
+interface UnresolvedDeal { source_id?: string; name: string; website: string; date: string | null; amount_usd: number | null; round: string | null; country: string | null;
+	/** An Atlas deal this one may already be (server: GET admin/migration/unresolved-deals). */
+	in_atlas?: { company: string; slug: string | null; date: string; amount_usd: number | null; by: 'name' | 'amount' } | null }
 interface Run { id: string; kind: string; mode: string; status: string; started_at: string; finished_at: string | null; extract_at: string | null; summary?: { unresolved_deals?: UnresolvedDeal[] } | null }
 interface Status {
 	ready: boolean;
@@ -26,7 +28,7 @@ interface Status {
 	reviews?: { entity: string; pending: number; total: number }[];
 }
 interface Snap { name?: string | null; website?: string | null; linkedin_url?: string | null; founded_year?: number | null; description?: string | null; status?: string | null; slug?: string | null }
-type Decision = 'pending' | 'same' | 'separate' | 'use_old';
+type Decision = 'pending' | 'same' | 'separate' | 'use_old' | 'discard';
 interface Review {
 	entity: string; source_id: string; target_id: string | null; match_key: string; source: Snap; target: Snap | null;
 	decision: Decision; decided_by: string | null; decided_at: string | null;
@@ -45,7 +47,7 @@ const PHASES: { key: Phase; label: string; hint: string }[] = [
 
 const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 const ENTITY_LABEL: Record<string, string> = { companies: 'Company', investors: 'Investor', ecosystem_entities: 'Ecosystem', deals: 'Deal', acquisitions: 'Acquisition' };
-const WHY: Record<string, string> = { name: 'Same name, different or missing website', duplicate_source: 'Two old records share this one (same website)' };
+const WHY: Record<string, string> = { name: 'Same name, different or missing website', duplicate_source: 'Two old records share this one (same website)', no_company: 'Deal waiting for a company' };
 // Deals and acquisitions match on their own keys, not a website (pipeline/entities/{deals,acquisitions}.ts).
 const WHY_BY_ENTITY: Record<string, string> = {
 	deals: 'Two old deals match this one (same company, round and date)',
@@ -83,7 +85,13 @@ const USE_OLD: Choice = {
 	label: 'Use old record',
 	result: 'The old record is right: its values replace the Atlas record’s at the next sync (a field it leaves empty keeps Atlas’s). Same Atlas record, so its links stay.',
 };
-const DECIDED_LABEL = (r: Review) => (r.decision === 'same' ? choices(r).same.label : r.decision === 'use_old' ? USE_OLD.label : choices(r).diff.label);
+/** The way out: the old record is wrong or unwanted, so it is dropped from the migration
+ *  (pipeline/upsert.ts skips it on every sync). Atlas is left exactly as it is. */
+const DISCARD: Choice = {
+	label: 'Discard old record',
+	result: 'Dropped from the migration: never added to Atlas or linked, and later syncs skip it. Atlas stays as it is.',
+};
+const DECIDED_LABEL = (r: Review) => (r.decision === 'same' ? choices(r).same.label : r.decision === 'use_old' ? USE_OLD.label : r.decision === 'discard' ? 'Discarded' : choices(r).diff.label);
 // A deal's "name" is its company, so a deal links to the company page.
 const atlasHref = (entity: string, id: string, t: Snap) =>
 	entity === 'companies' ? `${ATLAS}/companies/${t.slug ?? id}` : entity === 'investors' ? `${ATLAS}/investors/${t.slug ?? id}`
@@ -115,12 +123,12 @@ function fieldsOf(entity: string, s: Snap | null): [string, string][] {
 const norm = (v: string) => v.trim().toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
 /** One side of the comparison; a value that differs from the other side is highlighted. */
-function CompareSide({ title, entity, s, other, href }: { title: string; entity: string; s: Snap | null; other: Snap | null; href?: string | null }) {
+function CompareSide({ title, entity, s, other, href, emptyMsg = 'This record no longer exists in Atlas.' }: { title: string; entity: string; s: Snap | null; other: Snap | null; href?: string | null; emptyMsg?: string }) {
 	const theirs = new Map(fieldsOf(entity, other));
 	return (
 		<div style={{ flex: '1 1 260px', minWidth: 0, background: 'var(--bg-2)', border: '1px solid var(--border)', padding: '10px 12px' }}>
 			<div style={{ fontSize: 10.5, color: 'var(--fg-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{title}</div>
-			{!s ? <em style={{ color: 'var(--fg-muted)', fontSize: 12.5 }}>This record no longer exists in Atlas.</em> : (
+			{!s ? <em style={{ color: 'var(--fg-muted)', fontSize: 12.5 }}>{emptyMsg}</em> : (
 				<dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 10px', margin: 0, fontSize: 12.5 }}>
 					{fieldsOf(entity, s).map(([label, value]) => {
 						const diff = other != null && theirs.has(label) && norm(theirs.get(label) ?? '') !== norm(value);
@@ -138,6 +146,15 @@ function CompareSide({ title, entity, s, other, href }: { title: string; entity:
 					})}
 				</dl>
 			)}
+		</div>
+	);
+}
+
+function DiscardButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+	return (
+		<div>
+			<button className="btn ghost" style={{ width: '100%', color: 'var(--danger, #dc2626)' }} disabled={disabled} onClick={onClick}>{DISCARD.label}</button>
+			<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{DISCARD.result}</div>
 		</div>
 	);
 }
@@ -229,6 +246,7 @@ export default function DataMigrationPage() {
 	const [entity, setEntity] = useState('');
 	const reviews = useSWR<Review[]>(status.data?.ready ? `/api/admin/migration/reviews?decision=${view}` : null);
 	const shown = (reviews.data ?? []).filter((r) => !entity || r.entity === entity);
+	const waiting = useSWR<{ run_at: string | null; rows: UnresolvedDeal[] }>(status.data?.ready ? '/api/admin/migration/unresolved-deals' : null);
 
 	const tables = status.data?.tables ?? [];
 	const byTable = new Map<string, { dry?: TableRow; apply?: TableRow }>();
@@ -257,8 +275,17 @@ export default function DataMigrationPage() {
 		setBusy(`r${r.entity}${r.source_id}`);
 		try {
 			await api('POST', '/api/admin/migration/reviews/decide', { entity: r.entity, source_id: r.source_id, decision });
-			await Promise.all([reviews.mutate(), status.mutate()]);
-			toast.success(decision === 'same' ? 'Marked as the same record' : decision === 'use_old' ? 'The old record will replace the Atlas values' : decision === 'separate' ? 'Marked as a different record' : 'Back to pending');
+			await Promise.all([reviews.mutate(), status.mutate(), waiting.mutate()]);
+			toast.success(decision === 'same' ? 'Marked as the same record' : decision === 'use_old' ? 'The old record will replace the Atlas values' : decision === 'separate' ? 'Marked as a different record' : decision === 'discard' ? 'Discarded. Undo it under “Answered: discarded”.' : 'Back to pending');
+		} catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
+	};
+	const discardDeal = async (d: UnresolvedDeal) => {
+		if (!d.source_id) return;
+		setBusy(`d${d.source_id}`);
+		try {
+			await api('POST', '/api/admin/migration/unresolved-deals/discard', { source_id: d.source_id });
+			await Promise.all([waiting.mutate(), reviews.mutate()]);
+			toast.success('Discarded. Undo it under Possible duplicates → “Answered: discarded”.');
 		} catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
 	};
 	const pendingBy = status.data?.reviews ?? [];
@@ -374,6 +401,7 @@ export default function DataMigrationPage() {
 										<option value="same">Answered: same / keep Atlas</option>
 										<option value="use_old">Answered: use old record</option>
 										<option value="separate">Answered: add as new</option>
+										<option value="discard">Answered: discarded</option>
 									</select>
 								</div>
 							}
@@ -383,6 +411,7 @@ export default function DataMigrationPage() {
 								<div style={{ color: 'var(--fg)', fontWeight: 600, marginBottom: 4 }}>Is the old record the same thing as the one in Atlas?</div>
 								<div>• Differences are highlighted. If <b>Atlas</b> has the right values, choose <b>Keep Atlas only</b> / <b>Same</b>. If the <b>old record</b> is right, choose <b>Use old record</b>: its values replace Atlas’s.</div>
 								<div>• <b>Add as new record</b> only when they are genuinely two things (two funds of one firm, two different rounds). Deals: same company, round and date means the same deal.</div>
+								<div>• The old record is wrong or unwanted? <b>Discard old record</b>: it is dropped from the migration for good, and Atlas stays as it is.</div>
 								<div>• Not sure? Leave it: it stays out of Atlas. Answers apply at the next sync (run by the dev team); until then you can <b>Undo</b>.</div>
 							</div>
 							<AsyncState loading={reviews.isLoading} error={reviews.error} empty={shown.length === 0} emptyMsg={view === 'pending' ? 'Nothing to verify' : 'None yet'} onRetry={() => void reviews.mutate()}>
@@ -399,7 +428,8 @@ export default function DataMigrationPage() {
 												</div>
 												<div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
 													<CompareSide title="Old system" entity={r.entity} s={r.source} other={r.target} />
-													<CompareSide title="In Atlas" entity={r.entity} s={r.target} other={r.source} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null} />
+													<CompareSide title="In Atlas" entity={r.entity} s={r.target} other={r.source} href={r.target && r.target_id ? atlasHref(r.entity, r.target_id, r.target) : null}
+														emptyMsg={r.match_key === 'no_company' ? 'Not in Atlas: its company is missing.' : undefined} />
 													<div style={{ flex: '0 1 230px', display: 'grid', gap: 8, alignContent: 'start' }}>
 														{view === 'pending' ? (
 															<>
@@ -415,12 +445,18 @@ export default function DataMigrationPage() {
 																	<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'separate')}>{c.diff.label}</button>
 																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>{c.diff.result}</div>
 																</div>
+																<DiscardButton disabled={busy === k} onClick={() => void decide(r, 'discard')} />
 															</>
 														) : (
-															<div>
-																<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'pending')}>Undo</button>
-																<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>Moves it back to “To verify”. Only matters before the next sync applies it.</div>
-															</div>
+															<>
+																<div>
+																	<button className="btn ghost" style={{ width: '100%' }} disabled={busy === k} onClick={() => void decide(r, 'pending')}>Undo</button>
+																	<div style={{ fontSize: 11.5, color: 'var(--fg-muted)', marginTop: 3, lineHeight: 1.4 }}>
+																		{r.match_key === 'no_company' ? 'Puts it back on “Deals waiting for a company”.' : 'Moves it back to “To verify”. Only matters before the next sync applies it.'}
+																	</div>
+																</div>
+																{view !== 'discard' && <DiscardButton disabled={busy === k} onClick={() => void decide(r, 'discard')} />}
+															</>
 														)}
 													</div>
 												</div>
@@ -432,30 +468,38 @@ export default function DataMigrationPage() {
 							</AsyncState>
 						</Section>
 
-						{(() => {
-							// From the newest catalog run that recorded them (dry runs record them too).
-							const run = (status.data?.runs ?? []).find((r) => Array.isArray(r.summary?.unresolved_deals));
-							const rows = run?.summary?.unresolved_deals ?? [];
-							if (!run) return null;
+						{waiting.data?.run_at && (() => {
+							const rows = waiting.data.rows;
 							return (
-								<Section title="Deals waiting for a company" meta={`${rows.length} · from the ${when(run.started_at)} sync`} padded={false}>
+								<Section title="Deals waiting for a company" meta={`${rows.length} · from the ${when(waiting.data.run_at)} sync`} padded={false}>
 									<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: 'var(--space-3) var(--space-4)', lineHeight: 1.5 }}>
 										These old deals are not in Atlas because their company is missing, or exists under a different website. To bring one over, open <b>Companies</b>: either create the company with the website shown, or set the existing company&apos;s website to it. The next sync then adds the deal on its own. You can also add the deal by hand on the company.
+										{' '}<b>Already in Atlas?</b> points at an Atlas deal that looks like the same one (a renamed company, a new website). If it is, or the old deal is wrong, <b>Discard</b> it: it leaves this list and is never added.
 									</p>
 									<table className="data-table">
-										<thead><tr><th>Company (old name)</th><th>Website on the deal</th><th>Date</th><th>Round</th><th>Amount</th><th>Country</th></tr></thead>
+										<thead><tr><th>Company (old name)</th><th>Website on the deal</th><th>Date</th><th>Round</th><th>Amount</th><th>Country</th><th>Already in Atlas?</th><th /></tr></thead>
 										<tbody>
 											{rows.map((d, i) => (
-												<tr key={`${d.website}-${d.date}-${i}`}>
+												<tr key={d.source_id ?? `${d.website}-${d.date}-${i}`}>
 													<td>{d.name || '—'}</td>
 													<td style={{ fontSize: 12 }}>{d.website || <span style={{ color: 'var(--fg-muted)' }}>none on the old deal</span>}</td>
 													<td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{d.date ? d.date.slice(0, 10) : '—'}</td>
 													<td style={{ fontSize: 12 }}>{d.round ?? '—'}</td>
-													<td style={{ whiteSpace: 'nowrap' }}>{d.amount_usd ? `$${(d.amount_usd / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
+													<td style={{ whiteSpace: 'nowrap' }}>{d.amount_usd ? `$${(Number(d.amount_usd) / 1e6).toFixed(1)}M` : 'Undisclosed'}</td>
 													<td style={{ fontSize: 12 }}>{d.country ?? '—'}</td>
+													<td style={{ fontSize: 12 }}>
+														{d.in_atlas ? (
+															<span title={d.in_atlas.by === 'name' ? 'Same company name, within a month' : 'Different company name, same date and amount: check it is the same company'}>
+																{d.in_atlas.by === 'name' ? 'Likely: ' : 'Maybe: '}
+																{d.in_atlas.slug ? <a href={`${ATLAS}/companies/${d.in_atlas.slug}`} target="_blank" rel="noopener noreferrer">{d.in_atlas.company}</a> : d.in_atlas.company}
+																{' · '}{String(d.in_atlas.date).slice(0, 10)}{' · '}{Number(d.in_atlas.amount_usd) > 0 ? `$${(Number(d.in_atlas.amount_usd) / 1e6).toFixed(1)}M` : 'Undisclosed'}
+															</span>
+														) : <span style={{ color: 'var(--fg-muted)' }}>No</span>}
+													</td>
+													<td>{d.source_id && <button className="btn ghost" disabled={busy === `d${d.source_id}`} onClick={() => void discardDeal(d)} title={DISCARD.result}>Discard</button>}</td>
 												</tr>
 											))}
-											{rows.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--fg-muted)' }}>Every old deal has a company in Atlas.</td></tr>}
+											{rows.length === 0 && <tr><td colSpan={8} style={{ color: 'var(--fg-muted)' }}>Every old deal has a company in Atlas.</td></tr>}
 										</tbody>
 									</table>
 								</Section>

@@ -55,7 +55,7 @@ const ADAPT = {
 	],
 	'section-renderer.tsx': [
 		["import Link from 'next/link';\n", ''],
-		['<Link href="/plans" ', `<a href={\`\${${ATLAS}}/plans\`} target="_blank" rel="noopener noreferrer" `],
+		['<Link href="/solutions" ', `<a href={\`\${${ATLAS}}/solutions\`} target="_blank" rel="noopener noreferrer" `],
 		['>See plans</Link>', '>See plans</a>'],
 	],
 };

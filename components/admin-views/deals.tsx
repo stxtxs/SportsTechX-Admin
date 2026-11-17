@@ -237,7 +237,9 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 				announced_date: form.announced_date || undefined,
 				amount: form.amount.trim() ? Number(form.amount) : undefined,
 				currency_code: form.currency_code || undefined,
-				deal_size_bucket: form.deal_size_bucket || undefined,
+				// Only an explicit pick is sent; otherwise the server derives the band from the USD amount
+				// (sending back the loaded band kept stale ones, e.g. "under 1m" on a $25M round).
+				deal_size_bucket: (form.deal_size_bucket !== initial.deal_size_bucket && form.deal_size_bucket) || undefined,
 				status: form.status,
 				source_url: form.source_url.trim() || undefined,
 				transaction_url: form.transaction_url.trim() || undefined,

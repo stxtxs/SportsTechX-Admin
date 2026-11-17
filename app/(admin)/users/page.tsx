@@ -47,6 +47,7 @@ interface User {
 	/** Active Stripe subscription that renews on `expires_at` (not cancelling). */
 	renews?: boolean;
 	login_count?: number;
+	playmakers?: boolean;
 }
 interface UsersResponse { data: User[]; total: number; totalPages: number }
 
@@ -55,6 +56,8 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	const [search, setSearch] = useState('');
 	const [role, setRole] = useState('');
 	const [tier, setTier] = useState('');
+	const [pm, setPm] = useState('');
+	const [pmPending, setPmPending] = useState<string | null>(null);
 	const [page, setPage] = useState(1);
 	const router = useRouter();
 	const [rolePending, setRolePending] = useState<string | null>(null);
@@ -77,7 +80,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 
 	const debouncedSearch = useDebouncedValue(search);
 	const { data, error, isLoading } = useSWR<UsersResponse>(
-		['/api/admin/users', { q: debouncedSearch || undefined, role: role || undefined, tier: tier || undefined, page, limit: 30 }],
+		['/api/admin/users', { q: debouncedSearch || undefined, role: role || undefined, tier: tier || undefined, playmakers: pm || undefined, page, limit: 30 }],
 		{ dedupingInterval: 15_000 },
 	);
 	const stats = useSWR<UserStats>(['/api/admin/stats/users'], { dedupingInterval: 60_000 });
@@ -98,13 +101,13 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 		setExporting(true);
 		try {
 			const res = await api<UsersResponse>('GET', `/api/admin/users?${new URLSearchParams({
-				...(search ? { q: search } : {}), ...(role ? { role } : {}), ...(tier ? { tier } : {}), limit: '5000',
+				...(search ? { q: search } : {}), ...(role ? { role } : {}), ...(tier ? { tier } : {}), ...(pm ? { playmakers: pm } : {}), limit: '5000',
 			}).toString()}`);
 			const rows = res.data ?? [];
 			const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 			const plan = (u: User) => u.is_trial ? `trial${u.trial_ends_at ? ` until ${u.trial_ends_at.slice(0, 10)}` : ''}` : u.active_subscription ? 'paid' : '';
-			const csv = ['email,name,tier,plan,role,company,logins,joined,last_seen',
-				...rows.map((u) => [u.email, u.display_name, u.user_type, plan(u), u.user_role, u.company_name, u.login_count ?? 0, u.created_at, u.last_seen_at].map(esc).join(','))].join('\n');
+			const csv = ['email,name,tier,plan,role,playmakers,company,logins,joined,last_seen',
+				...rows.map((u) => [u.email, u.display_name, u.user_type, plan(u), u.user_role, u.playmakers ? 'yes' : 'no', u.company_name, u.login_count ?? 0, u.created_at, u.last_seen_at].map(esc).join(','))].join('\n');
 			const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
 			const a = document.createElement('a'); a.href = url; a.download = `users-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
 			toast.success(`Exported ${rows.length} users`);
@@ -131,6 +134,17 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 			void refresh();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setRolePending(null); }
+	};
+
+	// Playmakers membership label only — tier, access and billing are untouched.
+	const togglePlaymakers = async (u: User) => {
+		setPmPending(u.id);
+		try {
+			await api('PATCH', `/api/admin/users/${u.id}`, { playmakers: !u.playmakers });
+			toast.success(u.playmakers ? 'Removed from Playmakers' : 'Marked as Playmakers member');
+			void refresh();
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setPmPending(null); }
 	};
 
 	const users = data?.data ?? [];
@@ -291,6 +305,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 				/>
 				<FilterSelect ariaLabel="Tier" value={tier} onChange={(v) => { setTier(v); setPage(1); }} options={[...TIERS]} allLabel="All tiers" />
 				<FilterSelect ariaLabel="Role" value={role} onChange={(v) => { setRole(v); setPage(1); }} options={[...ROLES]} allLabel="All roles" />
+				<FilterSelect ariaLabel="Playmakers" value={pm} onChange={(v) => { setPm(v); setPage(1); }} options={[{ value: 'yes', label: 'Playmakers members' }, { value: 'no', label: 'Not Playmakers' }]} allLabel="All members" />
 				<div style={{ flex: 1 }} />
 				<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
 				<button className="btn" onClick={() => setCreating(true)}>Create account</button>
@@ -307,6 +322,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 							<th>Company</th>
 							<th>Tier</th>
 							<th>Role</th>
+							<th title="Playmakers membership (label only — does not change tier or access)">Playmakers</th>
 							<th>Logins</th>
 							<th>Last seen</th>
 							<th>Joined</th>
@@ -327,6 +343,13 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 											: u.active_subscription ? <span className="tag pos" style={{ marginLeft: 4 }}>paid</span> : null}
 									</td>
 									<td>{u.user_role === 'admin' ? <span className="tag pos">admin</span> : 'user'}</td>
+									<td>
+										<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
+											<input type="checkbox" checked={!!u.playmakers} disabled={pmPending === u.id} onChange={() => void togglePlaymakers(u)}
+												aria-label={`Playmakers member: ${u.email ?? u.id}`} />
+											{u.playmakers ? <span className="tag pos">member</span> : <span style={{ color: 'var(--fg-muted)' }}>—</span>}
+										</label>
+									</td>
 									<td className="num">{(u.login_count ?? 0).toLocaleString()}</td>
 									<td className="num">{u.last_seen_at ? fmtDate(u.last_seen_at) : '—'}</td>
 									<td className="num">{new Date(u.created_at).toLocaleDateString()}</td>

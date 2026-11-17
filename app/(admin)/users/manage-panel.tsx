@@ -43,8 +43,9 @@ export function ManagePanel({ user }: { user: ManageUser }) {
 						<GrantAccessSection profileId={user.id} />
 						<FeatureGrantsSection profileId={user.id} />
 					</div>
-					<div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-4)' }}>
+					<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 'var(--space-4)' }}>
 						<SignInLinkSection profileId={user.id} email={user.email ?? null} />
+						<PlaymakersSection profileId={user.id} />
 						<AccessControlSection profileId={user.id} />
 					</div>
 				</div>
@@ -315,6 +316,36 @@ function BillingSection({ profileId }: { profileId: string }) {
 				</div>
 			)}
 			{s?.error && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 8 }}>Stripe lookup: {s.error}</div>}
+		</div>
+	);
+}
+
+/** Playmakers membership label (profiles.playmakers). Tier, access and billing are untouched. */
+function PlaymakersSection({ profileId }: { profileId: string }) {
+	const { mutate } = useSWRConfig();
+	const { data: u, mutate: refetch } = useSWR<{ playmakers?: boolean }>([`/api/admin/users/${profileId}`], { dedupingInterval: 15_000 });
+	const [pending, setPending] = useState(false);
+	const on = !!u?.playmakers;
+	const toggle = async () => {
+		setPending(true);
+		try {
+			await api('PATCH', `/api/admin/users/${profileId}`, { playmakers: !on });
+			toast.success(on ? 'Removed from Playmakers' : 'Marked as Playmakers member');
+			void refetch();
+			void mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setPending(false); }
+	};
+	return (
+		<div className="card" style={{ padding: 'var(--space-4)' }}>
+			<div className="co-stat-label" style={{ marginBottom: 10 }}>Playmakers</div>
+			<label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+				<input type="checkbox" checked={on} disabled={pending || !u} onChange={() => void toggle()} />
+				Playmakers member
+			</label>
+			<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 8 }}>
+				Label only — does not change the tier, access or any subscription.
+			</div>
 		</div>
 	);
 }

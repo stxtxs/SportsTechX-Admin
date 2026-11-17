@@ -143,6 +143,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 			await api('PATCH', `/api/admin/users/${u.id}`, { playmakers: !u.playmakers });
 			toast.success(u.playmakers ? 'Removed from Playmakers' : 'Marked as Playmakers member');
 			void refresh();
+			void mutate([`/api/admin/users/${u.id}`]);   // the Manage page's cached copy
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPmPending(null); }
 	};

@@ -114,17 +114,6 @@ export default function ReportsAdminPage() {
 		finally { setReindexing(null); }
 	};
 
-	// One click re-embeds every published report for Ask Atlas (new reports also index on publish/save).
-	const [indexingAll, setIndexingAll] = useState(false);
-	const reindexAll = async () => {
-		setIndexingAll(true);
-		try {
-			const r = await api<{ enqueued: number }>('POST', '/api/admin/embeddings/backfill-reports');
-			toast.success(`Indexing ${r.enqueued} published reports for Ask Atlas — ready in a few minutes`);
-		} catch (e) { toast.error((e as Error).message ?? 'Could not start indexing'); }
-		finally { setIndexingAll(false); }
-	};
-
 	const togglePublished = async (id: string, next: boolean) => {
 		try {
 			await api('PATCH', `/api/admin/reports/${id}/flags`, { is_published: next });
@@ -142,11 +131,6 @@ export default function ReportsAdminPage() {
 	return (
 		<div>
 			<PageHeader kicker={`Library · ${(data?.total ?? 0).toLocaleString()} reports`} title="Reports" />
-			<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-3)' }}>
-				<button className="btn ghost" disabled={indexingAll} onClick={() => void reindexAll()} title="Make every published report searchable by Ask Atlas">
-					{indexingAll ? 'Starting…' : 'Index all for Ask Atlas'}
-				</button>
-			</div>
 
 			{editingId && <EditReportModal id={editingId} onClose={() => setEditingId(null)} onSaved={() => { setEditingId(null); void refresh(); }} />}
 			{editionsId && <ReportEditionsModal id={editionsId} onClose={() => setEditionsId(null)} />}

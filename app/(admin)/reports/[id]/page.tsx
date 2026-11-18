@@ -723,7 +723,7 @@ function SectionEditor({
 				<div className="rep-sec__hint">
 					{draft.access_tier === 'explore'
 						? <><Unlock size={11} /> Visible to every reader.</>
-						: <><Lock size={11} /> Free readers see it locked with an upgrade prompt.</>}
+						: <><Lock size={11} /> Explore readers see its heading and one line, then “Unlocked with Raise or Scout” and See solutions.</>}
 					{' '}A title and an anchor add this section to the report&rsquo;s top navigation.
 					{!draft.is_published && ' Drafts are only visible here and in Preview.'}
 				</div>

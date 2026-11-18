@@ -29,7 +29,7 @@ export default function HomePinsAdminPage() {
 	const [busy, setBusy] = useState(false);
 	const rows = data?.data ?? [];
 	const options = kind === 'report'
-		? (reports?.data ?? []).filter((r) => r.is_published && r.slug).map((r) => ({ slug: r.slug!, title: r.title, body: r.description ?? undefined }))
+		? (reports?.data ?? []).filter((r) => r.is_published && r.slug && !r.slug.endsWith('-yours')).map((r) => ({ slug: r.slug!, title: r.title, body: r.description ?? undefined }))
 		: (guides?.data ?? []).filter((g) => g.is_published).map((g) => ({ slug: g.slug, title: g.title, body: g.summary || undefined }));
 
 	const pin = async () => {
@@ -75,7 +75,12 @@ export default function HomePinsAdminPage() {
 				</div>
 			</Section>
 			<div style={{ marginTop: 'var(--space-4)' }}>
-				<Section title="Pinned for everyone" meta={`${rows.length}`}>
+				<Section title="Pinned for everyone" meta={`${rows.length} of 4`}>
+					{rows.length >= 2 && (
+						<p style={{ fontSize: 12, color: 'var(--fg-muted)', margin: '0 0 10px' }}>
+							Each user sees at most four pins, these included — with {rows.length} pinned for everyone, users have {Math.max(0, 4 - rows.length)} left for their own.
+						</p>
+					)}
 					<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="Nothing pinned for everyone." onRetry={() => void mutate()}>
 						<div className="table-scroll">
 							<table className="data-table">

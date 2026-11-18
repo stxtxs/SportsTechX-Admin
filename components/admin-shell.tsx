@@ -8,7 +8,7 @@ import {
 	Activity, ShoppingCart, LogOut, CreditCard, ToggleLeft,
 	Banknote, Sparkles, Tag, BookOpen, Menu, BarChart3, Gauge,
 	Receipt, Package, Handshake, Download, Coins, ChevronDown, Sun, Moon, Newspaper, Undo2,
-	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail, Pin, Award,
+	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail, Pin, Award, History,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAuthSession } from '@/hooks/use-auth-session';
@@ -82,6 +82,7 @@ const PERFORMANCE_NAV: NavItem[] = [
 	{ label: 'User analytics', href: '/users', Icon: BarChart3 },
 	{ label: 'Performance', href: '/performance', Icon: Gauge },
 	{ label: 'Activity analytics', href: '/analytics', Icon: Activity },
+	{ label: 'Admin activity', href: '/activity', Icon: History },
 	{ label: 'AI usage & cost', href: '/ai-usage', Icon: Receipt },
 	{ label: 'Credit usage', href: '/credit-usage', Icon: Coins },
 	{ label: 'Feature flags', href: '/features', Icon: ToggleLeft },

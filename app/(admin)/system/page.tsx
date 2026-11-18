@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -28,8 +28,11 @@ export default function SystemSettingsPage() {
 	const [saving, setSaving] = useState(false);
 	const [survey, setSurvey] = useState('');
 	const [release, setRelease] = useState('');
+	// Fill the inputs once; later revalidations (tab focus) must not wipe what's being typed.
+	const filled = useRef(false);
 	useEffect(() => {
-		if (!data) return;
+		if (!data || filled.current) return;
+		filled.current = true;
 		setSurvey(data.vc_benchmark_survey_url ?? '');
 		setRelease(data.vc_benchmark_release ?? '');
 	}, [data]);

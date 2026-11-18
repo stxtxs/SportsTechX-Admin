@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { Section, PillTabs } from '@/components/atoms';
 import { SignInLinkSection } from './account-access';
+import { AdminActivityTable } from '@/components/admin-activity';
 
 /** Minimal user shape the manage panel needs. */
 export interface ManageUser { id: string; user_type: string | null; email?: string | null }
@@ -23,7 +24,7 @@ interface GrantRow {
 }
 interface FeatureCatalogRow { id: string; slug: string; name: string }
 
-const MANAGE_TABS = ['Access', 'Billing & credits', 'Personalization'] as const;
+const MANAGE_TABS = ['Access', 'Billing & credits', 'Personalization', 'History'] as const;
 type ManageTab = (typeof MANAGE_TABS)[number];
 
 /**
@@ -48,6 +49,7 @@ export function ManagePanel({ user }: { user: ManageUser }) {
 						<PlaymakersSection profileId={user.id} />
 						<AccessControlSection profileId={user.id} />
 					</div>
+					<AdminNoteSection profileId={user.id} />
 				</div>
 			)}
 
@@ -61,6 +63,12 @@ export function ManagePanel({ user }: { user: ManageUser }) {
 			)}
 
 			{tab === 'Personalization' && <PersonalizationSection profileId={user.id} />}
+
+			{tab === 'History' && (
+				<Section title="Admin actions on this user" meta="since 18 Nov 2026">
+					<AdminActivityTable filter={{ target: user.id }} />
+				</Section>
+			)}
 		</div>
 	);
 }
@@ -321,6 +329,37 @@ function BillingSection({ profileId }: { profileId: string }) {
 }
 
 /** Playmakers membership label (profiles.playmakers). Tier, access and billing are untouched. */
+/** Internal note admins keep on this user — never shown to the user. Saving is recorded in Admin activity. */
+function AdminNoteSection({ profileId }: { profileId: string }) {
+	const { data: u, mutate: refetch } = useSWR<{ admin_note?: string | null }>([`/api/admin/users/${profileId}`], { dedupingInterval: 15_000, revalidateOnFocus: false });
+	const [note, setNote] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+	const saved = u?.admin_note ?? '';
+	const value = note ?? saved;
+	const save = async () => {
+		setSaving(true);
+		try {
+			await api('PATCH', `/api/admin/users/${profileId}`, { admin_note: value.trim() || null });
+			toast.success(value.trim() ? 'Note saved' : 'Note cleared');
+			setNote(null);
+			void refetch();
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setSaving(false); }
+	};
+	return (
+		<div className="card" style={{ padding: 'var(--space-4)' }}>
+			<div className="co-stat-label" style={{ marginBottom: 10 }}>Admin note</div>
+			<textarea className="search-input" style={{ width: '100%', minHeight: 80, resize: 'vertical', fontSize: 13 }} maxLength={4000}
+				placeholder="Internal note about this user (e.g. why their tier was changed). Only admins see it."
+				value={value} disabled={!u} onChange={(e) => setNote(e.target.value)} />
+			<div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+				<button className="btn" disabled={saving || !u || value === saved} onClick={() => void save()}>{saving ? 'Saving…' : 'Save note'}</button>
+				<span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Admins only — never shown to the user.</span>
+			</div>
+		</div>
+	);
+}
+
 function PlaymakersSection({ profileId }: { profileId: string }) {
 	const { mutate } = useSWRConfig();
 	const { data: u, mutate: refetch } = useSWR<{ playmakers?: boolean }>([`/api/admin/users/${profileId}`], { dedupingInterval: 15_000 });

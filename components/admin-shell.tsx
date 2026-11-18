@@ -8,7 +8,7 @@ import {
 	Activity, ShoppingCart, LogOut, CreditCard, ToggleLeft,
 	Banknote, Sparkles, Tag, BookOpen, Menu, BarChart3, Gauge,
 	Receipt, Package, Handshake, Download, Coins, ChevronDown, Sun, Moon, Newspaper, Undo2,
-	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail,
+	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail, Pin, Award,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAuthSession } from '@/hooks/use-auth-session';
@@ -52,6 +52,8 @@ const DATA_NAV: NavItem[] = [
 	{ label: 'Startups to add', href: '/startups-pipeline', Icon: FilePlus },
 	{ label: 'Investors to add', href: '/investor-review', Icon: Banknote },
 	{ label: 'Reports', href: '/reports', Icon: FileText },
+	{ label: 'Benchmark contributors', href: '/benchmark-contributors', Icon: Award },
+	{ label: 'Home pins', href: '/home-pins', Icon: Pin },
 	{ label: 'Featured lists', href: '/featured-lists', Icon: Sparkles },
 	{ label: 'Reference data', href: '/reference', Icon: BookOpen },
 	{ label: 'Polls', href: '/polls', Icon: Sparkles },

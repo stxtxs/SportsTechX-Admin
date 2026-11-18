@@ -85,6 +85,10 @@ export const SECTOR_COLORS: Record<string, string> = {
 	'For Athletes': BRAND.athletes,
 	'For Fans': BRAND.fans,
 	'For Executives': BRAND.execs,
+	// Platform names since the 18 Nov sector rename (stored names in the database).
+	'Athlete Tech': BRAND.athletes,
+	'Fan Tech': BRAND.fans,
+	'Executive Tech': BRAND.execs,
 };
 
 export const WORLDCUP_TECH_COLORS: Record<string, string> = {

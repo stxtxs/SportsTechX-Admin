@@ -63,7 +63,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 
 	const { data, error, isLoading } = useSWR<InvestorsResponse>(
 		['/api/investors', {
-			search: debouncedSearch || undefined, category: category || undefined, status: status || undefined,
+			q: debouncedSearch || undefined, category: category || undefined, status: status || undefined,
 			is_verified: verified || undefined, sector_slug: sector || undefined, sport_slug: sport || undefined,
 			country: country.trim() || undefined, actively_investing: investing || undefined,
 			year_launched_min: launchedMin || undefined, year_launched_max: launchedMax || undefined,
@@ -81,7 +81,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const exportCsv = async () => {
 		const params: Record<string, string> = { limit: '5000', sort };
 		const add = (k: string, v: string) => { if (v) params[k] = v; };
-		add('search', search); add('category', category); add('status', status); add('is_verified', verified);
+		add('q', search); add('category', category); add('status', status); add('is_verified', verified);
 		add('sector_slug', sector); add('sport_slug', sport); add('country', country.trim());
 		add('actively_investing', investing); add('year_launched_min', launchedMin); add('year_launched_max', launchedMax);
 		try {

@@ -11,21 +11,31 @@ export interface QueueTimeStats {
 	totals: { total_seconds: number; items: number };
 }
 
-/** Per-admin completion progress bars — the old admin's "Completion by Admin". */
-export function CompletionByAdmin({ rows }: { rows: Array<{ key: string; name: string; done: number; total: number; rate: number }> }) {
+/**
+ * Per-admin completion — the old admin's "Completion by Admin": "N done · N skipped · N pending"
+ * with a green (done) + grey (skipped) bar. Rate = done / all items for that admin.
+ */
+export function CompletionByAdmin({ rows, skippedLabel = 'skipped' }: {
+	rows: Array<{ key: string; name: string; done: number; skipped?: number; pending?: number; total: number; rate: number }>;
+	skippedLabel?: string;
+}) {
 	if (!rows.length) return null;
+	const pct = (n: number, t: number) => (t ? Math.min(Math.max((n / t) * 100, 0), 100) : 0);
 	return (
 		<div style={{ marginBottom: 'var(--space-5)' }}>
-			<Section title="Completion by admin" meta="processed / assigned">
+			<Section title="Completion by admin" meta={`done · ${skippedLabel} · pending`}>
 				<div style={{ display: 'grid', gap: 14 }}>
 					{rows.map((r) => (
 						<div key={r.key}>
 							<div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6, gap: 12 }}>
 								<span style={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
-								<span style={{ color: 'var(--fg-muted)', flexShrink: 0 }}>{r.done}/{r.total} completed <strong style={{ color: 'var(--fg)' }}>{r.rate}%</strong></span>
+								<span style={{ color: 'var(--fg-muted)', flexShrink: 0 }}>
+									{r.done.toLocaleString()} done · {(r.skipped ?? 0).toLocaleString()} {skippedLabel} · {(r.pending ?? 0).toLocaleString()} pending <strong style={{ color: 'var(--fg)' }}>{r.rate}%</strong>
+								</span>
 							</div>
-							<div style={{ height: 8, borderRadius: 999, background: 'var(--bg-3)', overflow: 'hidden' }}>
-								<div style={{ width: `${Math.min(Math.max(r.rate, 0), 100)}%`, height: '100%', background: 'var(--pos)', borderRadius: 999, transition: 'width .3s ease' }} />
+							<div style={{ height: 8, borderRadius: 999, background: 'var(--bg-3)', overflow: 'hidden', display: 'flex' }}>
+								<div style={{ width: `${pct(r.done, r.total)}%`, height: '100%', background: 'var(--pos)', transition: 'width .3s ease' }} />
+								<div style={{ width: `${pct(r.skipped ?? 0, r.total)}%`, height: '100%', background: 'var(--fg-muted)', opacity: 0.45, transition: 'width .3s ease' }} />
 							</div>
 						</div>
 					))}

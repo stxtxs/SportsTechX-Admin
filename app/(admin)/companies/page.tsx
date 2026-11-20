@@ -30,6 +30,7 @@ import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 interface Company {
 	id: string;
@@ -55,21 +56,21 @@ const BUSINESS_MODELS = ['b2b', 'b2c', 'b2b2c'] as const;
 export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const [search, setSearch] = useState(useInitialQuery());
+	const [search, setSearch] = useUrlState('co', 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
-	const [status, setStatus] = useState('');
-	const [sector, setSector] = useState('');
-	const [verified, setVerified] = useState('');
-	const [sport, setSport] = useState('');
-	const [country, setCountry] = useState('');
-	const [raising, setRaising] = useState('');
-	const [unicorn, setUnicorn] = useState('');
-	const [foundedMin, setFoundedMin] = useState('');
-	const [foundedMax, setFoundedMax] = useState('');
-	const [fundingMin, setFundingMin] = useState('');
-	const [fundingMax, setFundingMax] = useState('');
-	const [page, setPage] = useState(1);
-	const [sort, setSort] = useState('-created_at');
+	const [status, setStatus] = useUrlState('co', 'status', '');
+	const [sector, setSector] = useUrlState('co', 'sector', '');
+	const [verified, setVerified] = useUrlState('co', 'verified', '');
+	const [sport, setSport] = useUrlState('co', 'sport', '');
+	const [country, setCountry] = useUrlState('co', 'country', '');
+	const [raising, setRaising] = useUrlState('co', 'raising', '');
+	const [unicorn, setUnicorn] = useUrlState('co', 'unicorn', '');
+	const [foundedMin, setFoundedMin] = useUrlState('co', 'foundedMin', '');
+	const [foundedMax, setFoundedMax] = useUrlState('co', 'foundedMax', '');
+	const [fundingMin, setFundingMin] = useUrlState('co', 'fundingMin', '');
+	const [fundingMax, setFundingMax] = useUrlState('co', 'fundingMax', '');
+	const [page, setPage] = useUrlNumber('co', 'page', 1);
+	const [sort, setSort] = useUrlState('co', 'sort', '-created_at');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
@@ -77,13 +78,19 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const [removePending, setRemovePending] = useState(false);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
+	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
+	const dCountry = useDebouncedValue(country);
+	const dFoundedMin = useDebouncedValue(foundedMin);
+	const dFoundedMax = useDebouncedValue(foundedMax);
+	const dFundingMin = useDebouncedValue(fundingMin);
+	const dFundingMax = useDebouncedValue(fundingMax);
 	const { data, error, isLoading } = useSWR<CompaniesResponse>(
 		['/api/companies', {
 			search: debouncedSearch || undefined, status: status || undefined, sector: sector || undefined,
-			is_verified: verified || undefined, sport: sport || undefined, country: country.trim() || undefined,
+			is_verified: verified || undefined, sport: sport || undefined, country: dCountry.trim() || undefined,
 			is_actively_raising: raising || undefined, is_unicorn: unicorn || undefined,
-			founded_year_min: foundedMin || undefined, founded_year_max: foundedMax || undefined,
-			min_funding: fundingMin || undefined, max_funding: fundingMax || undefined,
+			founded_year_min: dFoundedMin || undefined, founded_year_max: dFoundedMax || undefined,
+			min_funding: dFundingMin || undefined, max_funding: dFundingMax || undefined,
 			page, limit: 30, sort, include_hidden: 1,   // admins see hidden (test) records; users never do
 		}],
 		{ dedupingInterval: 30_000 },
@@ -1157,7 +1164,8 @@ export default function CompaniesAdminPage() {
 	const pathname = usePathname();
 	const raw = searchParams.get('tab');
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
-	const setTab = (t: CdTab) => router.replace(`${pathname}?tab=${t}`, { scroll: false });
+	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
+	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); router.replace(`${pathname}?${q}`, { scroll: false }); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const from = dateRange.from, to = dateRange.to;

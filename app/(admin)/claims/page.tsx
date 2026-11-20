@@ -25,7 +25,8 @@ function ClaimsAndChanges() {
 	const pathname = usePathname();
 	const searchParams = useSearchParams();
 	const tab: Tab = searchParams.get('tab') === 'changes' ? 'changes' : 'claims';
-	const setTab = (t: Tab) => router.replace(`${pathname}?tab=${t}`, { scroll: false });
+	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
+	const setTab = (t: Tab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); router.replace(`${pathname}?${q}`, { scroll: false }); };
 
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
 	const pendingClaims = stats.data?.claims.pending ?? 0;

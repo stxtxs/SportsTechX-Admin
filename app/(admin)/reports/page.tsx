@@ -184,7 +184,7 @@ export default function ReportsAdminPage() {
 
 			<div className="card" style={{ marginBottom: 'var(--space-4)' }}>
 				<button className="btn ghost" style={{ width: '100%', justifyContent: 'space-between', display: 'flex' }} onClick={() => setAnalyticsOpen((o) => !o)}>
-					<span>Download analytics — per-report stats</span><span>{analyticsOpen ? '▲' : '▼'}</span>
+					<span>Report analytics: views and downloads per report</span><span>{analyticsOpen ? '▲' : '▼'}</span>
 				</button>
 				{analyticsOpen && <ReportAnalytics />}
 			</div>
@@ -240,23 +240,28 @@ export default function ReportsAdminPage() {
 	);
 }
 
-interface ReportStat { id: string; title: string; report_year?: number | null; report_month?: number | null; downloads: number; unique_users: number; last_download: string | null }
+interface ReportStat { id: string; title: string; report_year?: number | null; report_month?: number | null; downloads: number; unique_users: number; last_download: string | null; views: number; unique_viewers: number; last_view: string | null }
 
 function ReportAnalytics() {
 	const { data, isLoading, error, mutate } = useSWR<{ reports: ReportStat[] }>(['/api/admin/reports/analytics'], { dedupingInterval: 60_000 });
-	const rows = (data?.reports ?? []).filter((r) => r.downloads > 0);
+	// Reports read in-app (e.g. FTABR26) have views before anyone downloads them — show both.
+	const rows = (data?.reports ?? []).filter((r) => r.downloads > 0 || r.views > 0);
 	const totalDl = rows.reduce((s, r) => s + r.downloads, 0);
+	const totalViews = rows.reduce((s, r) => s + r.views, 0);
 	return (
 		<div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border)' }}>
-			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No downloads recorded yet." onRetry={() => void mutate()}>
-				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8 }}>{totalDl.toLocaleString()} downloads across {rows.length} reports</div>
+			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No views or downloads recorded yet." onRetry={() => void mutate()}>
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8 }}>{totalViews.toLocaleString()} views and {totalDl.toLocaleString()} downloads across {rows.length} reports. Views count signed-in opens in Atlas; downloads before 20 Nov 2026 were only recorded by the old Hub.</div>
 				<table className="data-table">
-					<thead><tr><th>Report</th><th>Period</th><th>Downloads</th><th>Unique users</th><th>Last download</th></tr></thead>
+					<thead><tr><th>Report</th><th>Period</th><th>Views</th><th>Unique viewers</th><th>Last view</th><th>Downloads</th><th>Unique users</th><th>Last download</th></tr></thead>
 					<tbody>
 						{rows.map((r) => (
 							<tr key={r.id}>
 								<td>{r.title}</td>
 								<td className="num">{r.report_year ? `${r.report_month ? MONTHS[r.report_month - 1] + ' ' : ''}${r.report_year}` : '—'}</td>
+								<td className="num">{r.views.toLocaleString()}</td>
+								<td className="num">{r.unique_viewers.toLocaleString()}</td>
+								<td className="num">{r.last_view ? new Date(r.last_view).toLocaleDateString() : '—'}</td>
 								<td className="num">{r.downloads.toLocaleString()}</td>
 								<td className="num">{r.unique_users.toLocaleString()}</td>
 								<td className="num">{r.last_download ? new Date(r.last_download).toLocaleDateString() : '—'}</td>

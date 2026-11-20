@@ -21,6 +21,7 @@ import {
 import { YearSelect } from '@/components/year-select';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 interface Investor {
 	id: string;
@@ -45,31 +46,35 @@ const STATUSES = ['active', 'inactive', 'paused'] as const;
 export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useUrlState('inv', 'search', '');
 	const debouncedSearch = useDebouncedValue(search);
-	const [category, setCategory] = useState('');
-	const [status, setStatus] = useState('');
-	const [verified, setVerified] = useState('');
-	const [sector, setSector] = useState('');
-	const [sport, setSport] = useState('');
-	const [country, setCountry] = useState('');
-	const [investing, setInvesting] = useState('');
-	const [launchedMin, setLaunchedMin] = useState('');
-	const [launchedMax, setLaunchedMax] = useState('');
-	const [page, setPage] = useState(1);
-	const [sort, setSort] = useState('-created_at');
+	const [category, setCategory] = useUrlState('inv', 'category', '');
+	const [status, setStatus] = useUrlState('inv', 'status', '');
+	const [verified, setVerified] = useUrlState('inv', 'verified', '');
+	const [sector, setSector] = useUrlState('inv', 'sector', '');
+	const [sport, setSport] = useUrlState('inv', 'sport', '');
+	const [country, setCountry] = useUrlState('inv', 'country', '');
+	const [investing, setInvesting] = useUrlState('inv', 'investing', '');
+	const [launchedMin, setLaunchedMin] = useUrlState('inv', 'launchedMin', '');
+	const [launchedMax, setLaunchedMax] = useUrlState('inv', 'launchedMax', '');
+	const [page, setPage] = useUrlNumber('inv', 'page', 1);
+	const [sort, setSort] = useUrlState('inv', 'sort', '-created_at');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
+	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
+	const dCountry = useDebouncedValue(country);
+	const dLaunchedMin = useDebouncedValue(launchedMin);
+	const dLaunchedMax = useDebouncedValue(launchedMax);
 	const { data, error, isLoading } = useSWR<InvestorsResponse>(
 		['/api/investors', {
 			q: debouncedSearch || undefined, category: category || undefined, status: status || undefined,
 			is_verified: verified || undefined, sector_slug: sector || undefined, sport_slug: sport || undefined,
-			country: country.trim() || undefined, actively_investing: investing || undefined,
-			year_launched_min: launchedMin || undefined, year_launched_max: launchedMax || undefined,
+			country: dCountry.trim() || undefined, actively_investing: investing || undefined,
+			year_launched_min: dLaunchedMin || undefined, year_launched_max: dLaunchedMax || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },

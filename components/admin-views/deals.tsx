@@ -14,6 +14,7 @@ import { ComboBarLine, PieDonut, PieLegend, toSegments, type Bucket } from '@/co
 import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter, SectorTierFilter } from '@/components/filters';
 import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components/csv-import';
 import { Field } from '@/components/tabbed-form';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import {
 	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker,
 	type DealInvestor,
@@ -52,31 +53,34 @@ const fmtMoney = (n: number): string => n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` :
 export function DealsView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useUrlState('deal', 'search', '');
 	const debouncedSearch = useDebouncedValue(search);
-	const [status, setStatus] = useState('');
-	const [businessModel, setBusinessModel] = useState('');
-	const [sizeBucket, setSizeBucket] = useState('');
-	const [year, setYear] = useState('');
-	const [sector, setSector] = useState('');
-	const [sport, setSport] = useState('');
-	const [roundType, setRoundType] = useState('');
-	const [amountMin, setAmountMin] = useState('');
-	const [amountMax, setAmountMax] = useState('');
-	const [disclosed, setDisclosed] = useState('');
-	const [page, setPage] = useState(1);
-	const [sort, setSort] = useState('-announced_date');
+	const [status, setStatus] = useUrlState('deal', 'status', '');
+	const [businessModel, setBusinessModel] = useUrlState('deal', 'businessModel', '');
+	const [sizeBucket, setSizeBucket] = useUrlState('deal', 'sizeBucket', '');
+	const [year, setYear] = useUrlState('deal', 'year', '');
+	const [sector, setSector] = useUrlState('deal', 'sector', '');
+	const [sport, setSport] = useUrlState('deal', 'sport', '');
+	const [roundType, setRoundType] = useUrlState('deal', 'roundType', '');
+	const [amountMin, setAmountMin] = useUrlState('deal', 'amountMin', '');
+	const [amountMax, setAmountMax] = useUrlState('deal', 'amountMax', '');
+	const [disclosed, setDisclosed] = useUrlState('deal', 'disclosed', '');
+	const [page, setPage] = useUrlNumber('deal', 'page', 1);
+	const [sort, setSort] = useUrlState('deal', 'sort', '-announced_date');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 
+	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
+	const dAmountMin = useDebouncedValue(amountMin);
+	const dAmountMax = useDebouncedValue(amountMax);
 	const { data, error, isLoading } = useSWR<DealsResponse>(
 		['/api/deals', {
 			q: debouncedSearch || undefined, status: status || undefined, business_model: businessModel || undefined,
 			deal_size_bucket: sizeBucket || undefined, year: year || undefined,
 			sector_slug: sector || undefined, sport_slug: sport || undefined, round_type_slug: roundType || undefined,
-			amount_usd_min: amountMin || undefined, amount_usd_max: amountMax || undefined, disclosed_only: disclosed || undefined,
+			amount_usd_min: dAmountMin || undefined, amount_usd_max: dAmountMax || undefined, disclosed_only: disclosed || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },

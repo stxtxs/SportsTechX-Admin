@@ -13,6 +13,7 @@ import { ComboBarLine, PieDonut, PieLegend, Funnel, toSegments, type Bucket } fr
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { Select } from '@/components/select';
 import { CreateAccountModal } from './account-access';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 interface UserStats { total: number; admins: number; by_tier: Bucket[]; by_role: Bucket[]; signups_by_month: Bucket[] }
 interface AuthRow { email: string | null; created_at?: string | null; last_sign_in_at?: string | null; provider?: string | null }
@@ -53,16 +54,16 @@ interface UsersResponse { data: User[]; total: number; totalPages: number }
 
 export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) {
 	const { mutate } = useSWRConfig();
-	const [search, setSearch] = useState('');
-	const [role, setRole] = useState('');
-	const [tier, setTier] = useState('');
-	const [pm, setPm] = useState('');
+	const [search, setSearch] = useUrlState('user', 'q', '', 'q');
+	const [role, setRole] = useUrlState('user', 'role');
+	const [tier, setTier] = useUrlState('user', 'tier');
+	const [pm, setPm] = useUrlState('user', 'pm');
 	const [pmPending, setPmPending] = useState<string | null>(null);
-	const [page, setPage] = useState(1);
+	const [page, setPage] = useUrlNumber('user', 'page', 1);
 	const router = useRouter();
 	const [rolePending, setRolePending] = useState<string | null>(null);
-	const [from, setFrom] = useState('');
-	const [to, setTo] = useState('');
+	const [from, setFrom] = useUrlState('user', 'from');
+	const [to, setTo] = useUrlState('user', 'to');
 	const [freqBucket, setFreqBucket] = useState<'never' | 'once' | '2-5' | '6+' | null>(null);
 	const [planDetail, setPlanDetail] = useState<string | null>(null);
 	const [creating, setCreating] = useState(false);
@@ -85,8 +86,10 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	);
 	const stats = useSWR<UserStats>(['/api/admin/stats/users'], { dedupingInterval: 60_000 });
 	const range = { from: from || undefined, to: to || undefined };
-	const auth = useSWR<AuthActivity>(['/api/admin/users/auth-activity', range], { dedupingInterval: 60_000 });
-	const an = useSWR<UserAnalytics>(['/api/admin/users/analytics', range], { dedupingInterval: 60_000 });
+	// Analytics (14 queries) feed the stats/charts views only; the directory doesn't render them.
+	const showAnalytics = view !== 'directory';
+	const auth = useSWR<AuthActivity>(showAnalytics ? ['/api/admin/users/auth-activity', range] : null, { dedupingInterval: 60_000 });
+	const an = useSWR<UserAnalytics>(showAnalytics ? ['/api/admin/users/analytics', range] : null, { dedupingInterval: 60_000 });
 	const tierSegments = toSegments(stats.data?.by_tier ?? []);
 	const providerSegments = toSegments(auth.data?.by_provider ?? []);
 	const signupChart = (stats.data?.signups_by_month ?? []).map((b) => ({ label: b.label.slice(2), amt: b.value, deals: b.value }));

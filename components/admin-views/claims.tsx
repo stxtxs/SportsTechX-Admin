@@ -13,6 +13,7 @@ import { Funnel } from '@/components/charts';
 import { StatStrip } from '@/components/filters';
 import { SectorCascade, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
 import { YearSelect } from '@/components/year-select';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 type ClaimStatus = 'pending' | 'picked_up' | 'verified' | 'rejected';
 interface QueueStats { claims: { pending: number; picked_up: number; verified: number; rejected: number } }
@@ -60,13 +61,15 @@ interface ClaimsResponse { data: Claim[]; total: number; totalPages: number }
 
 export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean; lockType?: 'company' | 'investor' | 'ecosystem_entity' }) {
 	const { mutate } = useSWRConfig();
-	const [claimType, setClaimType] = useState<string>(lockType ?? '');
-	const [page, setPage] = useState(1);
+	// A tab that locks the type (e.g. Companies → Claims) ignores the URL value.
+	const [claimTypeUrl, setClaimType] = useUrlState('claim', 'type');
+	const claimType = lockType ?? claimTypeUrl;
+	const [page, setPage] = useUrlNumber('claim', 'page', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [sendEmail, setSendEmail] = useState(true);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
 	const [showCompleted, setShowCompleted] = useState(false);
-	const [search, setSearch] = useState(useInitialQuery());
+	const [search, setSearch] = useUrlState('claim', 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
 
 	const { data, error, isLoading } = useSWR<ClaimsResponse>(

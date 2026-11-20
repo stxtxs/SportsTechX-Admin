@@ -11,6 +11,7 @@ import { Modal } from '@/components/modal';
 import { useConfirm } from '@/components/confirm';
 import { PageHeader, AsyncState, StatCard, StatsPanel, Tag, Pager } from '@/components/atoms';
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 /**
  * Deal Flow — the eligibility queue.
@@ -117,10 +118,10 @@ const money = (amount: string | null, ccy: string | null) => {
 
 export default function ScoutDealsPage() {
 	const ask = useConfirm();
-	const [status, setStatus] = useState('pending');
-	const [source, setSource] = useState('');
-	const [assigned, setAssigned] = useState('');
-	const [page, setPage] = useState(1);
+	const [status, setStatus] = useUrlState('sd', 'status', 'pending');
+	const [source, setSource] = useUrlState('sd', 'source', '');
+	const [assigned, setAssigned] = useUrlState('sd', 'assigned', '');
+	const [page, setPage] = useUrlNumber('sd', 'page', 1);
 	const [openId, setOpenId] = useState<string | null>(null);
 
 	const list = useSWR<ListResp>(

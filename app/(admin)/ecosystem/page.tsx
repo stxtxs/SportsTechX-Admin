@@ -741,7 +741,7 @@ export default function EcosystemAdminPage() {
 	const raw = searchParams.get('tab');
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); router.replace(`${pathname}?${q}`, { scroll: false }); };
+	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); router.replace(`${pathname}?${q}`, { scroll: false }); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const { from, to } = dateRange;

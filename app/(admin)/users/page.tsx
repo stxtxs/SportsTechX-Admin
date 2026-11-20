@@ -76,7 +76,14 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 		const q = sp.get('q');
 		if (q) setSearch(q);
 		const focus = sp.get('focus');
-		if (focus) router.push(`/users/${focus}`);
+		if (focus) {
+			// One-off: drop it from this page's URL first. Next re-uses a page's last URL when you
+			// link back to it, so a kept `focus` would jump to this user on every later "Users" click.
+			sp.delete('focus');
+			const rest = sp.toString();
+			window.history.replaceState(null, '', `${window.location.pathname}${rest ? `?${rest}` : ''}`);
+			router.push(`/users/${focus}`);
+		}
 	}, []);
 
 	const debouncedSearch = useDebouncedValue(search);

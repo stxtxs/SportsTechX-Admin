@@ -14,6 +14,7 @@ import { YearSelect } from '@/components/year-select';
 import { ImageInput } from '@/components/image-input';
 import { ReportPdfInput } from '@/components/report-pdf-input';
 import { ReportEditionsModal } from '@/components/report-editions-modal';
+import { confirmDelete } from '@/lib/delete-impact';
 
 interface Report {
 	id: string;
@@ -225,7 +226,7 @@ export default function ReportsAdminPage() {
 									>
 										<RefreshCw size={12} /> {reindexing === r.id ? 'Reindexing…' : 'Reindex'}
 									</button>
-									<button className="btn ghost" disabled={removePending} onClick={async () => { if (await ask(`Delete ${r.title}?`)) void remove(r.id); }}>
+									<button className="btn ghost" disabled={removePending} onClick={async () => { if (await confirmDelete(ask, 'report', r.id, r.title)) void remove(r.id); }}>
 										<Trash2 size={12} />
 									</button>
 								</td>

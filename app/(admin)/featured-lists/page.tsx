@@ -42,10 +42,9 @@ async function searchEntity(type: EntityType, q: string): Promise<Array<{ key: s
 		const r = await api<{ data: Array<{ id: string; acquiree_name: string | null }> }>('GET', `/api/acquisitions?q=${enc}&limit=8`);
 		return r.data.map((d) => ({ key: d.id, label: d.acquiree_name ?? d.id }));
 	}
-	// programs / events — ecosystem list filtered client-side by name
-	const r = await api<{ data: Array<{ id: string; name: string }> }>('GET', `/api/ecosystem-entities?type=${type === 'programs' ? 'program' : 'event'}&limit=100`);
-	const ql = q.toLowerCase();
-	return r.data.filter((e) => e.name.toLowerCase().includes(ql)).slice(0, 8).map((e) => ({ key: e.id, label: e.name }));
+	// programs / events — the API filters by `entity_type` and searches by `q` (it ignores `type`).
+	const r = await api<{ data: Array<{ id: string; name: string }> }>('GET', `/api/ecosystem-entities?entity_type=${type === 'programs' ? 'program' : 'event'}&q=${enc}&limit=8`);
+	return r.data.map((e) => ({ key: e.id, label: e.name }));
 }
 
 export default function FeaturedListsPage() {

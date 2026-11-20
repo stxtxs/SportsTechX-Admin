@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic';
 import { AddCandidateModal } from '@/components/investor-candidate-modal';
 
 // Lazy: admin-views/investors imports this file, so a static import would be a cycle.
+const CompanyModal = dynamic(() => import('@/app/(admin)/companies/page').then((m) => m.CompanyModal), { ssr: false });
 const InvestorModal = dynamic(() => import('@/components/admin-views/investors').then((m) => m.InvestorModal), { ssr: false });
 
 // ─── inline reference creation ───────────────────────────────────────────────
@@ -526,7 +527,7 @@ export function SocialLinks({ value, onChange }: { value: SocialValue; onChange:
 
 // ─── Single company picker (for deal.company_id / acquisition parties) ───────
 
-interface CompanyHit { id: string; name: string; slug: string | null; primary_sector: string | null; hq_country: string | null }
+interface CompanyHit { id: string; name: string; slug: string | null; primary_sector: string | null; hq_country: string | null; status?: string | null; is_hidden?: boolean | null }
 
 export function CompanySelectOne({
 	value, onChange, placeholder = 'Search companies…', locked = false,
@@ -537,16 +538,20 @@ export function CompanySelectOne({
 	const ref = useClickOutside<HTMLDivElement>(() => setOpen(false));
 
 	const { data: selectedResp } = useSWR<{ data: CompanyHit[] }>(
-		value ? ['/api/companies', { ids: value, limit: 1 }] : null,
+		value ? ['/api/companies', { ids: value, limit: 1, include_hidden: 'true' }] : null,
 		{ dedupingInterval: 5 * 60_000 },
 	);
 	const selected = selectedResp?.data?.[0];
 
 	const { data: searchResp, isLoading } = useSWR<{ data: CompanyHit[] }>(
-		debouncedQ.length >= 2 ? ['/api/companies', { q: debouncedQ, limit: 12 }] : null,
+		// include_hidden (admins only): acquirers are often "not sportstech" companies and
+		// must still be linkable, not retyped as free text.
+		debouncedQ.length >= 2 ? ['/api/companies', { q: debouncedQ, limit: 12, include_hidden: 'true' }] : null,
 		{ dedupingInterval: 30_000, keepPreviousData: true },
 	);
 	const hits = searchResp?.data ?? [];
+	const exact = hits.some((h) => nameKey(h.name) === nameKey(q));
+	const [creating, setCreating] = useState<string | null>(null);
 
 	// `locked`: the company is fixed by context (e.g. adding an M&A deal from a
 	// company's own profile), so show it read-only with no clear button.
@@ -591,10 +596,21 @@ export function CompanySelectOne({
 							onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
 							<span style={{ fontWeight: 500 }}>{h.name}</span>
 							<span style={{ color: 'var(--fg-muted)' }}>{h.primary_sector ? ` · ${h.primary_sector}` : ''}{h.hq_country ? ` · ${h.hq_country}` : ''}</span>
+							{h.status === 'not_sportstech' && <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}> · not sportstech</span>}
+							{h.is_hidden && <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}> · hidden</span>}
 						</button>
 					))}
 					{!isLoading && hits.length === 0 && <div style={{ padding: 10, fontSize: 12, color: 'var(--fg-muted)' }}>No matches.</div>}
+					{!isLoading && !exact && (
+						<button type="button" onClick={() => { setCreating(q.trim()); setOpen(false); }} style={addRowStyle(true)}>
+							<Plus size={12} /> Create company &ldquo;{q.trim()}&rdquo;
+						</button>
+					)}
 				</div>
+			)}
+			{creating !== null && (
+				<CompanyModal id={null} seed={{ name: creating }} onClose={() => setCreating(null)}
+					onSaved={(id) => { setCreating(null); setQ(''); if (id) onChange(id); }} />
 			)}
 		</div>
 	);

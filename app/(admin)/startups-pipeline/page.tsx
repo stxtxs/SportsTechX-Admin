@@ -15,7 +15,7 @@ import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Tag, Pager } fro
 import { Funnel } from '@/components/charts';
 import { StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
-import { CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
+import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
 import { CandidateInput, parseCandidates } from '@/components/candidate-import';
 import { EMPTY_LOCATION } from '@/components/entity-pickers';
@@ -132,7 +132,8 @@ export default function StartupsPipelinePage() {
 		<div>
 			<PageHeader kicker="Pipeline · startups to add" title="Startups to add" subtitle="Triage submissions, assign reviewers, then promote into the companies catalog." />
 
-			<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-3)' }}>
+			<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 'var(--space-3)' }}>
+				<button className="btn" onClick={() => setImporting(true)}><Upload size={12} /> Bulk upload</button>
 				<WorkSessionTimer queue="startups_pipeline" />
 			</div>
 
@@ -175,7 +176,6 @@ export default function StartupsPipelinePage() {
 				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => setFrom(e.target.value)} title="Added from" />
 				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => setTo(e.target.value)} title="Added to" />
 				<div style={{ flex: 1 }} />
-				<button className="btn ghost" onClick={() => setImporting(true)}><Upload size={12} /> Import</button>
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
 			</div>
 
@@ -194,7 +194,7 @@ export default function StartupsPipelinePage() {
 			)}
 
 			{creating && <AddModal admins={admins} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); refreshAll(); }} />}
-			{importing && <ImportModal onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
+			{importing && <ImportModal admins={admins.map((a) => ({ id: a.id, name: a.full_name || a.display_name || a.email }))} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
 
@@ -346,10 +346,11 @@ interface CandRow { name: string; website: string | null; in_database: Array<{ n
  * each against the companies catalog + existing queue, then approve/skip per
  * row before importing. Rows with an existing match are unchecked by default.
  */
-function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function ImportModal({ admins, onClose, onSaved }: { admins: Array<{ id: string; name: string }>; onClose: () => void; onSaved: () => void }) {
 	const [text, setText] = useState('');
 	const [rows, setRows] = useState<CandRow[] | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [assignees, setAssignees] = useState<string[]>([]);
 
 	const review = async () => {
 		const parsed = parseCandidates(text);
@@ -366,7 +367,7 @@ function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 		if (!approved.length) { toast.error('No candidates approved'); return; }
 		setBusy(true);
 		try {
-			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/startups-pipeline/import', { rows: approved });
+			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/startups-pipeline/import', { rows: approved, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
 			toast.success(`Imported ${r.inserted}${r.skipped ? `, ${r.skipped} dup skipped` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`);
 			onSaved();
 		} catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
@@ -384,6 +385,7 @@ function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 			{!rows ? (
 				<div style={{ display: 'grid', gap: 8 }}>
 					<CandidateInput text={text} onText={setText} sampleName="Acme Sports" placeholder={'Acme Sports, https://acme.com\nhttps://example.io'} />
+					<AssignToAdmins admins={admins} value={assignees} onChange={setAssignees} />
 				</div>
 			) : (
 				<div style={{ display: 'grid', gap: 8 }}>

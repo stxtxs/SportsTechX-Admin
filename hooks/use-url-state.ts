@@ -93,6 +93,11 @@ export function useRestoreListQuery(): void {
 		// Skip the empty render right after a restore so it can't wipe what it is restoring.
 		if (restoring.current && !qs) return;
 		restoring.current = false;
-		try { if (qs) sessionStorage.setItem(STORE + pathname, qs); else sessionStorage.removeItem(STORE + pathname); } catch { /* ignore */ }
+		try {
+			if (qs) sessionStorage.setItem(STORE + pathname, qs);
+			// Clear only when the URL is truly empty (filters cleared). Arriving through a one-off
+			// link (?q=…, ?focus=…) has no list params but must not wipe the saved view.
+			else if (!window.location.search) sessionStorage.removeItem(STORE + pathname);
+		} catch { /* ignore */ }
 	}, [pathname, qs]);
 }

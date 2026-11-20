@@ -10,6 +10,7 @@ import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { Modal } from '@/components/modal';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 type DcrStatus = 'open' | 'picked_up' | 'resolved' | 'rejected';
 interface QueueStats { data_requests: Array<{ label: string; value: number }> }
@@ -319,12 +320,12 @@ const TABS: Array<{ label: string; key: DcrStatus }> = [
 
 export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: boolean; lockEntity?: string }) {
 	const { mutate } = useSWRConfig();
-	const [status, setStatus] = useState('');
+	const [status, setStatus] = useUrlState('dcr', 'status', '');
 	// Only offered when the view isn't locked to a section (the all-queues page).
-	const [entity, setEntity] = useState('');
-	const [search, setSearch] = useState(useInitialQuery());
+	const [entity, setEntity] = useUrlState('dcr', 'entity', '');
+	const [search, setSearch] = useUrlState('dcr', 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
-	const [page, setPage] = useState(1);
+	const [page, setPage] = useUrlNumber('dcr', 'page', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 

@@ -20,6 +20,7 @@ import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer
 import { CandidateInput, parseCandidates } from '@/components/candidate-import';
 import { EMPTY_LOCATION } from '@/components/entity-pickers';
 import { CompanyModal } from '../companies/page';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 type Status = 'new' | 'reviewing' | 'added' | 'rejected';
 interface PerAdmin { assigned_to: string | null; full_name: string | null; pending: number; added: number; rejected: number; completion_rate: number }
@@ -61,13 +62,15 @@ const TABS: Array<{ label: string; key: Status | '' }> = [
 export default function StartupsPipelinePage() {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const [status, setStatus] = useState<Status | ''>('new');
-	const [page, setPage] = useState(1);
-	const [assigned, setAssigned] = useState('');
-	const [search, setSearch] = useState('');
+	const [statusRaw, setStatusRaw] = useUrlState('sp', 'status', 'new');
+	const status = statusRaw as Status | '';
+	const setStatus = (v: Status | '') => setStatusRaw(v);
+	const [page, setPage] = useUrlNumber('sp', 'page', 1);
+	const [assigned, setAssigned] = useUrlState('sp', 'assigned', '');
+	const [search, setSearch] = useUrlState('sp', 'search', '');
 	const debouncedSearch = useDebouncedValue(search);
-	const [from, setFrom] = useState('');
-	const [to, setTo] = useState('');
+	const [from, setFrom] = useUrlState('sp', 'from', '');
+	const [to, setTo] = useUrlState('sp', 'to', '');
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [bulkAssignee, setBulkAssignee] = useState('');
 	const [creating, setCreating] = useState(false);
@@ -92,7 +95,8 @@ export default function StartupsPipelinePage() {
 	const c = stats?.counts;
 	const pending = (c?.new ?? 0) + (c?.reviewing ?? 0);
 	const weekDelta = stats?.weekly && stats.weekly.added_last_week > 0 ? ((stats.weekly.added_this_week - stats.weekly.added_last_week) / stats.weekly.added_last_week) * 100 : null;
-	const reviewers = (stats?.byAdmin ?? []).filter((a) => a.assigned_to);
+	// Unassigned work is shown as its own row (the old admin did), not dropped.
+	const reviewers = stats?.byAdmin ?? [];
 	const entries = data?.data ?? [];
 	const allSelected = entries.length > 0 && entries.every((r) => selected.has(r.id));
 	const toggleAll = () => setSelected(allSelected ? new Set() : new Set(entries.map((r) => r.id)));
@@ -133,16 +137,17 @@ export default function StartupsPipelinePage() {
 			</div>
 
 			<StatsPanel title="Statistics" action={<DateRangePicker value={statsRange} onChange={setStatsRange} />}>
-				<StatStrip cols={4}>
+				<StatStrip cols={5}>
 					<StatCard label="Total in Sheet" tone="blue" value={(c?.total ?? 0).toLocaleString()} />
 					<StatCard label="Added" tone="green" value={(c?.added ?? 0).toLocaleString()} />
 					<StatCard label="Pending" tone="amber" value={pending.toLocaleString()} urgent={pending > 0} />
+					<StatCard label="Skipped" value={(c?.rejected ?? 0).toLocaleString()} />
 					<StatCard label="Added this week" tone="purple" value={(stats?.weekly.added_this_week ?? 0).toLocaleString()} delta={weekDelta} />
 				</StatStrip>
 			</StatsPanel>
 
 			{/* Per-admin completion + time, week-over-week throughput, and the funnel — matches the old admin panel. */}
-			<CompletionByAdmin rows={reviewers.map((a) => ({ key: a.assigned_to!, name: a.full_name ?? adminName(a.assigned_to), done: a.added + a.rejected, total: a.added + a.rejected + a.pending, rate: a.completion_rate }))} />
+			<CompletionByAdmin rows={reviewers.map((a) => ({ key: a.assigned_to ?? 'unassigned', name: a.assigned_to ? (a.full_name ?? adminName(a.assigned_to)) : 'Unassigned', done: a.added, skipped: a.rejected, pending: a.pending, total: a.added + a.rejected + a.pending, rate: a.completion_rate }))} />
 
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
 				<TimeAnalytics timeStats={timeStats} adminName={adminName} />

@@ -24,6 +24,7 @@ import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 interface Entity {
 	id: string;
@@ -60,19 +61,19 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const ask = useConfirm();
 	const [typeState, setType] = useState<EcoType>('program');
 	const type = entityType ?? typeState;
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useUrlState('eco', 'search', '');
 	const debouncedSearch = useDebouncedValue(search);
-	const [status, setStatus] = useState('');
-	const [country, setCountry] = useState('');
-	const [category, setCategory] = useState('');
-	const [sport, setSport] = useState('');
-	const [foundedMin, setFoundedMin] = useState('');
-	const [foundedMax, setFoundedMax] = useState('');
-	const [mode, setMode] = useState('');
-	const [featured, setFeatured] = useState('');
-	const [upcoming, setUpcoming] = useState('');
-	const [entriesOpen, setEntriesOpen] = useState('');
-	const [page, setPage] = useState(1);
+	const [status, setStatus] = useUrlState('eco', 'status', '');
+	const [country, setCountry] = useUrlState('eco', 'country', '');
+	const [category, setCategory] = useUrlState('eco', 'category', '');
+	const [sport, setSport] = useUrlState('eco', 'sport', '');
+	const [foundedMin, setFoundedMin] = useUrlState('eco', 'foundedMin', '');
+	const [foundedMax, setFoundedMax] = useUrlState('eco', 'foundedMax', '');
+	const [mode, setMode] = useUrlState('eco', 'mode', '');
+	const [featured, setFeatured] = useUrlState('eco', 'featured', '');
+	const [upcoming, setUpcoming] = useUrlState('eco', 'upcoming', '');
+	const [entriesOpen, setEntriesOpen] = useUrlState('eco', 'entriesOpen', '');
+	const [page, setPage] = useUrlNumber('eco', 'page', 1);
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
@@ -80,11 +81,16 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 	const [viewingId, setViewingId] = useState<string | null>(null);
 
+	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
+	const dCountry = useDebouncedValue(country);
+	const dCategory = useDebouncedValue(category);
+	const dFoundedMin = useDebouncedValue(foundedMin);
+	const dFoundedMax = useDebouncedValue(foundedMax);
 	const { data, error, isLoading } = useSWR<Response>(
 		['/api/ecosystem-entities', {
 			entity_type: type, q: debouncedSearch || undefined, status: status || undefined,
-			country: country.trim() || undefined, category: category.trim() || undefined, sport_slug: sport || undefined,
-			founded_year_min: foundedMin || undefined, founded_year_max: foundedMax || undefined,
+			country: dCountry.trim() || undefined, category: dCategory.trim() || undefined, sport_slug: sport || undefined,
+			founded_year_min: dFoundedMin || undefined, founded_year_max: dFoundedMax || undefined,
 			...(type === 'event'
 				? { mode: mode || undefined, is_featured: featured || undefined, upcoming_only: upcoming || undefined }
 				: type === 'program'
@@ -732,7 +738,8 @@ export default function EcosystemAdminPage() {
 	const pathname = usePathname();
 	const raw = searchParams.get('tab');
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
-	const setTab = (t: EcoTab) => router.replace(`${pathname}?tab=${t}`, { scroll: false });
+	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
+	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); router.replace(`${pathname}?${q}`, { scroll: false }); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const { from, to } = dateRange;

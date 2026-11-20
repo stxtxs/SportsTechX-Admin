@@ -16,6 +16,7 @@ import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter, SectorT
 import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components/csv-import';
 import { Field } from '@/components/tabbed-form';
 import { CompanySelectOne, SectorCascade, SportsPicker, CurrencySelect, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 
 interface Acquisition {
 	id: string;
@@ -46,29 +47,33 @@ const fmtMoney = (n: number): string => n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` :
 export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
-	const [search, setSearch] = useState(useInitialQuery());
+	const [search, setSearch] = useUrlState('acq', 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
-	const [type, setType] = useState('');
-	const [year, setYear] = useState('');
-	const [sector, setSector] = useState('');
-	const [sport, setSport] = useState('');
-	const [country, setCountry] = useState('');
-	const [stech, setStech] = useState('');
-	const [amountMin, setAmountMin] = useState('');
-	const [amountMax, setAmountMax] = useState('');
-	const [page, setPage] = useState(1);
-	const [sort, setSort] = useState('-acquisition_date');
+	const [type, setType] = useUrlState('acq', 'type', '');
+	const [year, setYear] = useUrlState('acq', 'year', '');
+	const [sector, setSector] = useUrlState('acq', 'sector', '');
+	const [sport, setSport] = useUrlState('acq', 'sport', '');
+	const [country, setCountry] = useUrlState('acq', 'country', '');
+	const [stech, setStech] = useUrlState('acq', 'stech', '');
+	const [amountMin, setAmountMin] = useUrlState('acq', 'amountMin', '');
+	const [amountMax, setAmountMax] = useUrlState('acq', 'amountMax', '');
+	const [page, setPage] = useUrlNumber('acq', 'page', 1);
+	const [sort, setSort] = useUrlState('acq', 'sort', '-acquisition_date');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 
+	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
+	const dCountry = useDebouncedValue(country);
+	const dAmountMin = useDebouncedValue(amountMin);
+	const dAmountMax = useDebouncedValue(amountMax);
 	const { data, error, isLoading } = useSWR<AcqResponse>(
 		['/api/acquisitions', {
 			q: debouncedSearch || undefined, acquisition_type: type || undefined, year: year || undefined,
-			sector_slug: sector || undefined, sport_slug: sport || undefined, country: country.trim() || undefined,
+			sector_slug: sector || undefined, sport_slug: sport || undefined, country: dCountry.trim() || undefined,
 			acquiree_is_sportstech: stech || undefined,
-			amount_usd_min: amountMin || undefined, amount_usd_max: amountMax || undefined,
+			amount_usd_min: dAmountMin || undefined, amount_usd_max: dAmountMax || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },

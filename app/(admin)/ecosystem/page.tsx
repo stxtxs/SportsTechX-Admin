@@ -23,6 +23,7 @@ import { ClaimsView } from '@/components/admin-views/claims';
 import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
+import { MergeModal } from '@/components/merge-modal';
 
 interface Entity {
 	id: string;
@@ -76,6 +77,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [removePending, setRemovePending] = useState(false);
+	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 	const [viewingId, setViewingId] = useState<string | null>(null);
 
 	const { data, error, isLoading } = useSWR<Response>(
@@ -163,6 +165,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 					onSaved={() => { setCreating(false); setEditingId(null); void refresh(); }}
 				/>
 			)}
+			{merging && <MergeModal kind="ecosystem" id={merging.id} name={merging.name} onClose={() => setMerging(null)} onMerged={() => { setMerging(null); void refresh(); }} />}
 
 			{viewingId ? (
 				<EntityDetail id={viewingId} onBack={() => setViewingId(null)} onEdit={(eid) => setEditingId(eid)} onView={setViewingId} />
@@ -211,6 +214,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 									<td>{e.hq_country ?? '—'}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(e.id)}>Edit</button>
+										<button className="btn ghost" title="Merge this duplicate into another organisation" onClick={() => setMerging({ id: e.id, name: e.name })}>Merge</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} disabled={removePending} onClick={() => void remove(e.id, e.name)}>
 											<Trash2 size={12} />
 										</button>

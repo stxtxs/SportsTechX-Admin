@@ -29,6 +29,7 @@ import { ClaimsView } from '@/components/admin-views/claims';
 import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
+import { MergeModal } from '@/components/merge-modal';
 
 interface Company {
 	id: string;
@@ -74,6 +75,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [removePending, setRemovePending] = useState(false);
+	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
 	const { data, error, isLoading } = useSWR<CompaniesResponse>(
 		['/api/companies', {
@@ -173,6 +175,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 					onSaved={() => { setCreating(false); setEditingId(null); void refresh(); }}
 				/>
 			)}
+			{merging && <MergeModal kind="company" id={merging.id} name={merging.name} onClose={() => setMerging(null)} onMerged={() => { setMerging(null); void refresh(); }} />}
 
 			<div className="card">
 				<AsyncState loading={isLoading} error={error} empty={companies.length === 0} emptyMsg={search ? 'No companies match.' : 'No companies yet.'} onRetry={() => void refresh()}>
@@ -188,6 +191,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 									<td>{c.status ?? '—'}{c.is_hidden && <span className="tag" style={{ marginLeft: 6 }} title="Hidden from users">Hidden</span>}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(c.id)}>Edit</button>
+										<button className="btn ghost" title="Merge this duplicate into another company" onClick={() => setMerging({ id: c.id, name: c.name })}>Merge</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} disabled={removePending} onClick={() => void remove(c.id, c.name)}>
 											<Trash2 size={12} />
 										</button>

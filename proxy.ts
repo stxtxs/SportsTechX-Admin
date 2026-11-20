@@ -62,7 +62,8 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
 	matcher: [
-		// Run on everything except static assets and files with extensions.
-		'/((?!_next/static|_next/image|favicon\\.ico|favicon\\.svg|robots\\.txt|sitemap\\.xml|.*\\.).*)',
+		// Pages only: not static assets/files, and not /api/* — that is a rewrite to the API,
+		// which checks the bearer token itself; running this on every API call only adds latency.
+		'/((?!api/|_next/static|_next/image|favicon\\.ico|favicon\\.svg|robots\\.txt|sitemap\\.xml|.*\\.).*)',
 	],
 };

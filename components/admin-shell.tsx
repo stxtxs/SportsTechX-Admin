@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useRestoreListQuery } from '@/hooks/use-url-state';
 import {
 	LayoutDashboard, Briefcase, Users, FilePlus, FileText, Layers,
 	Activity, ShoppingCart, LogOut, CreditCard, ToggleLeft,
@@ -167,6 +168,9 @@ function NavRow({ item, activeHref, onNavigate }: { item: NavItem; activeHref: s
  *  - Redirects non-admin users to /forbidden
  *  - Renders the rail + topbar + content layout
  */
+/** Brings back a list page's last filters/page when you return to it (see use-url-state). */
+function RestoreListQuery() { useRestoreListQuery(); return null; }
+
 export function AdminShell({ children }: { children: React.ReactNode }) {
 	const { session, loading: authLoading, signOut } = useAuthSession();
 	const { isAdmin, isLoading: adminLoading } = useIsAdmin();
@@ -256,6 +260,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 				</nav>
 			</aside>
 
+			<Suspense fallback={null}><RestoreListQuery /></Suspense>
 			<main className="admin-main">
 				<header className="admin-topbar">
 					<button className="btn ghost admin-rail-toggle" onClick={() => setNavOpen((v) => !v)} aria-label="Toggle navigation">

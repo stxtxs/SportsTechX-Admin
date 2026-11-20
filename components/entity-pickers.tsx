@@ -8,6 +8,11 @@ import { ChevronDown, Plus, Search, Star, X } from 'lucide-react';
 import { qk } from '@/lib/query-keys';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
+import dynamic from 'next/dynamic';
+import { AddCandidateModal } from '@/components/investor-candidate-modal';
+
+// Lazy: admin-views/investors imports this file, so a static import would be a cycle.
+const InvestorModal = dynamic(() => import('@/components/admin-views/investors').then((m) => m.InvestorModal), { ssr: false });
 
 // ─── inline reference creation ───────────────────────────────────────────────
 // Lets admins create a sector / sport / tech-tag / round-type in place instead
@@ -617,11 +622,22 @@ export function InvestorPicker({ value, onChange }: { value: DealInvestor[]; onC
 		onChange([...value, { investor_id: h.id, investor_name: h.name, is_lead: false }]);
 		setQ(''); setOpen(false);
 	};
-	const addFreeText = () => {
-		const name = q.trim();
+	const addFreeText = (raw = q) => {
+		const name = raw.trim();
 		if (!name) return;
 		onChange([...value, { investor_name: name, is_lead: false }]);
 		setQ(''); setOpen(false);
+	};
+	// Same rule as the DB's investor_name_key(): case, spaces and punctuation ignored.
+	const exact = hits.find((h) => nameKey(h.name) === nameKey(q));
+	const [adding, setAdding] = useState<null | { mode: 'queue' | 'create'; name: string }>(null);
+	const startAdding = (mode: 'queue' | 'create') => { setAdding({ mode, name: q.trim() }); setOpen(false); };
+	const createdProfile = async (id?: string) => {
+		const typed = adding?.name ?? '';
+		setAdding(null); setQ('');
+		if (!id) return;
+		const r = await api<{ data: InvestorHit[] }>('GET', `/api/investors?ids=${id}&limit=1`).catch(() => null);
+		onChange([...value, { investor_id: id, investor_name: r?.data?.[0]?.name ?? typed, is_lead: false }]);
 	};
 	const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx));
 	const toggleLead = (idx: number) => onChange(value.map((v, i) => i === idx ? { ...v, is_lead: !v.is_lead } : v));
@@ -657,7 +673,7 @@ export function InvestorPicker({ value, onChange }: { value: DealInvestor[]; onC
 					value={q}
 					onChange={(e) => { setQ(e.target.value); setOpen(true); }}
 					onFocus={() => setOpen(true)}
-					onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addFreeText(); } }}
+					onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (exact) addLinked(exact); else addFreeText(); } }}
 					style={{ width: '100%', paddingLeft: 26 }}
 				/>
 				{open && q.length >= 2 && (
@@ -676,17 +692,39 @@ export function InvestorPicker({ value, onChange }: { value: DealInvestor[]; onC
 								{h.name}
 							</button>
 						))}
-						<button type="button" onClick={addFreeText}
-							style={{ display: 'block', width: '100%', padding: '8px 10px', textAlign: 'left', background: 'transparent', border: 0, borderTop: '1px solid var(--border)', cursor: 'pointer', color: 'var(--fg-muted)', fontSize: 12 }}>
-							+ Add &ldquo;{q.trim()}&rdquo; as free text
+						{!exact && !searching && (
+							<>
+								<button type="button" onClick={() => startAdding('queue')} style={addRowStyle(true)}>
+									<Plus size={12} /> Add &ldquo;{q.trim()}&rdquo; to Investors to add
+								</button>
+								<button type="button" onClick={() => startAdding('create')} style={addRowStyle(false)}>
+									<Plus size={12} /> Create investor profile &ldquo;{q.trim()}&rdquo; now
+								</button>
+							</>
+						)}
+						<button type="button" onClick={() => addFreeText()} style={{ ...addRowStyle(exact != null || searching), color: 'var(--fg-muted)' }}>
+							Add &ldquo;{q.trim()}&rdquo; as text only
 						</button>
 					</div>
 				)}
 			</div>
-			<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{value.length} investor(s) · star marks the lead</div>
+			<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{value.length} investor(s) · star marks the lead · names left as text are queued in Investors to add on save</div>
+			{adding?.mode === 'queue' && (
+				<AddCandidateModal initialName={adding.name} onClose={() => setAdding(null)}
+					onSaved={(name) => { setAdding(null); addFreeText(name); }} />
+			)}
+			{adding?.mode === 'create' && (
+				<InvestorModal id={null} seed={{ name: adding.name }} onClose={() => setAdding(null)} onSaved={(id) => void createdProfile(id)} />
+			)}
 		</div>
 	);
 }
+
+const nameKey = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const addRowStyle = (divider: boolean): React.CSSProperties => ({
+	display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 10px', textAlign: 'left', background: 'transparent', border: 0,
+	borderTop: divider ? '1px solid var(--border)' : 0, cursor: 'pointer', color: 'var(--fg)', fontSize: 12,
+});
 
 // ─── User pickers (search by name/email → profile_id) ────────────────────────
 // Admins never type UUIDs — they search a person and we hand back the id(s).

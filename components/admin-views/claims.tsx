@@ -60,16 +60,18 @@ const TYPE_FILTERS: Array<{ label: string; key: string }> = [
 interface ClaimsResponse { data: Claim[]; total: number; totalPages: number }
 
 export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean; lockType?: 'company' | 'investor' | 'ecosystem_entity' }) {
+	// Several tabs reuse this view with different locked types: each keeps its own filters.
+	const ns = lockType ? `claim-${lockType.replace('_', '-')}` : 'claim';
 	const { mutate } = useSWRConfig();
 	// A tab that locks the type (e.g. Companies → Claims) ignores the URL value.
-	const [claimTypeUrl, setClaimType] = useUrlState('claim', 'type');
+	const [claimTypeUrl, setClaimType] = useUrlState(ns, 'type');
 	const claimType = lockType ?? claimTypeUrl;
-	const [page, setPage] = useUrlNumber('claim', 'page', 1);
+	const [page, setPage] = useUrlNumber(ns, 'page', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [sendEmail, setSendEmail] = useState(true);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
 	const [showCompleted, setShowCompleted] = useState(false);
-	const [search, setSearch] = useUrlState('claim', 'q', '', 'q');
+	const [search, setSearch] = useUrlState(ns, 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
 
 	const { data, error, isLoading } = useSWR<ClaimsResponse>(

@@ -22,6 +22,7 @@ import { InvestorsView } from '@/components/admin-views/investors';
 import { ClaimsView } from '@/components/admin-views/claims';
 import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
+import { confirmDelete } from '@/lib/delete-impact';
 
 interface Entity {
 	id: string;
@@ -98,7 +99,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/ecosystem-entities');
 
 	const remove = async (id: string, name: string) => {
-		if (!(await ask(`Delete ${name}?`))) return;
+		if (!(await confirmDelete(ask, 'ecosystem', id, name))) return;
 		setRemovePending(true);
 		try {
 			await api('DELETE', `/api/admin/ecosystem-entities/${id}`);

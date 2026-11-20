@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { useConfirm } from '@/components/confirm';
 import { PageHeader, PillTabs } from '@/components/atoms';
 import { Select } from '@/components/select';
+import { confirmDelete } from '@/lib/delete-impact';
 
 type Kind = 'sectors' | 'sports' | 'tech-tags' | 'round-types' | 'countries' | 'cities';
 
@@ -85,8 +86,8 @@ export default function ReferenceAdminPage() {
 
 	const refresh = () => mutate((key) => Array.isArray(key) && typeof key[0] === 'string' && (key[0] as string).startsWith(`/api/admin/reference/${kind}`));
 
-	const remove = async (id: string) => {
-		if (!(await ask('Delete this entry? Anything referencing it may break.'))) return;
+	const remove = async (id: string, name: string) => {
+		if (!(await confirmDelete(ask, kind, id, name))) return;
 		try {
 			await api('DELETE', `/api/admin/reference/${kind}/${id}`);
 			toast.success('Deleted');
@@ -160,7 +161,7 @@ export default function ReferenceAdminPage() {
 									{showSortOrder && <td>{r.sort_order ?? '—'}</td>}
 									<td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
 										<button className="btn ghost" onClick={() => setEditing(r)}>Edit</button>
-										<button className="btn ghost" style={{ color: 'var(--accent)', marginLeft: 6 }} onClick={() => void remove(r.id)}><Trash2 size={12} /></button>
+										<button className="btn ghost" style={{ color: 'var(--accent)', marginLeft: 6 }} onClick={() => void remove(r.id, r.name)}><Trash2 size={12} /></button>
 									</td>
 								</tr>
 							);

@@ -19,6 +19,7 @@ import {
 	EMPTY_SOCIAL, EMPTY_LOCATION, type SocialValue, type LocationValue,
 } from '@/components/entity-pickers';
 import { YearSelect } from '@/components/year-select';
+import { confirmDelete } from '@/lib/delete-impact';
 
 interface Investor {
 	id: string;
@@ -29,7 +30,6 @@ interface Investor {
 	year_launched?: number | null;
 	status?: string | null;
 	is_verified?: boolean | null;
-	deals_count?: number | string | null;
 }
 
 interface InvestorsResponse { data: Investor[]; total: number; totalPages: number }
@@ -94,13 +94,9 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 		} catch (e) { toast.error((e as Error).message); }
 	};
 
-	const remove = async (id: string, dealsCount?: number | string | null) => {
-		// Deleting unlinks the investor's deals (FK ON DELETE SET NULL) and nothing re-links them.
-		const n = Number(dealsCount ?? 0);
-		const msg = n > 0
-			? `Delete this investor? It is on ${n} deal${n === 1 ? '' : 's'}; ${n === 1 ? 'that deal' : 'those deals'} will keep the name as plain text and lose the link. If this is a duplicate, move ${n === 1 ? 'the deal' : 'the deals'} to the profile you keep first. This cannot be undone.`
-			: 'Delete this investor? This cannot be undone.';
-		if (!(await ask(msg))) return;
+	const remove = async (id: string, name: string) => {
+		// Says how many deals lose the link (they keep the name as text; nothing re-links them).
+		if (!(await confirmDelete(ask, 'investor', id, name))) return;
 		try {
 			await api('DELETE', `/api/admin/investors/${id}`);
 			toast.success('Deleted');
@@ -190,7 +186,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 									<td>{r.is_verified ? '✓' : '—'}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(r.id)}>Edit</button>
-										<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void remove(r.id, r.deals_count)}><Trash2 size={12} /></button>
+										<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void remove(r.id, r.name)}><Trash2 size={12} /></button>
 									</td>
 								</tr>
 							))}

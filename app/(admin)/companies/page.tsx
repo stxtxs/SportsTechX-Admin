@@ -28,6 +28,7 @@ import { AcquisitionModal, AcquisitionsView, type StagedAcq } from '@/components
 import { ClaimsView } from '@/components/admin-views/claims';
 import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
+import { confirmDelete } from '@/lib/delete-impact';
 
 interface Company {
 	id: string;
@@ -92,7 +93,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/companies');
 
 	const remove = async (id: string, name: string) => {
-		if (!(await ask(`Delete ${name}?`))) return;
+		if (!(await confirmDelete(ask, 'company', id, name))) return;
 		setRemovePending(true);
 		try {
 			await api('DELETE', `/api/admin/companies/${id}`);

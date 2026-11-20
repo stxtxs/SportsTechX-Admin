@@ -1165,7 +1165,7 @@ export default function CompaniesAdminPage() {
 	const raw = searchParams.get('tab');
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); router.replace(`${pathname}?${q}`, { scroll: false }); };
+	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); router.replace(`${pathname}?${q}`, { scroll: false }); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const from = dateRange.from, to = dateRange.to;

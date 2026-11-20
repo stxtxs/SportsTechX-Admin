@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye } from 'lucide-react';
+import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload } from 'lucide-react';
 import { api } from '@/lib/api';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
 import { Select } from '@/components/select';
@@ -14,7 +14,7 @@ import { PageHeader, StatCard, StatsPanel, AsyncState, Tag, Chip, Section, Pager
 import { Funnel } from '@/components/charts';
 import { StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
-import { CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
+import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
 import { CandidateInput, parseInvestorCandidates } from '@/components/candidate-import';
 import { InvestorModal } from '@/components/admin-views/investors';
@@ -129,7 +129,8 @@ export default function InvestorReviewPage() {
 		<div>
 			<PageHeader kicker="Curation · investor review" title="Investor review" subtitle="Triage candidate investors, assign reviewers, then promote into the catalog." />
 
-			<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-3)' }}>
+			<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 'var(--space-3)' }}>
+				<button className="btn" onClick={() => setImporting(true)}><Upload size={12} /> Bulk upload</button>
 				<WorkSessionTimer queue="investor_review" />
 			</div>
 
@@ -172,7 +173,6 @@ export default function InvestorReviewPage() {
 				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => setFrom(e.target.value)} title="Added from" />
 				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => setTo(e.target.value)} title="Added to" />
 				<div style={{ flex: 1 }} />
-				<button className="btn ghost" onClick={() => setImporting(true)}><Plus size={12} /> Import</button>
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
 			</div>
 
@@ -193,7 +193,7 @@ export default function InvestorReviewPage() {
 			)}
 
 			{creating && <AddCandidateModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); refreshAll(); }} />}
-			{importing && <ImportModal onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
+			{importing && <ImportModal admins={admins.map((a) => ({ id: a.id, name: a.full_name || a.display_name || a.email }))} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{skipping && <SkipModal row={skipping} onClose={() => setSkipping(null)} onSaved={() => { setSkipping(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
@@ -336,15 +336,16 @@ function PromoteModal({ row, onClose, onDone }: { row: QueueRow; onClose: () => 
 	);
 }
 
-function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function ImportModal({ admins, onClose, onSaved }: { admins: Array<{ id: string; name: string }>; onClose: () => void; onSaved: () => void }) {
 	const [text, setText] = useState('');
 	const [pending, setPending] = useState(false);
+	const [assignees, setAssignees] = useState<string[]>([]);
 	const submit = async () => {
 		const rows = parseInvestorCandidates(text);
 		if (!rows.length) { toast.error('Paste at least one line'); return; }
 		setPending(true);
 		try {
-			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/investor-review/import', { rows });
+			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/investor-review/import', { rows, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
 			toast.success(`Imported ${r.inserted}${r.skipped ? `, skipped ${r.skipped} dup(s)` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`); onSaved();
 		} catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
 	};
@@ -362,6 +363,7 @@ function ImportModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 				templateColumns={['Name', 'Website', 'Category', 'Country', 'City', 'Year_Launched', 'Description', 'LinkedIn', 'Twitter', 'Instagram', 'Facebook', 'POC_Name', 'POC_Position', 'POC_Email', 'POC_LinkedIn']}
 				templateRows={[['Sequoia Capital', 'https://sequoiacap.com', 'venture_capital', 'USA', 'Menlo Park', '1972', 'Global venture capital firm', 'https://linkedin.com/company/sequoia', 'https://x.com/sequoia', '', '', 'Roelof Botha', 'Managing Partner', 'roelof@sequoiacap.com', 'https://linkedin.com/in/roelofbotha']]}
 			/>
+			<AssignToAdmins admins={admins} value={assignees} onChange={setAssignees} />
 		</Modal>
 	);
 }

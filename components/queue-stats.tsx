@@ -45,6 +45,24 @@ export function CompletionByAdmin({ rows, skippedLabel = 'skipped' }: {
 	);
 }
 
+/** Bulk upload "Assign to": pick admins; the uploaded rows are shared out evenly (old Hub parity). */
+export function AssignToAdmins({ admins, value, onChange }: {
+	admins: Array<{ id: string; name: string }>; value: string[]; onChange: (ids: string[]) => void;
+}) {
+	if (!admins.length) return null;
+	const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+	return (
+		<div style={{ marginTop: 12 }}>
+			<div className="co-stat-label" style={{ marginBottom: 6 }}>Assign to (optional, rows are shared out evenly)</div>
+			<div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+				{admins.map((a) => (
+					<button key={a.id} type="button" className={`chip ${value.includes(a.id) ? 'on' : ''}`} onClick={() => toggle(a.id)}>{a.name}</button>
+				))}
+			</div>
+		</div>
+	);
+}
+
 /** Per-admin work-time table (Total / Avg-per-item / Completed) + overall-average footer. */
 export function TimeAnalytics({ timeStats, adminName }: { timeStats?: QueueTimeStats; adminName: (id: string | null) => string }) {
 	const rows = timeStats?.perAdmin ?? [];

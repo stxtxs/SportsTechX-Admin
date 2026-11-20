@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { Select } from '@/components/select';
 import { Modal } from '@/components/modal';
 
@@ -26,7 +26,11 @@ export function AddCandidateModal({ initialName = '', onClose, onSaved }: { init
 			if (f.assigned_to) body.assigned_to = f.assigned_to;
 			await api('POST', '/api/admin/investor-review', body);
 			toast.success('Added to Investors to add'); onSaved(body.name as string);
-		} catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
+		} catch (e) {
+			// Already pending in the queue: nothing to add, and the caller can carry on (the deal keeps the name).
+			if (e instanceof ApiError && e.status === 409) { toast.info(e.message); onSaved(f.name.trim()); }
+			else toast.error((e as Error).message);
+		} finally { setPending(false); }
 	};
 
 	return (

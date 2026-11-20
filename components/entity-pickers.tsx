@@ -647,6 +647,20 @@ export function InvestorPicker({ value, onChange }: { value: DealInvestor[]; onC
 	// Same rule as the DB's investor_name_key(): case, spaces and punctuation ignored.
 	const exact = hits.find((h) => nameKey(h.name) === nameKey(q));
 	const [adding, setAdding] = useState<null | { mode: 'queue' | 'create'; name: string }>(null);
+	// Enter: link the profile with exactly this name if there is one. Asks the API itself
+	// rather than trusting `hits` (debounced, and it hides investors already on the deal),
+	// so fast typing never stores an existing investor as unlinked text.
+	const submitTyped = async () => {
+		const name = q.trim();
+		if (!name) return;
+		let match: InvestorHit | null = exact ?? null;
+		if (!match) {
+			const r = await api<{ data: InvestorHit[] }>('GET', `/api/investors?q=${encodeURIComponent(name)}&limit=12`).catch(() => null);
+			match = r?.data?.find((h) => nameKey(h.name) === nameKey(name)) ?? null;
+		}
+		if (match && selectedIds.has(match.id)) { toast(`${match.name} is already on this deal`); setQ(''); return; }
+		if (match) addLinked(match); else addFreeText(name);
+	};
 	const startAdding = (mode: 'queue' | 'create') => { setAdding({ mode, name: q.trim() }); setOpen(false); };
 	const createdProfile = async (id?: string) => {
 		const typed = adding?.name ?? '';
@@ -689,7 +703,7 @@ export function InvestorPicker({ value, onChange }: { value: DealInvestor[]; onC
 					value={q}
 					onChange={(e) => { setQ(e.target.value); setOpen(true); }}
 					onFocus={() => setOpen(true)}
-					onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (exact) addLinked(exact); else addFreeText(); } }}
+					onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void submitTyped(); } }}
 					style={{ width: '100%', paddingLeft: 26 }}
 				/>
 				{open && q.length >= 2 && (

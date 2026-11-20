@@ -20,6 +20,7 @@ import {
 } from '@/components/entity-pickers';
 import { YearSelect } from '@/components/year-select';
 import { confirmDelete } from '@/lib/delete-impact';
+import { MergeModal } from '@/components/merge-modal';
 
 interface Investor {
 	id: string;
@@ -61,6 +62,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
+	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
 	const { data, error, isLoading } = useSWR<InvestorsResponse>(
 		['/api/investors', {
@@ -169,6 +171,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 					onSaved={() => { setCreating(false); setEditingId(null); void refresh(); }}
 				/>
 			)}
+			{merging && <MergeModal kind="investor" id={merging.id} name={merging.name} onClose={() => setMerging(null)} onMerged={() => { setMerging(null); void refresh(); }} />}
 
 			<div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No investors match.' : 'No investors yet.'} onRetry={() => void refresh()}>
@@ -186,6 +189,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 									<td>{r.is_verified ? '✓' : '—'}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(r.id)}>Edit</button>
+										<button className="btn ghost" title="Merge this duplicate into another investor" onClick={() => setMerging({ id: r.id, name: r.name })}>Merge</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void remove(r.id, r.name)}><Trash2 size={12} /></button>
 									</td>
 								</tr>

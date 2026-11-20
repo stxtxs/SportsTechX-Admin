@@ -565,6 +565,13 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 			toast.success('Participant added'); setPCompanyId(''); setPName(''); setPCohort(''); setPYear(''); void refreshParts();
 		} catch (e) { toast.error((e as Error).message); }
 	};
+	// Link a text-only participant to a catalog company (or create it from the picker).
+	const [linkingId, setLinkingId] = useState<string | null>(null);
+	const linkPart = async (ppId: string, companyId: string) => {
+		if (!companyId) return;
+		try { await api('PATCH', `/api/admin/ecosystem-entities/${entityId}/participants/${ppId}`, { company_id: companyId }); toast.success('Linked'); setLinkingId(null); void refreshParts(); }
+		catch (e) { toast.error((e as Error).message); }
+	};
 	const delPart = async (ppId: string) => { try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/participants/${ppId}`); void refreshParts(); } catch (e) { toast.error((e as Error).message); } };
 	const delCohort = async (year: number) => {
 		if (!(await ask(`Delete all participants in the ${year} cohort?`))) return;
@@ -628,7 +635,11 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 								</div>
 								<table className="data-table"><tbody>
 									{rows.map((pp) => (
-										<tr key={pp.id}><td>{pp.name ?? '—'}{pp.company_id && <span className="tag pos" style={{ marginLeft: 6 }}>linked</span>}</td><td>{pp.cohort_name ?? '—'}</td><td>{pp.participation_status}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void delPart(pp.id)}><Trash2 size={12} /></button></td></tr>
+										<tr key={pp.id}><td>{pp.name ?? '—'}{pp.company_id
+											? <span className="tag pos" style={{ marginLeft: 6 }}>linked</span>
+											: linkingId === pp.id
+												? <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}><div style={{ flex: 1 }}><CompanySelectOne value="" onChange={(cid) => void linkPart(pp.id, cid)} placeholder={`Find ${pp.name ?? 'the company'}…`} /></div><button className="btn ghost" onClick={() => setLinkingId(null)}>Cancel</button></div>
+												: <button className="btn ghost" style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px' }} onClick={() => setLinkingId(pp.id)} title="Link this name to a company in the catalog">Link</button>}</td><td>{pp.cohort_name ?? '—'}</td><td>{pp.participation_status}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void delPart(pp.id)}><Trash2 size={12} /></button></td></tr>
 									))}
 								</tbody></table>
 							</div>

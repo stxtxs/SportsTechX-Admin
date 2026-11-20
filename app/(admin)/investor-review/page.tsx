@@ -18,6 +18,7 @@ import { CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/qu
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
 import { CandidateInput, parseInvestorCandidates } from '@/components/candidate-import';
 import { InvestorModal } from '@/components/admin-views/investors';
+import { AddCandidateModal, L } from '@/components/investor-candidate-modal';
 
 type EnrichStatus = 'pending' | 'enriching' | 'enriched' | 'failed';
 interface QueueRow {
@@ -188,7 +189,7 @@ export default function InvestorReviewPage() {
 				</div>
 			)}
 
-			{creating && <AddModal admins={admins} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); refreshAll(); }} />}
+			{creating && <AddCandidateModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); refreshAll(); }} />}
 			{importing && <ImportModal onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{skipping && <SkipModal row={skipping} onClose={() => setSkipping(null)} onSaved={() => { setSkipping(null); refreshAll(); }} />}
@@ -235,66 +236,6 @@ export default function InvestorReviewPage() {
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 			</div>
 		</div>
-	);
-}
-
-function AddModal({ admins, onClose, onSaved }: { admins: AdminUser[]; onClose: () => void; onSaved: () => void }) {
-	const [f, setF] = useState({ name: '', website: '', category: '', country: '', city: '', year_launched: '', description: '', linkedin_url: '', twitter_url: '', instagram_url: '', facebook_url: '', poc_name: '', poc_position: '', poc_email: '', poc_linkedin: '', assigned_to: '' });
-	const [pending, setPending] = useState(false);
-	const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }));
-
-	const submit = async () => {
-		setPending(true);
-		try {
-			const body: Record<string, unknown> = { name: f.name.trim() };
-			for (const k of ['website', 'category', 'country', 'city', 'description', 'linkedin_url', 'twitter_url', 'instagram_url', 'facebook_url', 'poc_name', 'poc_position', 'poc_email', 'poc_linkedin'] as const) if (f[k].trim()) body[k] = f[k].trim();
-			if (f.year_launched.trim()) body.year_launched = Number(f.year_launched);
-			if (f.assigned_to) body.assigned_to = f.assigned_to;
-			await api('POST', '/api/admin/investor-review', body);
-			toast.success('Added'); onSaved();
-		} catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
-	};
-
-	return (
-		<Modal title="Add candidate" onClose={onClose} width={580} footer={
-			<>
-				<button className="btn ghost" onClick={onClose}>Cancel</button>
-				<button className="btn" disabled={!f.name.trim() || pending} onClick={() => void submit()}>{pending ? 'Saving…' : 'Add'}</button>
-			</>
-		}>
-			<div style={{ display: 'grid', gap: 12 }}>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-					<L label="Name"><input className="search-input" value={f.name} onChange={(e) => set('name', e.target.value)} /></L>
-					<L label="Website"><input className="search-input" value={f.website} onChange={(e) => set('website', e.target.value)} placeholder="https://" /></L>
-				</div>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-					<L label="Category"><input className="search-input" value={f.category} onChange={(e) => set('category', e.target.value)} placeholder="VC, PE…" /></L>
-					<L label="Country"><input className="search-input" value={f.country} onChange={(e) => set('country', e.target.value)} /></L>
-					<L label="City"><input className="search-input" value={f.city} onChange={(e) => set('city', e.target.value)} /></L>
-				</div>
-				<div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 12 }}>
-					<L label="Year launched"><input className="search-input" type="number" value={f.year_launched} onChange={(e) => set('year_launched', e.target.value)} placeholder="2015" /></L>
-					<L label="Assign to"><Select value={f.assigned_to} onChange={(v) => set('assigned_to', v)} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="— unassigned —" options={[{ value: '', label: '— unassigned —' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} /></L>
-				</div>
-				<L label="Description"><textarea className="search-input" style={{ minHeight: 56, resize: 'vertical' }} value={f.description} onChange={(e) => set('description', e.target.value)} /></L>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-					<L label="LinkedIn"><input className="search-input" value={f.linkedin_url} onChange={(e) => set('linkedin_url', e.target.value)} placeholder="https://linkedin.com/company/…" /></L>
-					<L label="X / Twitter"><input className="search-input" value={f.twitter_url} onChange={(e) => set('twitter_url', e.target.value)} placeholder="https://x.com/…" /></L>
-				</div>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-					<L label="Instagram"><input className="search-input" value={f.instagram_url} onChange={(e) => set('instagram_url', e.target.value)} /></L>
-					<L label="Facebook"><input className="search-input" value={f.facebook_url} onChange={(e) => set('facebook_url', e.target.value)} /></L>
-				</div>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-					<L label="POC name"><input className="search-input" value={f.poc_name} onChange={(e) => set('poc_name', e.target.value)} /></L>
-					<L label="POC position"><input className="search-input" value={f.poc_position} onChange={(e) => set('poc_position', e.target.value)} /></L>
-				</div>
-				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-					<L label="POC email"><input className="search-input" type="email" value={f.poc_email} onChange={(e) => set('poc_email', e.target.value)} placeholder="name@fund.com" /></L>
-					<L label="POC LinkedIn"><input className="search-input" value={f.poc_linkedin} onChange={(e) => set('poc_linkedin', e.target.value)} placeholder="https://linkedin.com/in/…" /></L>
-				</div>
-			</div>
-		</Modal>
 	);
 }
 
@@ -466,6 +407,3 @@ function ViewModal({ row, onClose }: { row: QueueRow; onClose: () => void }) {
 	);
 }
 
-function L({ label, children }: { label: string; children: React.ReactNode }) {
-	return <div><div className="co-stat-label" style={{ marginBottom: 6 }}>{label}</div>{children}</div>;
-}

@@ -57,23 +57,25 @@ const EVENT_MODES = ['in_person', 'virtual', 'hybrid'] as const;
 
 type EcoType = 'program' | 'event' | 'initiative' | 'organization';
 export function EcosystemView({ embedded = false, entityType }: { embedded?: boolean; entityType?: EcoType }) {
+	// Programs / Events / Initiatives tabs reuse this view: each keeps its own filters in the URL.
+	const ns = `eco-${entityType ?? 'all'}`;
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [typeState, setType] = useState<EcoType>('program');
 	const type = entityType ?? typeState;
-	const [search, setSearch] = useUrlState('eco', 'search', '');
+	const [search, setSearch] = useUrlState(ns, 'search', '');
 	const debouncedSearch = useDebouncedValue(search);
-	const [status, setStatus] = useUrlState('eco', 'status', '');
-	const [country, setCountry] = useUrlState('eco', 'country', '');
-	const [category, setCategory] = useUrlState('eco', 'category', '');
-	const [sport, setSport] = useUrlState('eco', 'sport', '');
-	const [foundedMin, setFoundedMin] = useUrlState('eco', 'foundedMin', '');
-	const [foundedMax, setFoundedMax] = useUrlState('eco', 'foundedMax', '');
-	const [mode, setMode] = useUrlState('eco', 'mode', '');
-	const [featured, setFeatured] = useUrlState('eco', 'featured', '');
-	const [upcoming, setUpcoming] = useUrlState('eco', 'upcoming', '');
-	const [entriesOpen, setEntriesOpen] = useUrlState('eco', 'entriesOpen', '');
-	const [page, setPage] = useUrlNumber('eco', 'page', 1);
+	const [status, setStatus] = useUrlState(ns, 'status', '');
+	const [country, setCountry] = useUrlState(ns, 'country', '');
+	const [category, setCategory] = useUrlState(ns, 'category', '');
+	const [sport, setSport] = useUrlState(ns, 'sport', '');
+	const [foundedMin, setFoundedMin] = useUrlState(ns, 'foundedMin', '');
+	const [foundedMax, setFoundedMax] = useUrlState(ns, 'foundedMax', '');
+	const [mode, setMode] = useUrlState(ns, 'mode', '');
+	const [featured, setFeatured] = useUrlState(ns, 'featured', '');
+	const [upcoming, setUpcoming] = useUrlState(ns, 'upcoming', '');
+	const [entriesOpen, setEntriesOpen] = useUrlState(ns, 'entriesOpen', '');
+	const [page, setPage] = useUrlNumber(ns, 'page', 1);
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);

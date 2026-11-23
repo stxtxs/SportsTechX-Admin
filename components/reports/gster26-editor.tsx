@@ -10,16 +10,17 @@ import { api } from '@/lib/api';
 import { useConfirm } from '@/components/confirm';
 import { useLeaveGuard } from '@/hooks/use-leave-guard';
 import { ImageInput } from '@/components/image-input';
+import { ReportDatasetsPanel } from './report-datasets-panel';
 
 /**
- * Editor for the custom-built report pages (GSTER26, FTABR26) — not section reports.
+ * Editor for custom-designed reports (reports.template: GSTER26, FTABR26, the VC Benchmark,
+ * Methodology) — not section reports.
  *
- * Each page renders `reports.content.<block> ?? <default>` for each editable
- * block, so this edits that `content` document, part by part. The forms are
- * inferred from each block's real shape (the defaults the page itself ships),
- * and Preview is the real page: a hidden iframe of the client's
- * /report-preview/<slug>, which re-renders from the draft as you type and is
- * shown full screen on demand.
+ * A template has no content of its own: the page draws `reports.content` — every word, figure,
+ * image and link — so this edits that document, part by part. The forms follow the shape of the
+ * saved document itself, and Preview is the real page: a hidden iframe of the client's
+ * /report-preview/<template>?slug=…, which re-renders from the draft as you type and is shown
+ * full screen on demand. Frozen chart / map data (report_datasets) is under Data.
  */
 
 const ATLAS = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
@@ -36,26 +37,30 @@ export const GSTER26_PARTS: { id: string; label: string; hint: string; anchor: s
 	{ id: 'trend-running', label: 'Trend · Running article', hint: 'The expanded competitive-running article: figures, marathons table, drivers and opportunities.', anchor: '#trend-expanded-running-renaissance', keys: ['trendRunning'] },
 	{ id: 'trend-dtc', label: 'Trend · DTC article', hint: 'The expanded direct-to-consumer article: figures, the launches table, the three forces, quote and implications.', anchor: '#trend-expanded-dtc-shift', keys: ['trendDtc'] },
 	{ id: 'deep-dives', label: 'Trends · Deep Dives', hint: 'The long-form articles under the Deep Dives tab.', anchor: '#deep-dives', keys: ['featuredArticles'] },
-	{ id: 'peak', label: 'PEAK 2026', hint: 'PEAK copy, the Startup World Cup finalists, Groundbreakers and the partner logo wall.', anchor: '#peak2026', keys: ['peakCopy', 'peakSwcFinalists', 'groundbreakersOrgs', 'peakPartnersTier1', 'peakPartnersTier2', 'peakPartnersTier3'] },
-	{ id: 'innovators', label: 'Innovators', hint: 'The heading, the three questions, the innovators themselves (name, role, photo, answers) and answer overrides keyed by exact name.', anchor: '#innovators', keys: ['innovatorsHeader', 'innovators', 'innovatorResponses'] },
-	{ id: 'startups', label: 'Startups to Watch', hint: 'The heading, tab intros, call to action, and the three tabs of companies.', anchor: '#ecosystem', keys: ['startupsHeader', 'watchInnovators', 'watchPeak', 'watchStxRecommends'] },
-	{ id: 'ecomap', label: 'Ecosystem map', hint: 'The map’s heading. Leave the intro empty to use the automatic counts.', anchor: '#ecomap', keys: ['ecomap'] },
-	{ id: 'ngsc', label: 'NGSC', hint: 'The New Global Sport Conference panel: copy, images and links.', anchor: '#ngsc', keys: ['ngsc'] },
-	{ id: 'data', label: 'Data in Full', hint: 'The section heading, tab names, chart titles and call to action. The data itself comes from the report dataset.', anchor: '#dealflow', keys: ['dataHeader'] },
+	{ id: 'trends-words', label: 'Trends · labels, layout & M&A figures', hint: 'Button and table labels, poll copy, each card’s and article’s number, icon and layout, and the M&A article’s figures and charts (as published, per data filter).', anchor: '#trends', keys: ['trendsLabels', 'trendsCardStyle', 'trendsArticleStyle', 'trendsMaData'] },
+	{ id: 'peak', label: 'PEAK 2026', hint: 'PEAK copy, the Startup World Cup finalists, Groundbreakers and the partner logo wall.', anchor: '#peak2026', keys: ['peakCopy', 'peakSwcFinalists', 'groundbreakersOrgs', 'peakPartnersTier1', 'peakPartnersTier2', 'peakPartnersTier3', 'peakLabels'] },
+	{ id: 'innovators', label: 'Innovators', hint: 'The heading, the three questions, the innovators themselves (name, role, photo, answers) and answer overrides keyed by exact name.', anchor: '#innovators', keys: ['innovatorsHeader', 'innovators', 'innovatorResponses', 'innovatorsLabels'] },
+	{ id: 'startups', label: 'Startups to Watch', hint: 'The heading, tab intros, call to action, and the three tabs of companies.', anchor: '#ecosystem', keys: ['startupsHeader', 'watchInnovators', 'watchPeak', 'watchStxRecommends', 'startupsLabels'] },
+	{ id: 'ecomap', label: 'Ecosystem map', hint: 'The map’s heading and labels. Leave the intro empty to use the automatic counts. The map’s entities are under Data.', anchor: '#ecomap', keys: ['ecomap', 'ecomapLabels'] },
+	{ id: 'ngsc', label: 'NGSC', hint: 'The New Global Sport Conference panel: copy, images and links.', anchor: '#ngsc', keys: ['ngsc', 'ngscLabels'] },
+	{ id: 'data', label: 'Data in Full', hint: 'The section heading, tab names, chart titles and captions, filters and labels. The figures themselves are under Data (frozen as published).', anchor: '#dealflow', keys: ['dataHeader', 'dataLabels'] },
 	{ id: 'closing', label: 'Closing quote', hint: 'The quote that closes the report.', anchor: '#closing', keys: ['closing'] },
+	{ id: 'page-words', label: 'Page words', hint: 'The PDF link and file name, “Back to top”, the logos in the header and footer, and the titles shown on locked parts.', anchor: '#stx-hero', keys: ['pageLabels'] },
 ];
 
 /** FTABR26's parts. `facts`, `ecosystem` and `startups` are the report's data as published by STX. */
 export const FTABR26_PARTS: { id: string; label: string; hint: string; anchor: string; keys: string[] }[] = [
 	{ id: 'hero', label: 'Hero & about', hint: 'The hero standfirst, edition and hashtag, and the “about this report” paragraph.', anchor: '#stx-hero', keys: ['hero', 'about'] },
-	{ id: 'insights', label: 'Insights', hint: 'The Insights articles (one per tab), the creators-with-live-rights list and the women’s multi-club ownership groups.', anchor: '#trends', keys: ['insights', 'creatorDeals', 'womensMcoGroups'] },
-	{ id: 'worldcup', label: 'FIFA WC26 Recap', hint: 'The World Cup recap tab: copy, figures and the tech list, and the order of the tech categories.', anchor: '#trends', keys: ['worldcup', 'worldcupTechCategories'] },
-	{ id: 'featured', label: 'Featured company', hint: 'The featured company panel.', anchor: '#featured', keys: ['featured'] },
-	{ id: 'innovators', label: 'Innovators', hint: 'The three questions and the innovators (name, role, photo, answers).', anchor: '#innovators', keys: ['questions', 'innovators'] },
-	{ id: 'startups', label: 'Startups to Watch', hint: 'The Playmakers roster shown here, the note under it, and the startup records it reads (description, sector, logo, site).', anchor: '#ecosystem', keys: ['playmakerCompanies', 'startupsNote', 'startups'] },
-	{ id: 'soccerment', label: 'Soccerment feature', hint: 'The Soccerment partner feature.', anchor: '#soccerment', keys: ['soccerment'] },
-	{ id: 'ecosystem', label: 'Ecosystem', hint: 'The initiatives and programs on the map and in its tables.', anchor: '#ecomap', keys: ['ecosystem'] },
-	{ id: 'data', label: 'Data in Full', hint: 'The report’s figures as published (dealflow by year, region and sector, leaderboards, top companies) and the methodology note. Resetting the figures falls back to the snapshot in the page’s code.', anchor: '#dealflow', keys: ['facts', 'methodology'] },
+	{ id: 'insights', label: 'Insights', hint: 'The Insights articles (one per tab), the creators-with-live-rights list and the women’s multi-club ownership groups.', anchor: '#trends', keys: ['insights', 'creatorDeals', 'womensMcoGroups', 'trendsLabels', 'trendsInsightStyle'] },
+	{ id: 'worldcup', label: 'FIFA WC26 Recap', hint: 'The World Cup recap tab: copy, figures and the tech list, and the order of the tech categories.', anchor: '#trends', keys: ['worldcup', 'worldcupTechCategories', 'trendsWorldcupColors'] },
+	{ id: 'featured', label: 'Featured company', hint: 'The featured company panel.', anchor: '#featured', keys: ['featured', 'featuredLabels'] },
+	{ id: 'innovators', label: 'Innovators', hint: 'The three questions and the innovators (name, role, photo, answers).', anchor: '#innovators', keys: ['questions', 'innovators', 'innovatorsLabels'] },
+	{ id: 'startups', label: 'Startups to Watch', hint: 'The Playmakers roster shown here, the note under it, and the startup records it reads (description, sector, logo, site).', anchor: '#ecosystem', keys: ['playmakerCompanies', 'startupsNote', 'startups', 'startupsLabels', 'startupsCities'] },
+	{ id: 'soccerment', label: 'Soccerment feature', hint: 'The Soccerment partner feature.', anchor: '#soccerment', keys: ['soccerment', 'soccermentLabels', 'soccermentCta'] },
+	{ id: 'ecosystem', label: 'Ecosystem', hint: 'The initiatives and programs on the map and in its tables.', anchor: '#ecomap', keys: ['ecosystem', 'ecomapLabels', 'ecomapLogos'] },
+	{ id: 'partners', label: 'Partner spotlights', hint: 'The partner spotlights block (hidden while “show” is off) and each partner’s accent.', anchor: '#ecosystem', keys: ['partners', 'partnersLabels', 'partnersAccent'] },
+	{ id: 'data', label: 'Data in Full', hint: 'The report’s figures as published (dealflow by year, region and sector, leaderboards, top companies), the written dealflow analysis, key figures, labels and the methodology note.', anchor: '#dealflow', keys: ['facts', 'methodology', 'dataLabels', 'dataCopy', 'dataKeyFigures'] },
+	{ id: 'page-words', label: 'Page words & print', hint: 'Navigation labels, the PDF link, the six summary cards, sector names and colours, the imprint (credits) and all the copy of the print / PDF layout.', anchor: '#stx-hero', keys: ['pageLabels', 'pageSummary', 'pageSectors', 'credits', 'pagePrint'] },
 ];
 
 /** The VC Deal Sourcing Benchmark: its whole published document, block by block. */
@@ -65,10 +70,17 @@ export const BENCHMARK26_PARTS: { id: string; label: string; hint: string; ancho
 	{ id: 'sections', label: 'Findings', hint: 'The numbered sections: headings, intros, figures, charts and takeaways.', anchor: '#deal-sourcing-reality', keys: ['sections'] },
 	{ id: 'closing', label: 'Implications & call to action', hint: 'The closing points and the call-to-action card above the footer.', anchor: '#closing', keys: ['closing'] },
 	{ id: 'method', label: 'Method', hint: 'The method notes and data note.', anchor: '#method', keys: ['methodology'] },
+	{ id: 'ui', label: 'Page words', hint: 'The words around the document: header link labels, where each heading turns pink, chart labels, series names, the contributors image, the PDF file name and the contact email. {placeholders} are filled in by the page.', anchor: '#why-now', keys: ['ui'] },
+	{ id: 'personal', label: '“Your benchmark” page', hint: 'Block titles, labels and empty states of each contributor’s personal benchmark page. {placeholders} are filled in per fund.', anchor: '#why-now', keys: ['personal'] },
 ];
 
-/** The custom-built report pages this editor serves, by slug. */
-export const CUSTOM_REPORT_PARTS: Record<string, typeof GSTER26_PARTS> = { gster26: GSTER26_PARTS, ftabr26: FTABR26_PARTS, 'investors-survey26': BENCHMARK26_PARTS };
+/** Methodology: the single note page linked from the reports. */
+export const METHODOLOGY_PARTS: { id: string; label: string; hint: string; anchor: string; keys: string[] }[] = [
+	{ id: 'note', label: 'Methodology note', hint: 'The title, the back link (label and default target) and the paragraphs.', anchor: '#', keys: ['title', 'backLabel', 'backHref', 'paragraphs'] },
+];
+
+/** The report templates this editor serves, by reports.template. */
+export const CUSTOM_REPORT_PARTS: Record<string, typeof GSTER26_PARTS> = { gster26: GSTER26_PARTS, ftabr26: FTABR26_PARTS, benchmark26: BENCHMARK26_PARTS, methodology: METHODOLOGY_PARTS };
 
 /** The report being edited — image uploads go to its own folder. */
 const SlugContext = createContext('gster26');
@@ -203,23 +215,24 @@ function ListField({ name, value, like, onChange, depth }: { name: string; value
 const ORDER_LABELS: Record<string, Record<string, string>> = {
 	gster26: { trends: 'Trends', peak: 'PEAK 2026', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem map', ngsc: 'NGSC', data: 'Data in Full' },
 	ftabr26: { trends: 'Insights & FIFA WC26 Recap', featured: 'Featured company', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem', soccerment: 'Soccerment feature', partners: 'Partner spotlights', data: 'Data in Full' },
-	'investors-survey26': { 'why-now': 'Why now', 'deal-sourcing-reality': 'Deal sources', 'sourcing-process': 'Process', 'outbound-and-tools': 'Outbound', closing: 'Implications', method: 'Method' },
+	benchmark26: { 'why-now': 'Why now', 'deal-sourcing-reality': 'Deal sources', 'sourcing-process': 'Process', 'outbound-and-tools': 'Outbound', closing: 'Implications', method: 'Method' },
 };
 const ORDER_NOTE: Record<string, string> = {
 	gster26: 'The hero stays first and the closing quote last.',
 	ftabr26: 'The hero stays first and the footer last.',
-	'investors-survey26': 'The cover stays first. Section numbers and the header links follow this order.',
+	benchmark26: 'The cover stays first. Section numbers and the header links follow this order.',
 };
 /** Each part → the page block it sits in; '' = pinned (hero / cover / closing quote); '*' = the
  *  Benchmark's Findings part, which edits every numbered section. Must match the server's
  *  CUSTOM_PART_KEYS (server/src/modules/reports/gated-reports.ts). */
 const BLOCK_OF: Record<string, Record<string, string>> = {
-	gster26: { hero: '', trends: 'trends', 'trend-ma': 'trends', 'trend-running': 'trends', 'trend-dtc': 'trends', 'deep-dives': 'trends', peak: 'peak', innovators: 'innovators', startups: 'startups', ecomap: 'ecomap', ngsc: 'ngsc', data: 'data', closing: '' },
-	ftabr26: { hero: '', insights: 'trends', worldcup: 'trends', featured: 'featured', innovators: 'innovators', startups: 'startups', soccerment: 'soccerment', ecosystem: 'ecomap', data: 'data' },
-	'investors-survey26': { meta: '', intro: 'why-now', sections: '*', closing: 'closing', method: 'method' },
+	gster26: { hero: '', trends: 'trends', 'trend-ma': 'trends', 'trend-running': 'trends', 'trend-dtc': 'trends', 'deep-dives': 'trends', 'trends-words': 'trends', peak: 'peak', innovators: 'innovators', startups: 'startups', ecomap: 'ecomap', ngsc: 'ngsc', data: 'data', closing: '', 'page-words': '' },
+	ftabr26: { hero: '', insights: 'trends', worldcup: 'trends', featured: 'featured', innovators: 'innovators', startups: 'startups', soccerment: 'soccerment', ecosystem: 'ecomap', partners: 'partners', data: 'data', 'page-words': '' },
+	benchmark26: { meta: '', intro: 'why-now', sections: '*', closing: 'closing', method: 'method', ui: '', personal: '' },
+	methodology: { note: '' },
 };
 /** The Benchmark's intro, closing and method always stay open (only its numbered sections lock). */
-const lockable = (slug: string, block: string) => slug !== 'investors-survey26' || !['why-now', 'closing', 'method'].includes(block);
+const lockable = (template: string, block: string) => template !== 'benchmark26' || !['why-now', 'closing', 'method'].includes(block);
 
 type Part = (typeof GSTER26_PARTS)[number];
 
@@ -297,10 +310,12 @@ function BlockRow({ id, label, parts, partId, meta, canLock, locked, onSelect, o
 
 // ---- the editor ----------------------------------------------------------------
 
-export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, onClosePreview, onSaved }: {
+export function Gster26Editor({ reportId, slug, template, saved, previewOpen, onClosePreview, onSaved }: {
 	reportId: string;
-	/** Which custom page: its parts, preview frame and message prefix. */
-	slug?: string;
+	/** The report's URL slug (live link, image folder, frozen data). */
+	slug: string;
+	/** Its page template (reports.template): parts, blocks, preview frame and message prefix. */
+	template: string;
 	saved: Content | null;
 	previewOpen: boolean;
 	onClosePreview: () => void;
@@ -308,8 +323,10 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 }) {
 	const ask = useConfirm();
 	const [draft, setDraft] = useState<Content>(saved ?? {});
-	const [defaults, setDefaults] = useState<Content | null>(null);
-	const PARTS = CUSTOM_REPORT_PARTS[slug] ?? GSTER26_PARTS;
+	// The saved document is the shape every form follows (the page has no built-in copy).
+	const base = saved ?? {};
+	const [frameReady, setFrameReady] = useState(false);
+	const PARTS = CUSTOM_REPORT_PARTS[template] ?? GSTER26_PARTS;
 	const [partId, setPartId] = useState(PARTS[0]!.id);
 	const [saving, setSaving] = useState(false);
 	const [asExplore, setAsExplore] = useState(false);
@@ -324,32 +341,31 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	useEffect(() => { setDraft(saved ?? {}); }, [savedKey]);
 
-	// Preview frame: say hello on load, take its defaults, then stream the draft.
+	// Preview frame: say hello until it answers, then stream the draft.
 	const post = useCallback((msg: unknown) => frame.current?.contentWindow?.postMessage(msg, ATLAS_ORIGIN), []);
 	useEffect(() => {
 		const onMessage = (e: MessageEvent) => {
 			if (e.origin !== ATLAS_ORIGIN || e.source !== frame.current?.contentWindow) return;
-			const m = e.data as { type?: string; defaults?: Content };
-			if (m?.type === `${slug}:ready` && m.defaults) setDefaults(m.defaults);
+			if ((e.data as { type?: string })?.type === `${template}:ready`) setFrameReady(true);
 		};
 		window.addEventListener('message', onMessage);
 		return () => window.removeEventListener('message', onMessage);
-	}, [slug]);
+	}, [template]);
 	// Keep saying hello until the frame answers (it may hydrate after onLoad).
 	useEffect(() => {
-		if (defaults) return;
-		const t = setInterval(() => post({ type: `${slug}:hello` }), 800);
+		if (frameReady) return;
+		const t = setInterval(() => post({ type: `${template}:hello` }), 800);
 		return () => clearInterval(t);
-	}, [defaults, post, slug]);
+	}, [frameReady, post, template]);
 	useEffect(() => {
-		if (!defaults) return;
+		if (!frameReady) return;
 		// `__asExplore` (preview only, never saved) draws the locked blocks as an Explore reader sees them.
-		const t = setTimeout(() => post({ type: `${slug}:content`, content: asExplore ? { ...draft, __asExplore: true } : draft }), 120);
+		const t = setTimeout(() => post({ type: `${template}:content`, content: asExplore ? { ...draft, __asExplore: true } : draft }), 120);
 		return () => clearTimeout(t);
-	}, [draft, defaults, post, slug, asExplore]);
+	}, [draft, frameReady, post, template, asExplore]);
 	useEffect(() => {
-		if (previewOpen) post({ type: `${slug}:jump`, anchor: part.anchor });
-	}, [previewOpen, part.anchor, post, slug]);
+		if (previewOpen && part.anchor !== '#') post({ type: `${template}:jump`, anchor: part.anchor });
+	}, [previewOpen, part.anchor, post, template]);
 	useEffect(() => {
 		if (!previewOpen) return;
 		const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClosePreview(); };
@@ -369,14 +385,9 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setSaving(false); }
 	};
-	// Page blocks in page order: the saved order, then any the page has that it doesn't name.
-	const order = defaults && Array.isArray(defaults.partOrder)
-		? [...new Set([...((Array.isArray(draft.partOrder) ? draft.partOrder : []) as string[]), ...(defaults.partOrder as string[])])]
-		: [];
-	const setOrder = (next: string[]) => setDraft((d) => {
-		if (!(saved && 'partOrder' in saved) && defaults && JSON.stringify(next) === JSON.stringify(defaults.partOrder)) { const { partOrder: _, ...rest } = d; return rest; }
-		return { ...d, partOrder: next };
-	});
+	// Page blocks in page order (the document's partOrder).
+	const order = (Array.isArray(draft.partOrder) ? draft.partOrder : Array.isArray(base.partOrder) ? base.partOrder : []) as string[];
+	const setOrder = (next: string[]) => setDraft((d) => ({ ...d, partOrder: next }));
 	const locked = (Array.isArray(draft.lockedParts) ? draft.lockedParts : []) as string[];
 	const toggleLock = (block: string) => setDraft((d) => {
 		const cur = (Array.isArray(d.lockedParts) ? d.lockedParts : []) as string[];
@@ -386,13 +397,17 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 	});
 	// Benchmark findings are named by their own heading; the other pages by ORDER_LABELS.
 	const sectionHeading = (id: string) => {
-		const secs = (Array.isArray(draft.sections) ? draft.sections : Array.isArray(defaults?.sections) ? defaults!.sections : []) as { id?: string; heading?: string }[];
+		const secs = (Array.isArray(draft.sections) ? draft.sections : []) as { id?: string; heading?: string }[];
 		return secs.find((s) => s?.id === id)?.heading;
 	};
-	const labelOf = (block: string) => ORDER_LABELS[slug]?.[block] ?? sectionHeading(block) ?? block;
-	const resetPart = async () => {
-		if (!(await ask(`Reset "${part.label}" to the report’s original copy? Your edits to this part are discarded when you save.`))) return;
-		setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !part.keys.includes(k))) as Content);
+	const labelOf = (block: string) => ORDER_LABELS[template]?.[block] ?? sectionHeading(block) ?? block;
+	const discardPart = async () => {
+		if (!(await ask(`Discard your unsaved changes to "${part.label}"? It goes back to the last saved version.`))) return;
+		setDraft((d) => {
+			const next = { ...d };
+			for (const k of part.keys) { if (k in base) next[k] = base[k]!; else delete next[k]; }
+			return next;
+		});
 	};
 
 	return (
@@ -401,13 +416,14 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 				<aside className="rep-editor__list">
 					<div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Page parts</div>
 					<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8, lineHeight: 1.45 }}>
-						Drag <GripVertical size={10} style={{ verticalAlign: -1 }} /> to reorder. {ORDER_NOTE[slug] ?? ''} <strong>Paid</strong> blocks show Explore readers only their heading and “Unlocked with Raise or Scout”.
+						{order.length > 0 && <>Drag <GripVertical size={10} style={{ verticalAlign: -1 }} /> to reorder. {ORDER_NOTE[template] ?? ''} <strong>Paid</strong> blocks show Explore readers only their heading and “Unlocked with Raise or Scout”.</>}
 					</div>
 					<PartsList
-						slug={slug} parts={PARTS} order={order} locked={locked} partId={partId} labelOf={labelOf}
+						slug={template} parts={PARTS} order={order} locked={locked} partId={partId} labelOf={labelOf}
 						meta={(p) => `${p.keys.length} block${p.keys.length === 1 ? '' : 's'}${partDirty(p) ? ' · edited' : ''}`}
 						onSelect={setPartId} onReorder={setOrder} onToggleLock={toggleLock}
 					/>
+					<ReportDatasetsPanel reportId={reportId} labelOf={labelOf} />
 				</aside>
 
 				<main style={{ minWidth: 0 }}>
@@ -417,20 +433,16 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 								<span className="rep-sec__kind">{part.label}</span>
 								<span className={`rep-chip${dirty ? ' rep-chip--warn' : ''}`}>{dirty ? 'Unsaved changes' : 'All changes saved'}</span>
 								<div style={{ flex: 1 }} />
-								<button className="btn ghost" onClick={() => void resetPart()} title="Back to the report’s original copy"><RotateCcw size={12} /> Reset part</button>
+								<button className="btn ghost" disabled={!partDirty(part)} onClick={() => void discardPart()} title="Back to the last saved version of this part"><RotateCcw size={12} /> Discard changes</button>
 								<button className="btn" disabled={saving || !dirty} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</button>
 							</div>
 							<div className="rep-sec__hint">{part.hint} Saving publishes straight to the live report.</div>
 						</div>
 						<div className="card" style={{ padding: 16 }}>
-							{!defaults ? (
-								<div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Loading the report’s content…</div>
+							{part.keys.every((k) => !(k in base)) ? (
+								<div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>This report’s document has no content for this part yet.</div>
 							) : part.keys.map((k) => (
-								<Field key={k} name={k} value={draft[k]} like={defaults[k]} depth={0} onChange={(v) => setDraft((d) => {
-									// Back to the original copy on a never-saved block: drop it, so it isn't "edited" and isn't saved as a frozen copy.
-									if (!(saved && k in saved) && JSON.stringify(v) === JSON.stringify(defaults[k])) { const { [k]: _, ...rest } = d; return rest; }
-									return { ...d, [k]: v };
-								})} />
+								<Field key={k} name={k} value={draft[k]} like={base[k]} depth={0} onChange={(v) => setDraft((d) => ({ ...d, [k]: v }))} />
 							))}
 						</div>
 					</div>
@@ -439,7 +451,7 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 
 			{/* Always mounted so Preview opens instantly and is always current. */}
 			<div className={`g26-preview${previewOpen ? ' is-open' : ''}`} aria-hidden={!previewOpen} role={previewOpen ? 'dialog' : undefined} aria-label="Report preview">
-				<iframe ref={frame} title="Report preview" src={`${ATLAS}/report-preview/${slug}`} onLoad={() => post({ type: `${slug}:hello` })} />
+				<iframe ref={frame} title="Report preview" src={`${ATLAS}/report-preview/${template}?slug=${encodeURIComponent(slug)}`} onLoad={() => post({ type: `${template}:hello` })} />
 				{previewOpen && (
 					<div className="preview-bar">
 						<span className="preview-bar__label">Preview · the live page with your unsaved edits{asExplore ? ' · as an Explore reader' : ''}</span>

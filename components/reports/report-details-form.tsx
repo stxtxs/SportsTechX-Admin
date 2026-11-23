@@ -22,6 +22,7 @@ export interface ReportDetailsValue {
 	description?: string | null;
 	cover_url?: string | null;
 	show_on_dashboard?: boolean;
+	is_listed?: boolean;
 }
 
 /** Same rule as the Reports list's create/edit forms: the slug is the /reports/<slug> URL. */
@@ -44,6 +45,7 @@ export function ReportDetailsForm({
 	const [description, setDescription] = useState(initial.description ?? '');
 	const [cover, setCover] = useState(initial.cover_url ?? '');
 	const [onDash, setOnDash] = useState(!!initial.show_on_dashboard);
+	const [listed, setListed] = useState(initial.is_listed ?? true);
 	const [saving, setSaving] = useState(false);
 
 	const save = async () => {
@@ -60,6 +62,7 @@ export function ReportDetailsForm({
 				description: description.trim() || null,
 				cover_url: cover || null,
 				show_on_dashboard: onDash,
+				is_listed: listed,
 			});
 			toast.success('Details saved');
 			onSaved();
@@ -107,6 +110,10 @@ export function ReportDetailsForm({
 			<label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
 				<input type="checkbox" checked={onDash} onChange={(e) => setOnDash(e.target.checked)} />
 				Feature on the dashboard
+			</label>
+			<label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }} title="Off: the report opens by its link (e.g. from another report) but isn't shown in the reports library.">
+				<input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} />
+				Show in the reports library
 			</label>
 
 			<div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

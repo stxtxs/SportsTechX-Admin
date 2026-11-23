@@ -188,6 +188,7 @@ interface PartyForm {
 interface AcqForm {
 	role: 'acquiree' | 'acquirer';
 	subject_company_id: string;
+	subject_name: string;        // free-text subject (rows whose company isn't in the catalog)
 	subject: PartyForm;
 	counterparty_company_id: string;
 	counterparty_name: string;
@@ -196,7 +197,7 @@ interface AcqForm {
 }
 const emptyParty = (): PartyForm => ({ is_sportstech: false, sector_id: '', business_model: '', hq: { ...EMPTY_LOCATION }, sport_ids: [] });
 const EMPTY_ACQ: AcqForm = {
-	role: 'acquiree', subject_company_id: '', subject: { ...emptyParty(), is_sportstech: true },
+	role: 'acquiree', subject_company_id: '', subject_name: '', subject: { ...emptyParty(), is_sportstech: true },
 	counterparty_company_id: '', counterparty_name: '', counterparty: emptyParty(),
 	acquisition_date: '', amount: '', currency_code: '', acquisition_type: 'acquisition', source_url: '',
 };
@@ -231,12 +232,14 @@ function toAcqForm(h: AcqEdit): AcqForm {
 	return {
 		role,
 		subject_company_id: (subjectIsAcquiree ? h.acquiree_company_id : h.acquirer_company_id) ?? '',
+		subject_name: (subjectIsAcquiree ? h.acquiree_name_snapshot : h.acquirer_name_snapshot) ?? '',
 		subject: subjectIsAcquiree ? acquireeParty : acquirerParty,
 		counterparty_company_id: (subjectIsAcquiree ? h.acquirer_company_id : h.acquiree_company_id) ?? '',
 		counterparty_name: (subjectIsAcquiree ? h.acquirer_name_snapshot : h.acquiree_name_snapshot) ?? '',
 		counterparty: subjectIsAcquiree ? acquirerParty : acquireeParty,
 		acquisition_date: h.acquisition_date ? String(h.acquisition_date).slice(0, 10) : '',
-		amount: h.amount ?? h.amount_usd ?? '', currency_code: h.currency_code ?? '',
+		// Only a USD figure stored (imports): show it as USD, or saving would convert it again.
+		amount: h.amount ?? h.amount_usd ?? '', currency_code: h.amount == null && h.amount_usd != null ? 'USD' : (h.currency_code ?? ''),
 		acquisition_type: h.acquisition_type ?? 'acquisition', source_url: h.source_url ?? '',
 	};
 }
@@ -316,7 +319,7 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 		try {
 			const other: 'acquiree' | 'acquirer' = form.role === 'acquiree' ? 'acquirer' : 'acquiree';
 			const body: Record<string, unknown> = {
-				...partyBody(form.role, form.subject, form.subject_company_id, ''),
+				...partyBody(form.role, form.subject, form.subject_company_id, form.subject_name),
 				...partyBody(other, form.counterparty, form.counterparty_company_id, form.counterparty_name),
 				acquisition_date: form.acquisition_date || undefined,
 				amount: form.amount.trim() ? Number(form.amount) : blank,
@@ -333,7 +336,7 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 
 	const cpLabel = form.role === 'acquiree' ? 'Acquirer' : 'Acquiree';
 	const cpLinked = !!form.counterparty_company_id;
-	const canSave = !!form.subject_company_id && (!!form.counterparty_company_id || !!form.counterparty_name.trim()) && !!form.acquisition_date;
+	const canSave = (!!form.subject_company_id || !!form.subject_name.trim()) && (!!form.counterparty_company_id || !!form.counterparty_name.trim()) && !!form.acquisition_date;
 
 	return (
 		<Modal
@@ -351,7 +354,10 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 		>
 			<div style={{ display: 'grid', gap: 14 }}>
 				{/* Subject: the catalog company this deal is about — entered once. */}
-				<Field label="Company *" hint={lockedSubject ? 'this company profile — only pick the other party below' : 'the company in our catalog this deal is about'}><CompanySelectOne value={form.subject_company_id} onChange={(v) => { set('subject_company_id', v); void fillFromCompany('subject', v); }} locked={lockedSubject} /></Field>
+				<Field label="Company *" hint={lockedSubject ? 'this company profile — only pick the other party below' : 'the company in our catalog this deal is about — or type its name below if it isn’t listed'}><CompanySelectOne value={form.subject_company_id} onChange={(v) => { set('subject_company_id', v); void fillFromCompany('subject', v); }} locked={lockedSubject} /></Field>
+				{!form.subject_company_id && !lockedSubject && (
+					<Field label="…or company name (free text)"><input className="search-input" value={form.subject_name} onChange={(e) => set('subject_name', e.target.value)} /></Field>
+				)}
 
 				{/* Role: this company is EITHER the acquirer OR the acquiree. */}
 				<div>

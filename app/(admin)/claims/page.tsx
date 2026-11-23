@@ -16,7 +16,7 @@ import { DataRequestsView } from '@/components/admin-views/data-requests';
 type Tab = 'claims' | 'changes';
 
 interface QueueStats {
-	claims: { pending: number };
+	claims: { pending: number; picked_up: number };
 	data_requests: Array<{ label: string; value: number }>;
 }
 
@@ -28,7 +28,8 @@ function ClaimsAndChanges() {
 	const setTab = (t: Tab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
-	const pendingClaims = stats.data?.claims.pending ?? 0;
+	// Open = not yet picked up + picked up but not decided — the same set as the list's "Pending".
+	const pendingClaims = (stats.data?.claims.pending ?? 0) + (stats.data?.claims.picked_up ?? 0);
 	const openChanges = stats.data?.data_requests.find((b) => b.label === 'open')?.value ?? 0;
 	const count = (n: number) => (n > 0 ? ` (${n.toLocaleString()})` : '');
 

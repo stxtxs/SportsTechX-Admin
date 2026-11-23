@@ -17,7 +17,7 @@ import { Field } from '@/components/tabbed-form';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import {
-	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker,
+	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade,
 	type DealInvestor,
 } from '@/components/entity-pickers';
 
@@ -188,11 +188,12 @@ interface DealForm {
 	company_id: string; round_type_id: string; announced_date: string; amount: string;
 	currency_code: string; deal_size_bucket: string; status: string;
 	source_url: string; transaction_url: string; investors: DealInvestor[];
+	sector_id: string; business_model: string;
 }
 const EMPTY_DEAL: DealForm = {
 	company_id: '', round_type_id: '', announced_date: '', amount: '', currency_code: '',
 	deal_size_bucket: '', status: 'active', source_url: '', transaction_url: '',
-	investors: [],
+	investors: [], sector_id: '', business_model: '',
 };
 
 interface DealEdit {
@@ -211,6 +212,7 @@ function toDealForm(h: DealEdit): DealForm {
 		deal_size_bucket: h.deal_size_bucket ?? '', status: h.status ?? 'active',
 		source_url: h.source_url ?? '', transaction_url: h.transaction_url ?? '',
 		investors: h.investors ?? [],
+		sector_id: h.sector_id ?? '', business_model: h.business_model ?? '',
 	};
 }
 
@@ -242,6 +244,9 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 			const body: Record<string, unknown> = {
 				company_id: form.company_id,
 				round_type_id: form.round_type_id || blank,
+				// Left blank = not sent: a new deal takes the company's; an existing one keeps its own.
+				sector_id: form.sector_id || undefined,
+				business_model: form.business_model || undefined,
 				announced_date: form.announced_date || blank,
 				amount: form.amount.trim() ? Number(form.amount) : blank,
 				currency_code: form.currency_code || blank,
@@ -284,9 +289,9 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 			}
 		>
 			{/* One flat form (no tabs), investors inline with the rest — mirrors the
-			    old IH "New Funding Round" form. Classification (sector / business
-			    model / location / sports) is intentionally absent: those are company
-			    attributes the deal inherits (reads COALESCE deal→company). */}
+			    old IH "New Funding Round" form. Location / sports are company attributes
+			    the deal inherits. Sector and business model are copied from the company
+			    and follow it, but can be set here for a deal that differs. */}
 			<div style={{ display: 'grid', gap: 12 }}>
 				{stageMode ? (
 					<div style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 4 }}>This round will be linked to the new company when you save it.</div>
@@ -296,6 +301,12 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<Field label="Round type"><RoundTypeSelect value={form.round_type_id} onChange={(v) => set('round_type_id', v)} /></Field>
 					<Field label="Announced date *" hint="required — sets the year, sort order and the FX rate used to convert the amount to USD"><input className="search-input" type="date" value={form.announced_date} onChange={(e) => set('announced_date', e.target.value)} /></Field>
+				</div>
+				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+					<Field label="Sector" hint="leave blank to use the company's"><SectorCascade value={form.sector_id} onChange={(v) => set('sector_id', v)} /></Field>
+					<Field label="Business model" hint="leave blank to use the company's">
+						<Select value={form.business_model} onChange={(v) => set('business_model', v)} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '— company\'s —' }, ...BUSINESS_MODELS.map((b) => ({ value: b, label: b.toUpperCase() }))]} />
+					</Field>
 				</div>
 				<div style={{ display: 'grid', gridTemplateColumns: isEdit ? '1fr 120px 1fr' : '1fr 120px', gap: 12 }}>
 					<Field label="Amount" hint="in the currency at right — converted to USD automatically"><input className="search-input" type="number" value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="e.g. 5000000" /></Field>

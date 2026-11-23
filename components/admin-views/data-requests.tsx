@@ -11,6 +11,7 @@ import { Modal } from '@/components/modal';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 type DcrStatus = 'open' | 'picked_up' | 'resolved' | 'rejected';
 interface QueueStats { data_requests: Array<{ label: string; value: number }> }
@@ -374,12 +375,9 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 	const openModal = (r: Dcr) => { setShowRaw(false); setEditVal(r.requested_value ?? ''); setModalRow(r); };
 	const closeModal = () => setModalRow(null);
 	// Live company fields, for the current→requested diff on a company claim_edit.
-	const { data: currentCompany } = useSWR<CompanyEditLite>(
-		modalRow?.entity_type === 'company' && modalRow.target_company_id && asClaimEdit(modalRow.context)
-			? [`/api/admin/companies/${modalRow.target_company_id}/edit`]
-			: null,
-		{ revalidateOnFocus: false },
-	);
+	const { data: currentCompany } = useEditPayload<CompanyEditLite>(modalRow?.entity_type === 'company' && modalRow.target_company_id && asClaimEdit(modalRow.context)
+			? `/api/admin/companies/${modalRow.target_company_id}/edit`
+			: null);
 	const applyChange = async (r: Dcr) => {
 		setApplyPending(r.id);
 		try {

@@ -7,6 +7,7 @@ import { ArrowLeft, Eye, Lock, Moon, Sun, Smartphone, Tablet, Monitor } from 'lu
 import { ReportPage } from '@/components/reports/report-page';
 import type { Section, Tier } from '@/components/reports/report-kit/types';
 import type { ReportThemeOverride } from '@/components/reports/report-kit/report-theme';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 /**
  * Preview-as-tier page for sections-based reports.
@@ -36,10 +37,7 @@ export default function ReportPreviewPage({ params }: { params: Promise<{ id: st
 	const [device, setDevice] = useState<DeviceKey>('desktop');
 
 	// The report row carries the theme + its default dark/light preference.
-	const { data: report } = useSWR<{ title: string; theme: ReportThemeOverride | null }>(
-		[`/api/admin/reports/${id}/edit`],
-		{ revalidateOnFocus: false },
-	);
+	const { data: report } = useEditPayload<{ title: string; theme: ReportThemeOverride | null }>(`/api/admin/reports/${id}/edit`);
 	const [isDark, setIsDark] = useState<boolean | null>(null);
 	const dark = isDark ?? report?.theme?.default_dark ?? true;
 

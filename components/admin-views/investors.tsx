@@ -4,7 +4,7 @@ import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Banknote, BadgeCheck, Coins, Layers } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, fetchAllPages } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useConfirm } from '@/components/confirm';
@@ -22,6 +22,7 @@ import { YearSelect } from '@/components/year-select';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 interface Investor {
 	id: string;
@@ -87,16 +88,16 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 
 	// Export the full filtered result set (not just the current page) to CSV.
 	const exportCsv = async () => {
-		const params: Record<string, string> = { limit: '5000', sort };
+		const params: Record<string, string> = { sort };
 		const add = (k: string, v: string) => { if (v) params[k] = v; };
 		add('q', search); add('category', category); add('status', status); add('is_verified', verified);
 		add('sector_slug', sector); add('sport_slug', sport); add('country', country.trim());
 		add('actively_investing', investing); add('year_launched_min', launchedMin); add('year_launched_max', launchedMax);
 		try {
-			const r = await api<InvestorsResponse>('GET', `/api/investors?${new URLSearchParams(params)}`);
-			const out = (r?.data ?? []).map((i) => [i.name ?? '', i.website ?? '', i.category ?? '', i.year_launched ? String(i.year_launched) : '', i.status ?? '']);
+			const { rows, capped } = await fetchAllPages<InvestorsResponse['data'][number]>('/api/investors', params);
+			const out = rows.map((i) => [i.name ?? '', i.website ?? '', i.category ?? '', i.year_launched ? String(i.year_launched) : '', i.status ?? '']);
 			if (out.length === 0) { toast.error('No investors to export'); return; }
-			if (out.length >= 5000) toast.warning('Export capped at 5000 rows — narrow the filters for a complete export.');
+			if (capped) toast.warning('Export capped at 5000 rows — narrow the filters for a complete export.');
 			downloadCsv('investors.csv', ['name', 'website', 'category', 'year_launched', 'status'], out);
 		} catch (e) { toast.error((e as Error).message); }
 	};
@@ -292,7 +293,7 @@ function toInvestorForm(h: InvestorEdit): InvestorForm {
 
 export function InvestorModal({ id, onClose, onSaved, seed, promoteReviewId, enrichedFields }: { id: string | null; onClose: () => void; onSaved: (createdId?: string) => void; seed?: Partial<InvestorForm>; promoteReviewId?: string; enrichedFields?: string[] }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<InvestorEdit>(isEdit ? [`/api/admin/investors/${id}/edit`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<InvestorEdit>(isEdit ? `/api/admin/investors/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit investor" onClose={onClose}><Loading msg="Loading investor…" /></Modal>;
 	return <InvestorForm id={id} initial={hydrated ? toInvestorForm(hydrated) : { ...EMPTY_INVESTOR, ...seed }} onClose={onClose} onSaved={onSaved} promoteReviewId={promoteReviewId} enrichedFields={enrichedFields} />;
 }
@@ -319,11 +320,12 @@ function InvestorForm({ id, initial, onClose, onSaved, promoteReviewId, enriched
 				status: form.status,
 				is_verified: form.is_verified,
 				actively_investing: form.actively_investing,
-				hq_country: form.hq.country.trim() || undefined,
-				hq_city: form.hq.city.trim() || undefined,
-				hq_continent: form.hq.continent.trim() || undefined,
-				hq_region: form.hq.region.trim() || undefined,
-				hq_state: form.hq.state.trim() || undefined,
+				// null (not undefined) so emptying the HQ clears it.
+				hq_country: form.hq.country.trim() || null,
+				hq_city: form.hq.city.trim() || null,
+				hq_continent: form.hq.continent.trim() || null,
+				hq_region: form.hq.region.trim() || null,
+				hq_state: form.hq.state.trim() || null,
 				keywords: form.keywords.trim() || null,
 				logo_url: form.logo_url.trim() || null,
 				num_employees: numOrNull(form.num_employees),
@@ -479,12 +481,12 @@ function InvestorForm({ id, initial, onClose, onSaved, promoteReviewId, enriched
 									<Field label="# Exits"><input className="search-input" type="number" value={form.num_exits} onChange={(e) => set('num_exits', e.target.value)} /></Field>
 								</div>
 								<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-									<Field name="total_funding" label="Total funding (USD)"><input className="search-input" value={form.total_funding} onChange={(e) => set('total_funding', e.target.value)} /></Field>
-									<Field name="annual_revenue" label="Annual revenue (USD)"><input className="search-input" value={form.annual_revenue} onChange={(e) => set('annual_revenue', e.target.value)} /></Field>
+									<Field name="total_funding" label="Total funding (USD)"><input className="search-input" value={form.total_funding} placeholder="e.g. 1,500,000 or 2.5M" onChange={(e) => set('total_funding', e.target.value)} /></Field>
+									<Field name="annual_revenue" label="Annual revenue (USD)"><input className="search-input" value={form.annual_revenue} placeholder="e.g. 1,500,000 or 2.5M" onChange={(e) => set('annual_revenue', e.target.value)} /></Field>
 								</div>
 								<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
 									<Field label="Latest fund / round"><input className="search-input" value={form.latest_funding} onChange={(e) => set('latest_funding', e.target.value)} placeholder="e.g. Fund III" /></Field>
-									<Field label="Latest amount (USD)"><input className="search-input" value={form.latest_funding_amount} onChange={(e) => set('latest_funding_amount', e.target.value)} /></Field>
+									<Field label="Latest amount (USD)"><input className="search-input" value={form.latest_funding_amount} placeholder="e.g. 1,500,000 or 2.5M" onChange={(e) => set('latest_funding_amount', e.target.value)} /></Field>
 									<Field name="last_raised_at" label="Last raised"><input className="search-input" type="date" value={form.last_raised_at} onChange={(e) => set('last_raised_at', e.target.value)} /></Field>
 								</div>
 								<Field label="Analyst notes"><textarea className="search-input" style={{ minHeight: 70, resize: 'vertical' }} value={form.analyst_notes} onChange={(e) => set('analyst_notes', e.target.value)} /></Field>

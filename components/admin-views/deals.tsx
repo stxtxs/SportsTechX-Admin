@@ -241,15 +241,20 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 	const submit = async () => {
 		setPending(true);
 		try {
+			// On edit, amount / currency / sector / model are sent only when the admin changed them:
+			// re-sending an untouched blank amount recomputed the USD figure and wiped a stored size
+			// band, and re-sending the loaded sector pinned the old company's after a company move.
+			const changed = (k: keyof DealForm) => !isEdit || form[k] !== initial[k];
+			const moneyChanged = changed('amount') || changed('currency_code');
 			const body: Record<string, unknown> = {
 				company_id: form.company_id,
 				round_type_id: form.round_type_id || blank,
 				// Left blank = not sent: a new deal takes the company's; an existing one keeps its own.
-				sector_id: form.sector_id || undefined,
-				business_model: form.business_model || undefined,
+				sector_id: changed('sector_id') && form.sector_id ? form.sector_id : undefined,
+				business_model: changed('business_model') && form.business_model ? form.business_model : undefined,
 				announced_date: form.announced_date || blank,
-				amount: form.amount.trim() ? Number(form.amount) : blank,
-				currency_code: form.currency_code || blank,
+				amount: moneyChanged ? (form.amount.trim() ? Number(form.amount) : blank) : undefined,
+				currency_code: moneyChanged ? (form.currency_code || blank) : undefined,
 				// Only an explicit pick is sent; otherwise the server derives the band from the USD amount
 				// (sending back the loaded band kept stale ones, e.g. "under 1m" on a $25M round).
 				deal_size_bucket: (form.deal_size_bucket !== initial.deal_size_bucket && form.deal_size_bucket) || undefined,

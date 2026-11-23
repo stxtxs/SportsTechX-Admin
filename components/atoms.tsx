@@ -135,23 +135,11 @@ export function AsyncState({
 	onRetry?: () => void;
 	children: React.ReactNode;
 }) {
-	// A failed background refresh (SWR keeps the last good data next to the error) must not
-	// blank a table that is already on screen: keep the rows and say the refresh failed.
-	// `empty` left unset counts as "no data", so callers that don't pass it keep the error screen.
-	if (error && empty !== false) return <ErrorState error={error} onRetry={onRetry} />;
+	// Any error shows the error screen. (Keeping "the last loaded data" on error was tried and
+	// reverted: with keepPreviousData that data can belong to another filter / page / month.)
+	if (error) return <ErrorState error={error} onRetry={onRetry} />;
 	if (loading) return <Loading />;
 	if (empty) return <Empty msg={emptyMsg} />;
-	if (error) {
-		return (
-			<>
-				<div role="alert" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 12px', fontSize: 12, color: 'var(--neg)' }}>
-					<span>Couldn’t refresh — showing the last loaded data. {error instanceof Error ? error.message : ''}</span>
-					{onRetry && <button className="btn ghost" style={{ padding: '2px 8px' }} onClick={onRetry}>Retry</button>}
-				</div>
-				{children}
-			</>
-		);
-	}
 	return <>{children}</>;
 }
 

@@ -46,7 +46,9 @@ function RefreshCountersAfterWrite() {
 	useEffect(() => {
 		// Debounced: a loop of writes (batch apply, bulk actions) refreshes once, after the burst.
 		let t: ReturnType<typeof setTimeout> | undefined;
-		onAfterWrite(() => {
+		onAfterWrite((path) => {
+			// The work-session timer pings every 45s; that changes no counters or records.
+			if (path.includes('/work-sessions/')) return;
 			clearTimeout(t);
 			// Stat cards / tab counts, plus open record views (/edit — e.g. the ecosystem drill-down),
 			// which would otherwise keep showing pre-save values. Refetch only: shown data stays until

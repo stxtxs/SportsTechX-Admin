@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload } from 'lucide-react';
+import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
 import { Select } from '@/components/select';
@@ -16,7 +16,7 @@ import { StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
-import { CandidateInput, parseInvestorCandidates } from '@/components/candidate-import';
+import { CandidateInput, EditCandidateModal, parseInvestorCandidates } from '@/components/candidate-import';
 import { InvestorModal } from '@/components/admin-views/investors';
 import { AddCandidateModal, L } from '@/components/investor-candidate-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
@@ -25,14 +25,15 @@ type EnrichStatus = 'pending' | 'enriching' | 'enriched' | 'failed';
 interface QueueRow {
 	id: string; name: string; website: string | null; category: string | null; country: string | null;
 	status: string; skip_reason: string | null; assigned_to: string | null; created_at: string;
+	investor_id: string | null;
 	enrichment_status: EnrichStatus; enrichment_error: string | null; enriched_at: string | null;
 }
 // Full row (incl. apollo_raw) fetched on demand for the view modal.
 interface EnrichedDetail {
 	enrichment_status: EnrichStatus; enrichment_error: string | null;
 	description: string | null; country: string | null; city: string | null; year_launched: number | null;
-	twitter_url: string | null; facebook_url: string | null; linkedin_url: string | null;
-	poc_name: string | null; poc_position: string | null; poc_linkedin: string | null;
+	twitter_url: string | null; facebook_url: string | null; instagram_url: string | null; linkedin_url: string | null;
+	poc_name: string | null; poc_position: string | null; poc_email: string | null; poc_linkedin: string | null;
 	apollo_raw: Record<string, unknown> | null;
 }
 interface QueueResponse { data: QueueRow[]; total: number; totalPages?: number }
@@ -66,8 +67,11 @@ export default function InvestorReviewPage() {
 	const [promoting, setPromoting] = useState<QueueRow | null>(null);
 	const [skipping, setSkipping] = useState<QueueRow | null>(null);
 	const [viewing, setViewing] = useState<QueueRow | null>(null);
+	const [editing, setEditing] = useState<QueueRow | null>(null);
 	const [bulkAssignee, setBulkAssignee] = useState('');
 	const [statsRange, setStatsRange] = useState<RangeValue>({});
+	// A filter change starts over at page 1 with nothing selected (page 3 of the old view was empty).
+	const refilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setSelected(new Set()); };
 
 	const { data, error, isLoading } = useSWR<QueueResponse>(
 		['/api/admin/investor-review', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, page, limit: 50 }],
@@ -110,6 +114,7 @@ export default function InvestorReviewPage() {
 	);
 	const bulkComplete = () => act(() => api('PATCH', '/api/admin/investor-review/bulk-status', { ids: [...selected], status: 'completed' }), 'Marked completed');
 	const bulkSkip = () => act(() => api('PATCH', '/api/admin/investor-review/bulk-status', { ids: [...selected], status: 'skipped' }), 'Marked skipped');
+	const bulkPending = () => act(() => api('PATCH', '/api/admin/investor-review/bulk-status', { ids: [...selected], status: 'pending' }), 'Moved back to pending');
 	const bulkDelete = async () => { if (await ask(`Delete ${selected.size} candidate(s)? This cannot be undone.`)) void act(() => api('DELETE', '/api/admin/investor-review/bulk', { ids: [...selected] }), 'Deleted'); };
 	const selectAllMatching = async () => {
 		const p = new URLSearchParams();
@@ -123,7 +128,12 @@ export default function InvestorReviewPage() {
 	};
 	const remove = (id: string) => { void (async () => { if (await ask('Delete this candidate?')) void act(() => api('DELETE', `/api/admin/investor-review/${id}`), 'Deleted'); })(); };
 	const unskip = (id: string) => act(() => api('PATCH', `/api/admin/investor-review/${id}`, { status: 'pending', skip_reason: '' }), 'Moved back to pending');
-	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/investor-review/${id}/re-enrich`), 'Re-enrichment queued');
+	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/investor-review/${id}/re-enrich`), 'Enrichment queued');
+	const saveEdit = async (id: string, body: { name?: string; website?: string | null }) => {
+		await api('PATCH', `/api/admin/investor-review/${id}`, body);
+		toast.success(body.website ? 'Saved — enrichment queued for the new website' : 'Saved');
+		setEditing(null); refreshAll();
+	};
 
 	return (
 		<div>
@@ -166,12 +176,12 @@ export default function InvestorReviewPage() {
 			<div style={{ marginBottom: 'var(--space-5)' }} />
 
 			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', gap: 8, flexWrap: 'wrap' }}>
-				<Chip active={status === ''} onClick={() => setStatus('')}>All</Chip>
-				{STATUSES.map((s) => <Chip key={s} active={status === s} onClick={() => setStatus(s)}>{s}</Chip>)}
-				<Select value={assigned} onChange={setAssigned} searchable width={200} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
-				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => setFrom(e.target.value)} title="Added from" />
-				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => setTo(e.target.value)} title="Added to" />
+				<Chip active={status === ''} onClick={() => refilter(setStatus)('')}>All</Chip>
+				{STATUSES.map((s) => <Chip key={s} active={status === s} onClick={() => refilter(setStatus)(s)}>{s}</Chip>)}
+				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={200} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
+				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name…" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
+				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" />
+				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" />
 				<div style={{ flex: 1 }} />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
 			</div>
@@ -187,6 +197,7 @@ export default function InvestorReviewPage() {
 					<button className="btn ghost" disabled={admins.length === 0} onClick={() => void bulkAssign(true)} title="Distribute evenly across admins">Round-robin</button>
 					<button className="btn ghost" onClick={() => void bulkComplete()}><Check size={12} /> Completed</button>
 					<button className="btn ghost" onClick={() => void bulkSkip()}><SkipForward size={12} /> Skip</button>
+					<button className="btn ghost" onClick={() => void bulkPending()} title="Undo a Completed / Skip"><Undo2 size={12} /> Back to pending</button>
 					<div style={{ flex: 1 }} />
 					<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void bulkDelete()}><Trash2 size={12} /> Delete</button>
 				</div>
@@ -197,6 +208,7 @@ export default function InvestorReviewPage() {
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{skipping && <SkipModal row={skipping} onClose={() => setSkipping(null)} onSaved={() => { setSkipping(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
+			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
 			<div className="card">
 				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No candidates in this view." onRetry={refreshAll}>
@@ -214,8 +226,11 @@ export default function InvestorReviewPage() {
 									<td><div style={{ fontWeight: 600 }}>{r.name}</div>{r.website && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.website}</div>}</td>
 									<td>{r.category ?? '—'}</td>
 									<td>{r.country ?? '—'}</td>
-									<td title={r.enrichment_error ?? undefined}>
-										<Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{r.enrichment_status}</Tag>
+									<td title={r.website ? (r.enrichment_error ?? undefined) : 'Enrichment needs a website — add one with Edit'}>
+										{/* Most deal-queued candidates have no website, so "pending" here never moved. */}
+										{!r.website && r.enrichment_status !== 'enriched'
+											? <Tag>no website</Tag>
+											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{r.enrichment_status}</Tag>}
 									</td>
 									<td>{adminName(r.assigned_to)}</td>
 									<td>
@@ -224,11 +239,13 @@ export default function InvestorReviewPage() {
 									</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" title="View enriched data" onClick={() => setViewing(r)}><Eye size={12} /></button>
-										{r.status !== 'completed' && <button className="btn" title="Promote to investors" onClick={() => setPromoting(r)}><Rocket size={12} /> Promote</button>}
-										{r.website && <button className="btn ghost" title="Re-run enrichment" disabled={r.enrichment_status === 'enriching'} onClick={() => void reEnrich(r.id)}><RefreshCw size={12} /></button>}
-										{r.status === 'skipped'
-											? <button className="btn ghost" title="Move back to pending" onClick={() => void unskip(r.id)}><Undo2 size={12} /> Unskip</button>
-											: <button className="btn ghost" title="Skip" onClick={() => setSkipping(r)}><SkipForward size={12} /></button>}
+										<button className="btn ghost" title="Edit name / website" onClick={() => setEditing(r)}><Pencil size={12} /></button>
+										{/* A row marked Completed in bulk has no investor yet — it can still be promoted. */}
+										{(r.status !== 'completed' || !r.investor_id) && <button className="btn" title="Promote to investors" onClick={() => setPromoting(r)}><Rocket size={12} /> Promote</button>}
+										{r.website && <button className="btn ghost" title={r.enrichment_status === 'enriched' ? 'Re-run enrichment (Apollo, Attio as fallback)' : 'Enrich now (Apollo, Attio as fallback)'} disabled={r.enrichment_status === 'enriching'} onClick={() => void reEnrich(r.id)}><RefreshCw size={12} /></button>}
+										{r.status === 'skipped' || (r.status === 'completed' && !r.investor_id)
+											? <button className="btn ghost" title="Move back to pending" onClick={() => void unskip(r.id)}><Undo2 size={12} /> {r.status === 'skipped' ? 'Unskip' : 'Reopen'}</button>
+											: r.status === 'pending' && <button className="btn ghost" title="Skip" onClick={() => setSkipping(r)}><SkipForward size={12} /></button>}
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} title="Delete" onClick={() => remove(r.id)}><Trash2 size={12} /></button>
 									</td>
 								</tr>
@@ -281,7 +298,12 @@ function PromoteModal({ row, onClose, onDone }: { row: QueueRow; onClose: () => 
 
 	const merge = async (investorId: string) => {
 		setBusy(true);
-		try { await api('POST', `/api/admin/investor-review/${row.id}/merge`, { investor_id: investorId }); countWorkItem('investor_review'); toast.success('Merged into existing investor'); onDone(); }
+		try {
+			const r = await api<{ filled?: string[] }>('POST', `/api/admin/investor-review/${row.id}/merge`, { investor_id: investorId });
+			countWorkItem('investor_review');
+			toast.success(r.filled?.length ? `Merged — filled ${r.filled.length} empty field(s): ${r.filled.join(', ').replace(/_/g, ' ')}` : 'Merged into existing investor (nothing missing to fill)');
+			onDone();
+		}
 		catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
 	};
 	const onCreated = (createdId?: string) => {
@@ -384,8 +406,11 @@ function ViewModal({ row, onClose }: { row: QueueRow; onClose: () => void }) {
 		['LinkedIn', val(data.linkedin_url)],
 		['Twitter', val(data.twitter_url)],
 		['Facebook', val(data.facebook_url)],
+		['Instagram', val(data.instagram_url)],
 		['POC', val([data.poc_name, data.poc_position].filter(Boolean).join(' · '))],
+		['POC email', val(data.poc_email)],
 		['POC LinkedIn', val(data.poc_linkedin)],
+		['Logo (Apollo)', typeof raw.logo_url === 'string' && raw.logo_url ? <img key="l" src={raw.logo_url} alt="" style={{ height: 28, borderRadius: 4 }} /> : val(null)],
 		['Industry (Apollo)', val(raw.industry)],
 		['Employees (Apollo)', fmtNum(raw.estimated_num_employees)],
 		['Total funding (Apollo)', fmtNum(raw.total_funding)],
@@ -397,7 +422,9 @@ function ViewModal({ row, onClose }: { row: QueueRow; onClose: () => void }) {
 		<Modal title={`Enriched data — ${row.name}`} onClose={onClose} width={560}>
 			{error ? <div style={{ color: 'var(--neg)', fontSize: 13 }}>Couldn&apos;t load enriched data.</div>
 				: isLoading ? <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Loading…</div>
-				: notEnriched ? <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>Not enriched yet. Ensure the candidate has a website, then use Re-enrich.</div>
+				: notEnriched ? <div style={{ color: 'var(--fg-muted)', fontSize: 13 }}>{row.website
+					? (data?.enrichment_status === 'failed' ? `Enrichment failed${data.enrichment_error ? `: ${data.enrichment_error}` : ''}. Use Re-enrich to try again.` : 'Not enriched yet — it runs in the background; use Re-enrich if it doesn’t finish.')
+					: 'No website yet. Add one with Edit (pencil) and enrichment runs automatically.'}</div>
 				: (
 					<div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
 						{fields.map(([k, v]) => (

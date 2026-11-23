@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Check, X, Trash2, Upload, Rocket, RefreshCw, Eye } from 'lucide-react';
+import { Plus, Check, X, Trash2, Upload, Rocket, RefreshCw, Eye, Pencil, Undo2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { qk } from '@/lib/query-keys';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
@@ -17,7 +17,7 @@ import { StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
-import { CandidateInput, parseCandidates } from '@/components/candidate-import';
+import { CandidateInput, EditCandidateModal, parseCandidates } from '@/components/candidate-import';
 import { EMPTY_LOCATION } from '@/components/entity-pickers';
 import { CompanyModal } from '../companies/page';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
@@ -64,7 +64,6 @@ export default function StartupsPipelinePage() {
 	const ask = useConfirm();
 	const [statusRaw, setStatusRaw] = useUrlState('sp', 'status', 'new');
 	const status = statusRaw as Status | '';
-	const setStatus = (v: Status | '') => setStatusRaw(v);
 	const [page, setPage] = useUrlNumber('sp', 'page', 1);
 	const [assigned, setAssigned] = useUrlState('sp', 'assigned', '');
 	const [search, setSearch] = useUrlState('sp', 'search', '');
@@ -77,6 +76,9 @@ export default function StartupsPipelinePage() {
 	const [importing, setImporting] = useState(false);
 	const [promoting, setPromoting] = useState<Entry | null>(null);
 	const [viewing, setViewing] = useState<Entry | null>(null);
+	const [editing, setEditing] = useState<Entry | null>(null);
+	// A filter change starts over at page 1 with nothing selected (page 3 of the old view was empty).
+	const refilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setSelected(new Set()); };
 
 	const { data, error, isLoading } = useSWR<Response>(
 		['/api/admin/startups-pipeline', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, page, limit: 50 }],
@@ -108,6 +110,11 @@ export default function StartupsPipelinePage() {
 	};
 	const update = (id: string, next: Status) => act(() => api('PATCH', `/api/admin/startups-pipeline/${id}`, { status: next }), 'Updated');
 	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/startups-pipeline/${id}/re-enrich`), 'Re-enrichment queued');
+	const saveEdit = async (id: string, body: { name?: string; website?: string | null }) => {
+		await api('PATCH', `/api/admin/startups-pipeline/${id}`, body);
+		toast.success(body.website ? 'Saved — enrichment queued for the new website' : 'Saved');
+		setEditing(null); refreshAll();
+	};
 	const remove = (id: string, name: string) => { void (async () => { if (await ask(`Delete ${name} from the pipeline?`)) void act(() => api('DELETE', `/api/admin/startups-pipeline/${id}`), 'Deleted'); })(); };
 	const selectAllMatching = async () => {
 		const p = new URLSearchParams();
@@ -170,11 +177,11 @@ export default function StartupsPipelinePage() {
 			<div style={{ marginBottom: 'var(--space-5)' }} />
 
 			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', gap: 8, flexWrap: 'wrap' }}>
-				{TABS.map((t) => <button key={t.key} className={`chip ${status === t.key ? 'on' : ''}`} onClick={() => setStatus(t.key)}>{t.label}</button>)}
-				<Select value={assigned} onChange={setAssigned} searchable width={190} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
-				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name / site…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => setFrom(e.target.value)} title="Added from" />
-				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => setTo(e.target.value)} title="Added to" />
+				{TABS.map((t) => <button key={t.key} className={`chip ${status === t.key ? 'on' : ''}`} onClick={() => refilter(setStatusRaw)(t.key)}>{t.label}</button>)}
+				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={190} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
+				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name / site…" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
+				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" />
+				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" />
 				<div style={{ flex: 1 }} />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
 			</div>
@@ -188,6 +195,7 @@ export default function StartupsPipelinePage() {
 					<button className="btn ghost" disabled={admins.length === 0} onClick={() => void bulkAssign(true)} title="Distribute evenly across admins">Round-robin</button>
 					<button className="btn ghost" onClick={() => void bulkStatus('added')}><Check size={12} /> Added</button>
 					<button className="btn ghost" onClick={() => void bulkStatus('rejected')}><X size={12} /> Reject</button>
+					<button className="btn ghost" onClick={() => void bulkStatus('new')} title="Undo an Added / Reject"><Undo2 size={12} /> Back to new</button>
 					<div style={{ flex: 1 }} />
 					<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void bulkDelete()}><Trash2 size={12} /> Delete</button>
 				</div>
@@ -197,6 +205,7 @@ export default function StartupsPipelinePage() {
 			{importing && <ImportModal admins={admins.map((a) => ({ id: a.id, name: a.full_name || a.display_name || a.email }))} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
+			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
 			<div className="card">
 				<AsyncState loading={isLoading} error={error} empty={entries.length === 0} emptyMsg={`Nothing in ${status || 'any status'}.`} onRetry={refreshAll}>
@@ -215,18 +224,23 @@ export default function StartupsPipelinePage() {
 									<td><div style={{ fontWeight: 600 }}>{e.name}</div>{e.website && <a href={e.website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--accent)' }}>{e.website}</a>}</td>
 									<td>{[e.hq_city, e.hq_country].filter(Boolean).join(', ') || '—'}</td>
 									<td style={{ fontSize: 12 }}>{e.source ?? '—'}</td>
-									<td title={e.enrichment_error ?? undefined}>
-										<Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{e.enrichment_status}</Tag>
+									<td title={e.website ? (e.enrichment_error ?? undefined) : 'Enrichment needs a website — add one with Edit'}>
+										{!e.website && e.enrichment_status !== 'enriched'
+											? <Tag>no website</Tag>
+											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{e.enrichment_status}</Tag>}
 									</td>
 									<td>{adminName(e.assigned_to)}</td>
 									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{e.status}</Tag></td>
 									<td style={{ textAlign: 'right' }}>
 										<div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
 											<button className="btn ghost" title="View enriched data" onClick={() => setViewing(e)}><Eye size={12} /></button>
-											{e.status !== 'added' && <button className="btn" title="Promote to companies" onClick={() => setPromoting(e)}><Rocket size={12} /> Promote</button>}
+											<button className="btn ghost" title="Edit name / website" onClick={() => setEditing(e)}><Pencil size={12} /></button>
+											{/* A row marked Added in bulk has no company yet — it can still be promoted. */}
+											{(e.status !== 'added' || !e.company_id) && <button className="btn" title="Promote to companies" onClick={() => setPromoting(e)}><Rocket size={12} /> Promote</button>}
 											{e.status === 'new' && <button className="btn ghost" onClick={() => void update(e.id, 'reviewing')}>Review</button>}
 											{e.website && <button className="btn ghost" title="Re-run enrichment" disabled={e.enrichment_status === 'enriching'} onClick={() => void reEnrich(e.id)}><RefreshCw size={12} /></button>}
 											{e.status !== 'rejected' && e.status !== 'added' && <button className="btn ghost" title="Reject" onClick={() => void update(e.id, 'rejected')}><X size={12} /></button>}
+											{(e.status === 'rejected' || (e.status === 'added' && !e.company_id)) && <button className="btn ghost" title="Move back to new" onClick={() => void update(e.id, 'new')}><Undo2 size={12} /> Reopen</button>}
 											<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => remove(e.id, e.name)}><Trash2 size={12} /></button>
 										</div>
 									</td>

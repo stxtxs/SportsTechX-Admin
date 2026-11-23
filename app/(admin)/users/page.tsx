@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, fetchAllPages } from '@/lib/api';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Modal } from '@/components/modal';
 import { PageHeader, PillTabs, AsyncState, StatCard, StatsPanel, Section } from '@/components/atoms';
@@ -110,10 +110,10 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	const exportCsv = async () => {
 		setExporting(true);
 		try {
-			const res = await api<UsersResponse>('GET', `/api/admin/users?${new URLSearchParams({
-				...(search ? { q: search } : {}), ...(role ? { role } : {}), ...(tier ? { tier } : {}), ...(pm ? { playmakers: pm } : {}), limit: '5000',
-			}).toString()}`);
-			const rows = res.data ?? [];
+			const { rows, capped } = await fetchAllPages<User>('/api/admin/users', {
+				...(search ? { q: search } : {}), ...(role ? { role } : {}), ...(tier ? { tier } : {}), ...(pm ? { playmakers: pm } : {}),
+			});
+			if (capped) toast.warning('Export capped at 5000 users — narrow the filters for a complete export.');
 			const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 			const plan = (u: User) => u.is_trial ? `trial${u.trial_ends_at ? ` until ${u.trial_ends_at.slice(0, 10)}` : ''}` : u.active_subscription ? 'paid' : '';
 			const csv = ['email,name,tier,plan,role,playmakers,company,logins,joined,last_seen',

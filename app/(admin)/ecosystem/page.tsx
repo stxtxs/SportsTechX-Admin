@@ -25,6 +25,7 @@ import { DateRangePicker, type RangeValue } from '@/components/date-range-picker
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 interface Entity {
 	id: string;
@@ -312,7 +313,7 @@ function toEntityForm(h: EntityEdit, defaultType: string): EntityForm {
 
 function EntityModal({ id, defaultType, onClose, onSaved }: { id: string | null; defaultType: string; onClose: () => void; onSaved: () => void }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<EntityEdit>(isEdit ? [`/api/admin/ecosystem-entities/${id}/edit`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<EntityEdit>(isEdit ? `/api/admin/ecosystem-entities/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit entity" onClose={onClose}><Loading msg="Loading entity…" /></Modal>;
 	return <EntityForm id={id} initial={hydrated ? toEntityForm(hydrated, defaultType) : emptyEntity(defaultType)} onClose={onClose} onSaved={onSaved} />;
 }
@@ -324,6 +325,8 @@ function EntityForm({ id, initial, onClose, onSaved }: { id: string | null; init
 	const [pending, setPending] = useState(false);
 
 	const set = <K extends keyof EntityForm>(k: K, v: EntityForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+	// On edit an emptied field is sent as null so it clears; undefined would keep the old value.
+	const blank = isEdit ? null : undefined;
 	const numOrNull = (s: string) => (s.trim() === '' ? null : Number(s));
 	const yesNoNull = (s: string) => (s === '' ? null : s === 'yes');
 
@@ -334,22 +337,22 @@ function EntityForm({ id, initial, onClose, onSaved }: { id: string | null; init
 				name: form.name.trim(),
 				slug: form.slug.trim() || undefined,
 				entity_type: form.entity_type,
-				description: form.description.trim() || undefined,
-				website: form.website.trim() || undefined,
-				category: form.category.trim() || undefined,
-				founded_year: form.founded_year ? Number(form.founded_year) : undefined,
-				latest_activity_year: form.latest_activity_year ? Number(form.latest_activity_year) : undefined,
-				poc_name: form.poc_name.trim() || undefined,
-				poc_position: form.poc_position.trim() || undefined,
-				poc_email: form.poc_email.trim() || undefined,
-				poc_linkedin: form.poc_linkedin.trim() || undefined,
+				description: form.description.trim() || blank,
+				website: form.website.trim() || blank,
+				category: form.category.trim() || blank,
+				founded_year: form.founded_year ? Number(form.founded_year) : blank,
+				latest_activity_year: form.latest_activity_year ? Number(form.latest_activity_year) : blank,
+				poc_name: form.poc_name.trim() || blank,
+				poc_position: form.poc_position.trim() || blank,
+				poc_email: form.poc_email.trim() || blank,
+				poc_linkedin: form.poc_linkedin.trim() || blank,
 				status: form.status,
-				hq_country: form.hq.country.trim() || undefined,
-				hq_city: form.hq.city.trim() || undefined,
-				hq_continent: form.hq.continent.trim() || undefined,
-				hq_region: form.hq.region.trim() || undefined,
-				hq_state: form.hq.state.trim() || undefined,
-				hq_report_region: (form.hq.report_region ?? '').trim() || undefined,
+				hq_country: form.hq.country.trim() || blank,
+				hq_city: form.hq.city.trim() || blank,
+				hq_continent: form.hq.continent.trim() || blank,
+				hq_region: form.hq.region.trim() || blank,
+				hq_state: form.hq.state.trim() || blank,
+				hq_report_region: (form.hq.report_region ?? '').trim() || blank,
 				social: form.social,
 				sport_ids: form.sport_ids,
 			};
@@ -666,7 +669,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 /** Full-page drill-down for one entity: header + key facts + linked entities &
  *  cohorts. Linked entities are clickable to hop straight to their own detail. */
 function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () => void; onEdit: (id: string) => void; onView: (id: string) => void }) {
-	const { data: e, isLoading, error, mutate } = useSWR<EntityEdit>([`/api/admin/ecosystem-entities/${id}/edit`], { revalidateOnFocus: false });
+	const { data: e, isLoading, error, mutate } = useEditPayload<EntityEdit>(`/api/admin/ecosystem-entities/${id}/edit`);
 	if (isLoading || (!e && !error)) return <div className="card" style={{ padding: 'var(--space-4)' }}><Loading msg="Loading entity…" /></div>;
 	if (error || !e) return <div className="card" style={{ padding: 'var(--space-4)' }}><ErrorState error={error} onRetry={() => void mutate()} /></div>;
 	const p = (e.program ?? {}) as Record<string, unknown>;

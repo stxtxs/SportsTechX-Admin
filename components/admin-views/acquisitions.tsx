@@ -17,6 +17,7 @@ import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components
 import { Field } from '@/components/tabbed-form';
 import { CompanySelectOne, SectorCascade, SportsPicker, CurrencySelect, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 interface Acquisition {
 	id: string;
@@ -246,7 +247,7 @@ export interface StagedAcq { body: Record<string, unknown>; label: { acquirer?: 
 
 export function AcquisitionModal({ id, onClose, onSaved, subjectCompanyId }: { id: string | null; onClose: () => void; onSaved: () => void; subjectCompanyId?: string }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<AcqEdit>(isEdit ? [`/api/admin/acquisitions/${id}/edit`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<AcqEdit>(isEdit ? `/api/admin/acquisitions/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit acquisition" onClose={onClose}><Loading msg="Loading acquisition…" /></Modal>;
 	// Adding from a company profile: pre-map that company as the subject so the
 	// admin only picks the role + the other party (no re-selecting the same one).
@@ -293,17 +294,20 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 
 	// Map one side (subject or counterparty) onto the server's acquiree_* / acquirer_*
 	// columns via the chosen role. Computed keys so each company is entered once.
+	// On edit an emptied field is sent as null so it clears; undefined would keep the old value.
+	// (A side's company link is handled by the server: sending a free-text name drops the old link.)
+	const blank = isEdit ? null : undefined;
 	const partyBody = (prefix: 'acquiree' | 'acquirer', p: PartyForm, companyId: string, name: string): Record<string, unknown> => ({
 		[`${prefix}_company_id`]: companyId || undefined,
 		[`${prefix}_name`]: !companyId && name.trim() ? name.trim() : undefined,
 		[`${prefix}_is_sportstech`]: p.is_sportstech,
-		[`${prefix}_sector_id`]: p.sector_id || undefined,
-		[`${prefix}_business_model`]: p.business_model || undefined,
-		[`${prefix}_hq_country`]: p.hq.country.trim() || undefined,
-		[`${prefix}_hq_city`]: p.hq.city.trim() || undefined,
-		[`${prefix}_hq_continent`]: p.hq.continent.trim() || undefined,
-		[`${prefix}_hq_region`]: p.hq.region.trim() || undefined,
-		[`${prefix}_hq_state`]: p.hq.state.trim() || undefined,
+		[`${prefix}_sector_id`]: p.sector_id || blank,
+		[`${prefix}_business_model`]: p.business_model || blank,
+		[`${prefix}_hq_country`]: p.hq.country.trim() || blank,
+		[`${prefix}_hq_city`]: p.hq.city.trim() || blank,
+		[`${prefix}_hq_continent`]: p.hq.continent.trim() || blank,
+		[`${prefix}_hq_region`]: p.hq.region.trim() || blank,
+		[`${prefix}_hq_state`]: p.hq.state.trim() || blank,
 		[`${prefix}_sport_ids`]: p.sport_ids,
 	});
 
@@ -315,10 +319,10 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 				...partyBody(form.role, form.subject, form.subject_company_id, ''),
 				...partyBody(other, form.counterparty, form.counterparty_company_id, form.counterparty_name),
 				acquisition_date: form.acquisition_date || undefined,
-				amount: form.amount.trim() ? Number(form.amount) : undefined,
-				currency_code: form.currency_code || undefined,
+				amount: form.amount.trim() ? Number(form.amount) : blank,
+				currency_code: form.currency_code || blank,
 				acquisition_type: form.acquisition_type,
-				source_url: form.source_url.trim() || undefined,
+				source_url: form.source_url.trim() || blank,
 			};
 			if (isEdit) await api('PATCH', `/api/admin/acquisitions/${id}`, body);
 			else await api('POST', '/api/admin/acquisitions', body);

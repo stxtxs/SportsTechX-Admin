@@ -15,6 +15,7 @@ import { ImageInput } from '@/components/image-input';
 import { ReportPdfInput } from '@/components/report-pdf-input';
 import { ReportEditionsModal } from '@/components/report-editions-modal';
 import { confirmDelete } from '@/lib/delete-impact';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 interface Report {
 	id: string;
@@ -281,7 +282,7 @@ interface ReportEdit {
 }
 
 function EditReportModal({ id, onClose, onSaved }: { id: string; onClose: () => void; onSaved: () => void }) {
-	const { data } = useSWR<ReportEdit>([`/api/admin/reports/${id}/edit`], { revalidateOnFocus: false });
+	const { data } = useEditPayload<ReportEdit>(`/api/admin/reports/${id}/edit`);
 	if (!data) return <Modal title="Edit report" onClose={onClose}><Loading msg="Loading report…" /></Modal>;
 	return <EditReportForm initial={data} id={id} onClose={onClose} onSaved={onSaved} />;
 }
@@ -303,7 +304,7 @@ function EditReportForm({ id, initial, onClose, onSaved }: { id: string; initial
 		try {
 			await api('PATCH', `/api/admin/reports/${id}`, {
 				title: f.title.trim(),
-				short_title: f.short_title.trim() || undefined,
+				short_title: f.short_title.trim() || null,   // null clears it
 				slug: f.slug.trim() ? slugify(f.slug) : undefined,
 				report_month: f.report_month ? Number(f.report_month) : null,
 				report_year: f.report_year ? Number(f.report_year) : null,

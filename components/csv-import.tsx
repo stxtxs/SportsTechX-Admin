@@ -24,7 +24,14 @@ const CHUNK = 500;
 async function postChunked<T>(url: string, rows: Record<string, string>[], positions: number[], merge: (acc: T | null, res: T, toFile: (i: number) => number) => T): Promise<T | null> {
 	let acc: T | null = null;
 	for (let off = 0; off < rows.length; off += CHUNK) {
-		const res = await api<T>('POST', url, { rows: rows.slice(off, off + CHUNK) });
+		let res: T;
+		try {
+			res = await api<T>('POST', url, { rows: rows.slice(off, off + CHUNK) });
+		} catch (e) {
+			// Earlier batches are already saved: say so, so a retry isn't a surprise.
+			if (off === 0) throw e;
+			throw new Error(`Stopped at row ${(positions[off] ?? off) + 1}: ${(e as Error).message}. The ${off} rows before it were imported; importing the file again skips them as duplicates.`);
+		}
 		acc = merge(acc, res, (i) => positions[off + i] ?? off + i);
 	}
 	return acc;
@@ -181,7 +188,7 @@ export function CsvImportButton({ entity, onDone }: { entity: Entity; onDone: ()
 		try {
 			const positions = rows.map((_, i) => i).filter((i) => !(skipDupes && dupInfo.has(i)));
 			const res = await postChunked<ImportResult>(`/api/admin/import/${entity}`, positions.map((i) => rows[i]!), positions, mergeImport);
-			if (!res) return;
+			if (!res) { toast.info('Nothing to import: every row is a duplicate and was skipped.'); return; }
 			setResult(res);
 			toast[res.failed ? 'warning' : 'success'](`Imported ${res.created}${res.failed ? ` · ${res.failed} failed` : ''}`);
 			if (res.created > 0) onDone();

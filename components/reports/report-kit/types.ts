@@ -39,4 +39,8 @@ export interface ReportDetail {
 	is_published: boolean;
 	tags: string[];
 	theme: import('./report-theme').ReportThemeOverride | null;
+	/** Custom page template (gster26 / ftabr26 / benchmark26) — null for a section or PDF report. */
+	template?: string | null;
+	/** false = opens by URL but stays out of the reports library. */
+	is_listed?: boolean;
 }

@@ -19,7 +19,7 @@ import { TiptapEditor } from '@/components/tiptap-editor';
 import { CompanyPicker, SectorPicker, PollPicker } from '@/components/section-pickers';
 import { ImageInput } from '@/components/image-input';
 import { PreviewOverlay } from '@/components/reports/preview-overlay';
-import { Gster26Editor } from '@/components/reports/gster26-editor';
+import { Gster26Editor, CUSTOM_REPORT_PARTS } from '@/components/reports/gster26-editor';
 import { useLeaveGuard } from '@/hooks/use-leave-guard';
 import type { Section as RkSection } from '@/components/reports/report-kit/types';
 import type { ReportThemeOverride } from '@/components/reports/report-kit/report-theme';
@@ -34,7 +34,6 @@ import { ReportEditionsModal } from '@/components/report-editions-modal';
  * so the editor shows a banner: edits here won't change the live report, and the
  * preview can't match it. Add a slug here if another report gets a custom page.
  */
-const HARDCODED_REPORT_SLUGS = new Set(['gster26', 'ftabr26', 'investors-survey26']);
 
 // ---- types matching the server registry --------------------------------------
 
@@ -185,10 +184,13 @@ interface ReportMeta {
 	description: string | null;
 	cover_url: string | null;
 	show_on_dashboard: boolean;
+	is_listed?: boolean;
+	/** Page template of a custom report (gster26 / ftabr26 / benchmark26 / methodology); null = section or PDF report. */
+	template?: string | null;
 	is_published: boolean;
 	has_sections: boolean;
 	theme: ReportThemeOverride | null;
-	/** Editorial overrides for a custom-built page (gster26). */
+	/** The whole document of a custom report (every word, figure and image it shows). */
 	content?: Record<string, unknown> | null;
 }
 
@@ -216,7 +218,8 @@ export default function ReportSectionsEditorPage(
 	const [detailsOpen, setDetailsOpen] = useState(false);
 	const [pdfsOpen, setPdfsOpen] = useState(false);
 	const active = sections.find((s) => s.id === activeId) ?? null;
-	const isHardcoded = !!report?.slug && HARDCODED_REPORT_SLUGS.has(report.slug);
+	// A custom-designed report: its template draws the document edited part by part below.
+	const isHardcoded = !!report?.template && report.template in CUSTOM_REPORT_PARTS;
 
 	// Adopt the report's saved theme once, then the local copy is the source of
 	// truth (ThemeControls live-edits it; "Save theme" persists it).
@@ -335,7 +338,8 @@ export default function ReportSectionsEditorPage(
 			{isHardcoded ? (
 				<Gster26Editor
 					reportId={reportId}
-					slug={report?.slug ?? 'gster26'}
+					slug={report?.slug ?? ''}
+					template={report?.template ?? ''}
 					saved={(report?.content ?? null) as Parameters<typeof Gster26Editor>[0]['saved']}
 					previewOpen={previewOpen}
 					onClosePreview={() => setPreviewOpen(false)}
@@ -425,6 +429,7 @@ export default function ReportSectionsEditorPage(
 							report_month: report.report_month, report_year: report.report_year,
 							tags: report.tags, description: report.description, cover_url: report.cover_url,
 							show_on_dashboard: report.show_on_dashboard,
+							is_listed: report.is_listed,
 						}}
 						onClose={() => setDetailsOpen(false)}
 						onSaved={() => { reloadReport(); void mutate((k) => Array.isArray(k) && k[0] === '/api/reports'); }}

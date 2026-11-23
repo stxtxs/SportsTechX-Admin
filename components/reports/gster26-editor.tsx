@@ -60,7 +60,7 @@ export const FTABR26_PARTS: { id: string; label: string; hint: string; anchor: s
 	{ id: 'ecosystem', label: 'Ecosystem', hint: 'The initiatives and programs on the map and in its tables.', anchor: '#ecomap', keys: ['ecosystem', 'ecomapLabels', 'ecomapLogos'] },
 	{ id: 'partners', label: 'Partner spotlights', hint: 'The partner spotlights block (hidden while “show” is off) and each partner’s accent.', anchor: '#ecosystem', keys: ['partners', 'partnersLabels', 'partnersAccent'] },
 	{ id: 'data', label: 'Data in Full', hint: 'The report’s figures as published (dealflow by year, region and sector, leaderboards, top companies), the written dealflow analysis, key figures, labels and the methodology note.', anchor: '#dealflow', keys: ['facts', 'methodology', 'dataLabels', 'dataCopy', 'dataKeyFigures'] },
-	{ id: 'page-words', label: 'Page words & print', hint: 'Navigation labels, the PDF link, the six summary cards, sector names and colours, the imprint (credits) and all the copy of the print / PDF layout.', anchor: '#stx-hero', keys: ['pageLabels', 'pageSummary', 'pageSectors', 'credits', 'pagePrint'] },
+	{ id: 'page-words', label: 'Page words & print', hint: 'Navigation labels, the PDF link, the six summary cards, sector names and colours, the imprint (credits), all the copy of the print / PDF layout, and the share card shown when the link is posted (title, description, 1200×630 image).', anchor: '#stx-hero', keys: ['pageLabels', 'pageSummary', 'pageSectors', 'credits', 'pagePrint', 'share'] },
 ];
 
 /** The VC Deal Sourcing Benchmark: its whole published document, block by block. */

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { use, useState, useEffect, useMemo } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Trash2, Plus, GripVertical, Lock, Unlock, Eye, EyeOff, X, Sparkles, SlidersHorizontal, CheckCircle2, AlertTriangle, ArrowLeft, Info, FileText } from 'lucide-react';
+import { Trash2, Plus, GripVertical, Lock, Unlock, Eye, EyeOff, X, Sparkles, SlidersHorizontal, CheckCircle2, AlertTriangle, ArrowLeft, Info, FileText, Download } from 'lucide-react';
 import {
 	DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors,
 	closestCenter,
@@ -26,6 +26,7 @@ import type { ReportThemeOverride } from '@/components/reports/report-kit/report
 import { ThemeControls } from '@/components/reports/theme-controls';
 import { ReportDetailsForm } from '@/components/reports/report-details-form';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { ReportEditionsModal } from '@/components/report-editions-modal';
 
 /**
  * Reports that render on the live site from a bespoke hardcoded page (not the
@@ -213,6 +214,7 @@ export default function ReportSectionsEditorPage(
 	const [themeOpen, setThemeOpen] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [detailsOpen, setDetailsOpen] = useState(false);
+	const [pdfsOpen, setPdfsOpen] = useState(false);
 	const active = sections.find((s) => s.id === activeId) ?? null;
 	const isHardcoded = !!report?.slug && HARDCODED_REPORT_SLUGS.has(report.slug);
 
@@ -317,6 +319,7 @@ export default function ReportSectionsEditorPage(
 				onPublishToggle={setReportPublished}
 				onOpenTheme={() => setThemeOpen(true)}
 				onOpenDetails={() => setDetailsOpen(true)}
+				onOpenPdfs={() => setPdfsOpen(true)}
 				onPreview={() => setPreviewOpen(true)}
 			/>
 
@@ -405,6 +408,8 @@ export default function ReportSectionsEditorPage(
 			)}
 			</>)}
 
+			{pdfsOpen && <ReportEditionsModal id={reportId} onClose={() => setPdfsOpen(false)} />}
+
 			{themeOpen && (
 				<SlideOver onClose={() => setThemeOpen(false)}>
 					<ThemeControls reportId={reportId} value={theme} onChange={setTheme} onClose={() => { setThemeOpen(false); reloadReport(); }} />
@@ -433,7 +438,7 @@ export default function ReportSectionsEditorPage(
 // ---- publish / readiness bar -------------------------------------------------
 
 function PublishBar({
-	report, custom, publishedCount, draftCount, onPublishToggle, onOpenTheme, onOpenDetails, onPreview,
+	report, custom, publishedCount, draftCount, onPublishToggle, onOpenTheme, onOpenDetails, onOpenPdfs, onPreview,
 }: {
 	report: ReportMeta | undefined;
 	/** A custom-built page: no sections, so no section counts or warnings. */
@@ -443,6 +448,8 @@ function PublishBar({
 	onPublishToggle: (next: boolean) => void;
 	onOpenTheme: () => void;
 	onOpenDetails: () => void;
+	/** Free (Explore) and paid (Raise & Scout) PDFs, and other languages. */
+	onOpenPdfs: () => void;
 	onPreview: () => void;
 }) {
 	const published = report?.is_published ?? false;
@@ -478,6 +485,7 @@ function PublishBar({
 			</span>
 
 			<button className="btn ghost" onClick={onOpenDetails} title="Title, cover, slug, tags…"><FileText size={12} /> Details</button>
+			<button className="btn ghost" onClick={onOpenPdfs} title="Free PDF for Explore, paid PDF for Raise & Scout, other languages"><Download size={12} /> PDFs</button>
 			<button className="btn ghost" onClick={onOpenTheme} title="Report theme"><SlidersHorizontal size={12} /> Theme</button>
 			<button className="btn ghost" onClick={() => onPublishToggle(!published)}>
 				{published ? 'Unpublish' : 'Publish report'}

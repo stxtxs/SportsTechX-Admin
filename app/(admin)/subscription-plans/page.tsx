@@ -216,8 +216,9 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 	const [name, setName] = useState('');
 	const [tagline, setTagline] = useState('');
 	const [description, setDescription] = useState('');
-	const [tier, setTier] = useState<'explore' | 'raise' | 'scout'>('raise');
-	const [billingInterval, setBillingInterval] = useState<'monthly' | 'yearly'>('yearly');
+	// Raise / Scout only: Explore is the free base and has no Stripe price, so it
+	// cannot be created here (the server refuses it before touching Stripe).
+	const [tier, setTier] = useState<'raise' | 'scout'>('raise');
 	const [priceAmount, setPriceAmount] = useState('0'); // cents
 	const [currency, setCurrency] = useState('EUR');
 	const [trialDays, setTrialDays] = useState('0');
@@ -228,10 +229,9 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 
 	// tier_detail is derived from tier (matches the server enum). Atlas sells
 	// yearly only, and `raise`/`scout` have no `*_monthly` enum member, so the
-	// interval is forced — picking monthly would 400 on `${tier}_monthly`.
-	// Explore is the free base tier and its detail label carries no interval.
-	const effectiveInterval: 'monthly' | 'yearly' = 'yearly';
-	const tierDetail = tier === 'explore' ? 'explore' : `${tier}_${effectiveInterval}`;
+	// interval is fixed (shown, not offered as a choice).
+	const effectiveInterval = 'yearly' as const;
+	const tierDetail = `${tier}_${effectiveInterval}`;
 
 	const submit = async () => {
 		setPending(true);
@@ -281,10 +281,10 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 				<Field label="Description"><textarea className="search-input" style={{ minHeight: 60 }} value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<Field label="Tier">
-						<Select value={tier} onChange={(v) => setTier(v as 'explore' | 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'explore', label: 'explore' }, { value: 'raise', label: 'raise' }, { value: 'scout', label: 'scout' }]} />
+						<Select value={tier} onChange={(v) => setTier(v as 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'raise', label: 'raise' }, { value: 'scout', label: 'scout' }]} />
 					</Field>
 					<Field label="Billing interval">
-						<Select value={billingInterval} onChange={(v) => setBillingInterval(v as 'monthly' | 'yearly')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'monthly', label: 'monthly' }, { value: 'yearly', label: 'yearly' }]} />
+						<div style={{ fontSize: 13, color: 'var(--fg-2)', padding: '7px 0' }}>Yearly <span style={{ color: 'var(--fg-muted)' }}>· Atlas sells yearly plans only</span></div>
 					</Field>
 				</div>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 100px', gap: 12 }}>

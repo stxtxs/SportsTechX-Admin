@@ -22,7 +22,9 @@ export default function LoginPage() {
 			setError(err.message);
 			return;
 		}
-		router.replace('/dashboard');
+		// Back to where the session expired (set by lib/api.ts); only a same-site path, never another origin.
+		const next = new URLSearchParams(window.location.search).get('redirectTo') ?? '';
+		router.replace(next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : '/dashboard');
 	};
 
 	return (

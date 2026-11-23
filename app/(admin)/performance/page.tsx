@@ -32,8 +32,9 @@ const RANGES = ['1h', '6h', '24h', '7d', '30d'] as const;
 type Range = (typeof RANGES)[number];
 const OBSERVABILITY_URL = 'https://supabase.com/dashboard/project/lipxxbmiusdluagossxa/advisors/performance';
 
-type Health = { tone: 'ok' | 'warn' | 'crit'; label: string; detail: string };
+type Health = { tone: 'unknown' | 'ok' | 'warn' | 'crit'; label: string; detail: string };
 const HEALTH_TONE: Record<Health['tone'], { color: string; text: string }> = {
+	unknown: { color: 'var(--fg-muted)', text: 'Unknown' },
 	ok: { color: 'var(--pos)', text: 'Healthy' },
 	warn: { color: 'var(--warn)', text: 'Degraded' },
 	crit: { color: 'var(--neg)', text: 'Unhealthy' },
@@ -81,7 +82,9 @@ export default function PerformancePage() {
 
 	const h = http.data?.summary;
 	const httpErrRate = h && h.total > 0 ? (h.errors / h.total) * 100 : 0;
-	const hp = health(httpErrRate, h?.p95_ms ?? 0, h?.total ?? 0);
+	// A failed metrics query is not "no traffic": say we don't know.
+	const hp: Health = http.error ? { tone: 'unknown', label: 'Unknown', detail: 'Could not load request metrics — retry, or check the API.' }
+		: health(httpErrRate, h?.p95_ms ?? 0, h?.total ?? 0);
 	const timelineChart = (http.data?.timeline ?? []).map((t) => ({ label: t.label, amt: t.total, deals: t.errors }));
 	// Latency over time — bars are the average, the line traces p95 so a spike in
 	// tail latency is visible even when the average stays flat.
@@ -110,7 +113,7 @@ export default function PerformancePage() {
 
 	return (
 		<div>
-			<PageHeader kicker={`Operations · last ${range}`} title="Performance" subtitle="HTTP endpoint latency + background job throughput, refreshed every 30s." />
+			<PageHeader kicker={`Operations · last ${range}`} title="Performance" subtitle="HTTP endpoint latency + background job throughput, refreshed every 60s." />
 
 			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)' }}>
 				{RANGES.map((r) => (<button key={r} className={`chip ${range === r ? 'on' : ''}`} onClick={() => setRange(r)}>{r}</button>))}
@@ -284,14 +287,14 @@ export default function PerformancePage() {
 }
 
 function ErrorsModal({ range, route, onClose }: { range: string; route?: string; onClose: () => void }) {
-	const { data, isLoading } = useSWR<{ errors: ErrorRow[] }>(
+	const { data, isLoading, error, mutate } = useSWR<{ errors: ErrorRow[] }>(
 		['/api/admin/performance/http/errors', { range, route }],
 		{ dedupingInterval: 10_000 },
 	);
 	const errors = data?.errors ?? [];
 	return (
 		<Modal title={route ? `5xx errors · ${route}` : '5xx errors'} onClose={onClose} width={680} footer={<button className="btn ghost" onClick={onClose}>Close</button>}>
-			<AsyncState loading={isLoading} empty={errors.length === 0} emptyMsg="No 5xx errors in this range.">
+			<AsyncState loading={isLoading} error={error} empty={errors.length === 0} emptyMsg="No 5xx errors in this range." onRetry={() => void mutate()}>
 				<table className="data-table">
 					<thead><tr><th>When</th><th>Method</th><th>Route</th><th>Status</th><th>Message</th></tr></thead>
 					<tbody>

@@ -249,6 +249,7 @@ export default function ScoutDealsPage() {
 					id={openId}
 					onClose={() => setOpenId(null)}
 					onSaved={() => { setOpenId(null); refresh(); }}
+					onChanged={refresh}
 					ask={ask}
 				/>
 			)}
@@ -265,10 +266,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 	);
 }
 
-function ReviewModal({ id, onClose, onSaved, ask }: {
+function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 	id: string;
 	onClose: () => void;
 	onSaved: () => void;
+	/** A change made without closing (featured, interest) — refreshes the list + stats behind the modal. */
+	onChanged: () => void;
 	ask: (arg: { title?: string; message: string; confirmLabel?: string; danger?: boolean } | string) => Promise<boolean>;
 }) {
 	const { data: d, error, isLoading, mutate } = useSWR<DealDetail>(`/api/admin/scout-deals/${id}`);
@@ -304,11 +307,13 @@ function ReviewModal({ id, onClose, onSaved, ask }: {
 
 		setBusy(true);
 		try {
+			// A note with no transition sends no status: the server then keeps the status as is and
+			// doesn't re-notify the submitter (and a `draft` deal can take a note).
 			await api('PATCH', `/api/admin/scout-deals/${id}/review`, {
-				status: chosen,
+				...(chosen !== current ? { status: chosen } : {}),
 				review_notes: notes.trim() || null,
 			});
-			toast.success(`Marked ${chosen.replace(/_/g, ' ')}`);
+			toast.success(chosen !== current ? `Marked ${chosen.replace(/_/g, ' ')}` : 'Note saved');
 			onSaved();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setBusy(false); }
@@ -323,7 +328,7 @@ function ReviewModal({ id, onClose, onSaved, ask }: {
 				featured_until: !d.is_featured && featuredUntil ? featuredUntil : null,
 			});
 			toast.success(d.is_featured ? 'Removed from Featured' : 'Added to Featured');
-			void mutate();
+			void mutate(); onChanged();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setBusy(false); }
 	};
@@ -341,7 +346,8 @@ function ReviewModal({ id, onClose, onSaved, ask }: {
 						onChange={setNext}
 						ariaLabel="Status"
 						width={190}
-						options={DEAL_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
+						// Admins can't move a deal TO draft (that's the submitter's state); a draft deal still shows it.
+						options={DEAL_STATUSES.filter((s) => s !== 'draft' || current === 'draft').map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
 					/>
 					{/* A note with no transition is a legitimate triage action, so this
 					    stays enabled when only the note changed. */}
@@ -458,7 +464,7 @@ function ReviewModal({ id, onClose, onSaved, ask }: {
 							</div>
 						</Section2>
 
-						<InterestPanel dealId={id} companyName={d.company_name} anonymous={d.company_anonymous} />
+						<InterestPanel dealId={id} companyName={d.company_name} anonymous={d.company_anonymous} onChanged={onChanged} />
 
 						<Section2 title="Decision">
 							{d.review_notes && (
@@ -517,10 +523,11 @@ const interestChip: Record<string, string> = {
  * This is per-deal rather than a global queue because that is the only endpoint
  * there is — the dashboard-level counts come from `/stats` instead.
  */
-function InterestPanel({ dealId, companyName, anonymous }: {
+function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 	dealId: string;
 	companyName: string | null;
 	anonymous: boolean;
+	onChanged: () => void;
 }) {
 	const ask = useConfirm();
 	const { data, error, isLoading, mutate } = useSWR<InterestRow[]>(`/api/admin/scout-deals/${dealId}/interest`);
@@ -543,7 +550,7 @@ function InterestPanel({ dealId, companyName, anonymous }: {
 			await api('PATCH', `/api/admin/scout-deals/interest/${r.id}`, { status, ...(disclose ? { disclose: true } : {}) });
 			toast.success(disclose ? `Disclosed to ${who}` : `Marked ${status.replace(/_/g, ' ')}`);
 			setDraft((p) => { const { [r.id]: _drop, ...rest } = p; return rest; });
-			void mutate();
+			void mutate(); onChanged();   // interest count + Disclosed stat behind the modal
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(null); }
 	};

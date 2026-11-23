@@ -131,7 +131,7 @@ export function AssetLibrary({
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
 						{assets.map((a) => (
 							<div key={a.id} style={{ border: '1px solid var(--border)', background: 'var(--bg-1)', display: 'grid' }}>
-								<img src={a.url} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: 'var(--bg-3)' }}
+								<img src={a.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: 'var(--bg-3)' }}
 									onError={(e) => { e.currentTarget.style.opacity = '0.25'; }} />
 								<div style={{ padding: 8, display: 'grid', gap: 6 }}>
 									<input className="search-input" defaultValue={a.alt_text} placeholder="Alt text"

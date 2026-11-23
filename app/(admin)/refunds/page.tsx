@@ -124,10 +124,10 @@ export default function RefundsPage() {
 										)}
 									</td>
 									<td>
-										{r.status === 'pending' ? (
+										{r.status === 'pending' || r.status === 'failed' ? (
 											<div style={{ display: 'flex', gap: 6 }}>
 												<button className="btn" disabled={pending === r.id} onClick={() => void act(r, 'approve')}>
-													{pending === r.id ? 'Working…' : 'Approve refund'}
+													{pending === r.id ? 'Working…' : r.status === 'failed' ? 'Retry refund' : 'Approve refund'}
 												</button>
 												<button className="btn ghost" disabled={pending === r.id} onClick={() => void act(r, 'reject')}>Reject</button>
 											</div>

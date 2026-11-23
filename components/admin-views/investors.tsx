@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Banknote, BadgeCheck, Coins, Layers } from 'lucide-react';
@@ -44,6 +45,25 @@ const CATEGORIES = [
 ] as const;
 const STATUSES = ['active', 'inactive', 'paused'] as const;
 
+/**
+ * Which record's edit form is open, seeded from `?edit=<id>` so a link (Data changes →
+ * "Open record") lands on the form. Closing drops the param. Shared with the ecosystem lists.
+ */
+export function useEditParam(): [string | null, (v: string | null) => void] {
+	const sp = useSearchParams();
+	const [id, setId] = useState<string | null>(() => sp.get('edit'));
+	const set = (v: string | null) => {
+		setId(v);
+		const q = new URLSearchParams(window.location.search);
+		if (v === null && q.has('edit')) {
+			q.delete('edit');
+			const qs = q.toString();
+			window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+		}
+	};
+	return [id, set];
+}
+
 export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
@@ -63,7 +83,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
-	const [editingId, setEditingId] = useState<string | null>(null);
+	const [editingId, setEditingId] = useEditParam();
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
 	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.

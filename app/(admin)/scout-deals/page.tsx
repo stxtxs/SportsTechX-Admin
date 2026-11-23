@@ -120,7 +120,6 @@ export default function ScoutDealsPage() {
 	const ask = useConfirm();
 	const [status, setStatus] = useUrlState('sd', 'status', 'pending');
 	const [source, setSource] = useUrlState('sd', 'source', '');
-	const [assigned, setAssigned] = useUrlState('sd', 'assigned', '');
 	const [page, setPage] = useUrlNumber('sd', 'page', 1);
 	const [openId, setOpenId] = useState<string | null>(null);
 
@@ -128,7 +127,6 @@ export default function ScoutDealsPage() {
 		['/api/admin/scout-deals', {
 			status: status || undefined,
 			source: source || undefined,
-			assigned_to: assigned || undefined,
 			limit: LIMIT,
 			offset: (page - 1) * LIMIT,
 		}],
@@ -171,10 +169,6 @@ export default function ScoutDealsPage() {
 				<FilterSelect
 					value={source} onChange={(v) => { setSource(v); setPage(1); }}
 					allLabel="Any source" options={SOURCES.map((s) => ({ value: s, label: s === 'circle' ? 'From the Circle' : 'Verified raise' }))}
-				/>
-				<FilterSelect
-					value={assigned} onChange={(v) => { setAssigned(v); setPage(1); }}
-					allLabel="Anyone" options={[{ value: 'unassigned', label: 'Unassigned' }]}
 				/>
 			</FilterBar>
 

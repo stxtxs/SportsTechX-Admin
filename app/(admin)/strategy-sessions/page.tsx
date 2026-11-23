@@ -46,7 +46,8 @@ export default function StrategySessionsPage() {
 		try {
 			await api('PATCH', `/api/admin/strategy-sessions/${id}/confirm`, {
 				scheduled_at: new Date(local).toISOString(),
-				meeting_link: link[id]?.trim() || null,
+				// Untouched field = not sent (keeps the saved link); emptied = null (removes it).
+				meeting_link: link[id] === undefined ? undefined : (link[id].trim() || null),
 			});
 			toast.success('Session confirmed — the founder has been notified in Atlas.');
 			void mutate();

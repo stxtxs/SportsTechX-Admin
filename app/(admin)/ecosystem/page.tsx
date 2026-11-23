@@ -710,7 +710,9 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
  *  cohorts. Linked entities are clickable to hop straight to their own detail. */
 function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () => void; onEdit: (id: string) => void; onView: (id: string) => void }) {
 	const { data: e, isLoading, error, mutate } = useEditPayload<EntityEdit>(`/api/admin/ecosystem-entities/${id}/edit`);
-	if (isLoading || (!e && !error)) return <div className="card" style={{ padding: 'var(--space-4)' }}><Loading msg="Loading entity…" /></div>;
+	// Loading only when there is nothing to show: opening Edit refetches this record, and
+	// swapping to a spinner then unmounted the panels behind the modal (losing their state).
+	if (!e && (isLoading || !error)) return <div className="card" style={{ padding: 'var(--space-4)' }}><Loading msg="Loading entity…" /></div>;
 	if (error || !e) return <div className="card" style={{ padding: 'var(--space-4)' }}><ErrorState error={error} onRetry={() => void mutate()} /></div>;
 	const p = (e.program ?? {}) as Record<string, unknown>;
 	const ev = (e.event ?? {}) as Record<string, unknown>;

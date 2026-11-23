@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useSearchParams, usePathname } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Layers, CalendarClock, Package, GraduationCap, Lightbulb, Banknote } from 'lucide-react';
@@ -736,12 +736,11 @@ const ECO_TABS: ReadonlyArray<{ key: EcoTab; label: string }> = [
 
 export default function EcosystemAdminPage() {
 	const searchParams = useSearchParams();
-	const router = useRouter();
 	const pathname = usePathname();
 	const raw = searchParams.get('tab');
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); router.replace(`${pathname}?${q}`, { scroll: false }); };
+	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const { from, to } = dateRange;

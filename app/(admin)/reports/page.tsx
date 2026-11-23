@@ -251,7 +251,7 @@ function ReportAnalytics() {
 	return (
 		<div style={{ padding: 'var(--space-4)', borderTop: '1px solid var(--border)' }}>
 			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No views or downloads recorded yet." onRetry={() => void mutate()}>
-				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8 }}>{totalViews.toLocaleString()} views and {totalDl.toLocaleString()} downloads across {rows.length} reports. Views count signed-in opens in Atlas; downloads before 20 Nov 2026 were only recorded by the old Hub.</div>
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8 }}>{totalViews.toLocaleString()} views and {totalDl.toLocaleString()} downloads across {rows.length} reports. Views count signed-in opens in Atlas, once per person per day; downloads before 20 Nov 2026 were only recorded by the old Hub.</div>
 				<table className="data-table">
 					<thead><tr><th>Report</th><th>Period</th><th>Views</th><th>Unique viewers</th><th>Last view</th><th>Downloads</th><th>Unique users</th><th>Last download</th></tr></thead>
 					<tbody>

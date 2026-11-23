@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { PageHeader, PillTabs } from '@/components/atoms';
 import { ClaimsView } from '@/components/admin-views/claims';
@@ -21,12 +21,11 @@ interface QueueStats {
 }
 
 function ClaimsAndChanges() {
-	const router = useRouter();
 	const pathname = usePathname();
 	const searchParams = useSearchParams();
 	const tab: Tab = searchParams.get('tab') === 'changes' ? 'changes' : 'claims';
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: Tab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); router.replace(`${pathname}?${q}`, { scroll: false }); };
+	const setTab = (t: Tab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
 	const pendingClaims = stats.data?.claims.pending ?? 0;

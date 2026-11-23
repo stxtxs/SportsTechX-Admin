@@ -26,7 +26,7 @@ const DEST = path.resolve(here, '../components/reports');
 const check = process.argv.includes('--check');
 
 // Files the admin owns (editor chrome around the copy). Never touched here.
-const ADMIN_OWNED = new Set(['report-details-form.tsx', 'theme-controls.tsx', 'preview-overlay.tsx', 'gster26-editor.tsx']);
+const ADMIN_OWNED = new Set(['report-details-form.tsx', 'theme-controls.tsx', 'preview-overlay.tsx', 'gster26-editor.tsx', 'report-datasets-panel.tsx']);
 
 const ATLAS = "process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com'";
 
@@ -56,7 +56,7 @@ const ADAPT = {
 	'section-renderer.tsx': [
 		["import Link from 'next/link';\n", ''],
 		['<Link href="/solutions" ', `<a href={\`\${${ATLAS}}/solutions\`} target="_blank" rel="noopener noreferrer" `],
-		['>See plans</Link>', '>See plans</a>'],
+		['>See solutions</Link>', '>See solutions</a>'],
 	],
 };
 

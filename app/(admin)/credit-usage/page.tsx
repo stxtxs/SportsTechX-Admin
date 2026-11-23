@@ -38,6 +38,8 @@ function activityLabel(r: { description: string | null; display_name: string | n
 	if (d) return d.replace(/^ai\./, '').replace(/[._]/g, ' ');
 	return TXN_LABEL[r.transaction_type] ?? r.transaction_type;
 }
+/** Spend category of a ledger row. 'stx' rows are wallet movements with no category (grants, monthly grants, expiries). */
+const poolLabel = (t: string): string => (t === 'ai' ? 'AI' : t === 'integration' ? 'Export' : 'Wallet');
 function fmtWhen(iso: string): string {
 	const dt = new Date(iso);
 	return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -68,7 +70,7 @@ export default function CreditUsagePage() {
 			<PageHeader
 				kicker="Billing · last 30 days"
 				title="Credit usage"
-				subtitle="Everyone's credit spend over the last 30 days — AI features, direct exports and CRM syncs."
+				subtitle="Everyone's credit spend over the last 30 days — AI features, direct exports and CRM syncs. Net of refunds (credits given back for unexported rows or failed runs)."
 			/>
 
 			<StatsPanel>
@@ -123,7 +125,7 @@ export default function CreditUsagePage() {
 								{usage?.byOperation.map((o) => (
 									<tr key={`${o.operation_key}-${o.credit_type}`}>
 										<td>{o.display_name || o.operation_key || '—'}</td>
-										<td>{o.credit_type === 'ai' ? 'AI' : 'Export'}</td>
+										<td>{poolLabel(o.credit_type)}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{o.spent.toLocaleString()}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)' }}>{o.txns.toLocaleString()}</td>
 									</tr>
@@ -171,7 +173,7 @@ export default function CreditUsagePage() {
 													{r.name || r.email || r.profile_id.slice(0, 8)}
 												</Link>
 											</td>
-											<td>{r.credit_type === 'ai' ? 'AI' : 'Export'}</td>
+											<td>{poolLabel(r.credit_type)}</td>
 											<td>{activityLabel(r)}{r.transaction_type !== 'spend' ? ` (${TXN_LABEL[r.transaction_type] ?? r.transaction_type})` : ''}</td>
 											<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: spend ? 'var(--neg)' : 'var(--pos)' }}>{spend ? '' : '+'}{r.amount.toLocaleString()}</td>
 										</tr>

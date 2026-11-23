@@ -22,9 +22,14 @@ export default function LoginPage() {
 			setError(err.message);
 			return;
 		}
-		// Back to where the session expired (set by lib/api.ts); only a same-site path, never another origin.
-		const next = new URLSearchParams(window.location.search).get('redirectTo') ?? '';
-		router.replace(next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/login') ? next : '/dashboard');
+		// Back to where the session expired (set by lib/api.ts). Resolve it as a URL and keep it
+		// only if it stays on this origin: string checks miss "/\evil.com" and "/%09/evil.com".
+		let dest = '/dashboard';
+		try {
+			const u = new URL(new URLSearchParams(window.location.search).get('redirectTo') ?? '', window.location.origin);
+			if (u.origin === window.location.origin && !u.pathname.startsWith('/login')) dest = u.pathname + u.search + u.hash;
+		} catch { /* malformed → dashboard */ }
+		router.replace(dest);
 	};
 
 	return (

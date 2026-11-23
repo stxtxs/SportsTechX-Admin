@@ -22,7 +22,7 @@ interface GrantRow {
 	reason: string | null;
 	created_at: string;
 }
-interface FeatureCatalogRow { id: string; slug: string; name: string }
+interface FeatureCatalogRow { id: string; slug: string; name: string; is_active?: boolean }
 
 const MANAGE_TABS = ['Access', 'Billing & credits', 'Personalization', 'History'] as const;
 type ManageTab = (typeof MANAGE_TABS)[number];
@@ -33,6 +33,9 @@ type ManageTab = (typeof MANAGE_TABS)[number];
  */
 export function ManagePanel({ user }: { user: ManageUser }) {
 	const [tab, setTab] = useState<ManageTab>('Access');
+	// Bumped after a credit grant so the ledger (an infinite list, which a
+	// filter-based SWR mutate does not reach) reloads too.
+	const [ledgerRev, setLedgerRev] = useState(0);
 	return (
 		<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
 			<PillTabs tabs={MANAGE_TABS} value={tab} onChange={setTab} />
@@ -56,9 +59,9 @@ export function ManagePanel({ user }: { user: ManageUser }) {
 			{tab === 'Billing & credits' && (
 				<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
 					<CreditBalancesSection profileId={user.id} />
-					<CreditLedgerSection profileId={user.id} />
+					<CreditLedgerSection profileId={user.id} rev={ledgerRev} />
 					<BillingSection profileId={user.id} />
-					<CreditGrantSection profileId={user.id} />
+					<CreditGrantSection profileId={user.id} onGranted={() => setLedgerRev((r) => r + 1)} />
 				</div>
 			)}
 
@@ -74,9 +77,9 @@ export function ManagePanel({ user }: { user: ManageUser }) {
 }
 
 interface AdminCreditPool { monthly_balance: number; topup_balance: number; total_available: number; monthly_grant: number }
-interface AdminCredits { ai: AdminCreditPool; integration: AdminCreditPool }
+interface AdminCredits { stx: AdminCreditPool }
 
-/** Live credit balances for both pools — so admins can SEE what a user has. */
+/** The user's one STX wallet (AI features and exports draw on the same balance). */
 function CreditBalancesSection({ profileId }: { profileId: string }) {
 	const { data, isLoading } = useSWR<AdminCredits>([`/api/admin/users/${profileId}/credits`], { dedupingInterval: 15_000 });
 	const pool = (label: string, p?: AdminCreditPool) => (
@@ -92,10 +95,9 @@ function CreditBalancesSection({ profileId }: { profileId: string }) {
 		</div>
 	);
 	return (
-		<Section title="Credit balances" meta="live · AI + export (integration) pools">
-			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-				{pool('AI credits', data?.ai)}
-				{pool('Export credits', data?.integration)}
+		<Section title="Credit balance" meta="live · one wallet for AI features and exports">
+			<div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--space-4)' }}>
+				{pool('STX credits', data?.stx)}
 			</div>
 		</Section>
 	);
@@ -118,6 +120,8 @@ function ledgerLabel(r: AdminLedgerRow): string {
 	if (d) return d.replace(/^ai\./, '').replace(/[._]/g, ' ');
 	return LEDGER_TXN_LABEL[r.transaction_type] ?? r.transaction_type;
 }
+/** Spend category of a ledger row. 'stx' rows are wallet movements with no category (grants, monthly grants, expiries). */
+const poolLabel = (t: string): string => (t === 'ai' ? 'AI' : t === 'integration' ? 'Export' : 'Wallet');
 function fmtLedgerWhen(iso: string): string {
 	const dt = new Date(iso);
 	return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -129,15 +133,16 @@ const LEDGER_FILTERS: Array<{ k: 'all' | 'ai' | 'integration' | 'stx'; label: st
 ];
 
 /** Itemized credit-spend history for this user (every spend, grant & refund). */
-function CreditLedgerSection({ profileId }: { profileId: string }) {
+function CreditLedgerSection({ profileId, rev }: { profileId: string; rev: number }) {
 	const [type, setType] = useState<'all' | 'ai' | 'integration' | 'stx'>('all');
 	const getKey = (index: number, prev: AdminLedgerPage | null) => {
 		if (prev && !prev.nextCursor) return null;
 		const cursor = index === 0 ? undefined : (prev?.nextCursor ?? undefined);
 		return [`/api/admin/users/${profileId}/ledger`, { type, cursor, limit: 25 }];
 	};
-	const { data, size, setSize, isLoading, isValidating } = useSWRInfinite<AdminLedgerPage>(getKey, { revalidateFirstPage: false });
+	const { data, size, setSize, isLoading, isValidating, mutate: reloadLedger } = useSWRInfinite<AdminLedgerPage>(getKey, { revalidateFirstPage: false });
 	useEffect(() => { setSize(1); }, [type, setSize]);
+	useEffect(() => { if (rev > 0) void reloadLedger(); }, [rev, reloadLedger]);
 	const rows = data ? data.flatMap((p) => p.data) : [];
 	const hasMore = Boolean(data?.[data.length - 1]?.nextCursor);
 	const loadingMore = isValidating && size > (data?.length ?? 0);
@@ -180,7 +185,7 @@ function CreditLedgerSection({ profileId }: { profileId: string }) {
 								return (
 									<tr key={r.id}>
 										<td style={{ whiteSpace: 'nowrap', color: 'var(--fg-muted)', fontSize: 12 }}>{fmtLedgerWhen(r.occurred_at)}</td>
-										<td>{r.credit_type === 'ai' ? 'AI' : 'Export'}</td>
+										<td>{poolLabel(r.credit_type)}</td>
 										<td>{ledgerLabel(r)}{r.transaction_type !== 'spend' ? ` (${LEDGER_TXN_LABEL[r.transaction_type] ?? r.transaction_type})` : ''}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: spend ? 'var(--neg)' : 'var(--pos)' }}>{spend ? '' : '+'}{r.amount.toLocaleString()}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)' }}>{r.balance_after.toLocaleString()}</td>
@@ -208,7 +213,7 @@ function CreditLedgerSection({ profileId }: { profileId: string }) {
  * you picked, the credits landed in the same pool, and the panel above then
  * displayed them under the other name.
  */
-function CreditGrantSection({ profileId }: { profileId: string }) {
+function CreditGrantSection({ profileId, onGranted }: { profileId: string; onGranted: () => void }) {
 	const [amount, setAmount] = useState('');
 	const [pending, setPending] = useState(false);
 	const { mutate } = useSWRConfig();
@@ -221,6 +226,7 @@ function CreditGrantSection({ profileId }: { profileId: string }) {
 			toast.success(`Granted ${Math.floor(n).toLocaleString()} STX credits`);
 			setAmount('');
 			void mutate([`/api/admin/users/${profileId}/credits`]);
+			onGranted();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(false); }
 	};
@@ -400,7 +406,14 @@ function AccessControlSection({ profileId }: { profileId: string }) {
 	const revoke = async () => {
 		if (!window.confirm('Revoke this user’s access now? Any Stripe subscription is cancelled immediately (no refund — refund separately in Stripe) and the account drops to Explore. Admin-granted access is cleared too.')) return;
 		setBusy('revoke');
-		try { await api('POST', `/api/admin/users/${profileId}/revoke-access`); toast.success('Access revoked'); void refetch(); refreshLists(); }
+		try {
+			const r = await api<{ canceled_subscriptions: string[]; failed_subscriptions?: Array<{ stripe_subscription_id: string; error: string }> }>('POST', `/api/admin/users/${profileId}/revoke-access`);
+			const failed = r.failed_subscriptions ?? [];
+			if (failed.length) {
+				toast.error(`Access revoked, but Stripe did not cancel ${failed.map((f) => f.stripe_subscription_id).join(', ')} — it is still billing. Cancel it in Stripe. (${failed[0]!.error})`, { duration: 15_000 });
+			} else toast.success('Access revoked');
+			void refetch(); refreshLists();
+		}
 		catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
 	};
 	const block = async () => {
@@ -451,7 +464,8 @@ function TierChangeSection({ user }: { user: ManageUser }) {
 		try {
 			await api('PATCH', `/api/admin/users/${user.id}`, { user_type: tier });
 			toast.success('Tier updated');
-			void mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
+			// startsWith: also the user's own page (`/api/admin/users/<id>`) and its billing/credits panels.
+			void mutate((key) => Array.isArray(key) && String(key[0]).startsWith('/api/admin/users'));
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(false); }
 	};
@@ -468,7 +482,7 @@ function TierChangeSection({ user }: { user: ManageUser }) {
 
 function GrantAccessSection({ profileId }: { profileId: string }) {
 	const { mutate } = useSWRConfig();
-	const [tier, setTier] = useState<'general' | 'raise' | 'scout' | 'growth' | 'pro'>('raise');
+	const [tier, setTier] = useState<'raise' | 'scout'>('raise');
 	const [days, setDays] = useState(30);
 	const [reason, setReason] = useState('');
 	const [pending, setPending] = useState(false);
@@ -478,7 +492,7 @@ function GrantAccessSection({ profileId }: { profileId: string }) {
 			await api('POST', '/api/admin/billing/grant-access', { profile_id: profileId, tier, days, reason: reason.trim() || undefined });
 			toast.success(`Granted ${tier} for ${days} day${days === 1 ? '' : 's'}`);
 			setReason('');
-			void mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
+			void mutate((key) => Array.isArray(key) && String(key[0]).startsWith('/api/admin/users'));
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(false); }
 	};
@@ -486,7 +500,7 @@ function GrantAccessSection({ profileId }: { profileId: string }) {
 		<div>
 			<div className="co-stat-label" style={{ marginBottom: 8 }}>Grant time-bounded access</div>
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 6, marginBottom: 6 }}>
-				<Select value={tier} onChange={(v) => setTier(v as 'general' | 'raise' | 'scout' | 'growth' | 'pro')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'general', label: 'General' }, { value: 'raise', label: 'Raise' }, { value: 'scout', label: 'Scout' }, { value: 'growth', label: 'Growth (legacy)' }, { value: 'pro', label: 'Pro (legacy)' }]} />
+				<Select value={tier} onChange={(v) => setTier(v as 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'raise', label: 'Raise' }, { value: 'scout', label: 'Scout' }]} />
 				<input className="search-input" type="number" min={1} max={3650} value={days} onChange={(e) => setDays(Math.max(1, Number(e.target.value) || 1))} />
 			</div>
 			<input className="search-input" placeholder="Reason (optional)" style={{ width: '100%', marginBottom: 8 }} value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -505,7 +519,9 @@ function FeatureGrantsSection({ profileId }: { profileId: string }) {
 	const [addPending, setAddPending] = useState(false);
 	const [revokePending, setRevokePending] = useState(false);
 
-	const { data: catalog } = useSWR<{ data: FeatureCatalogRow[] }>(['/api/admin/features'], { dedupingInterval: 5 * 60_000 });
+	// Inactive features included: hiding a row from the public plan table (e.g.
+	// a "Coming soon" feature) must not stop admins granting it — the server allows it.
+	const { data: catalog } = useSWR<{ data: FeatureCatalogRow[] }>(['/api/admin/features', { include_inactive: true }], { dedupingInterval: 5 * 60_000 });
 	const featureOptions = catalog?.data ?? [];
 
 	const { data } = useSWR<{ data: GrantRow[] }>([`/api/admin/users/${profileId}/feature-grants`], { dedupingInterval: 30_000 });
@@ -555,7 +571,7 @@ function FeatureGrantsSection({ profileId }: { profileId: string }) {
 				</div>
 			)}
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 6, marginBottom: 6 }}>
-				<Select value={slug} onChange={setSlug} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="Select feature…" options={[{ value: '', label: 'Select feature…' }, ...featureOptions.map((f) => ({ value: f.slug, label: f.name }))]} />
+				<Select value={slug} onChange={setSlug} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="Select feature…" options={[{ value: '', label: 'Select feature…' }, ...featureOptions.map((f) => ({ value: f.slug, label: f.is_active === false ? `${f.name} (inactive)` : f.name }))]} />
 				<input className="search-input" type="number" min={0} placeholder="days" value={days} onChange={(e) => {
 					const v = e.target.value;
 					if (v === '') { setDays(''); return; }

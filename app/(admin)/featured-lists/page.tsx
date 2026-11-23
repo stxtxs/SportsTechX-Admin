@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Trash2, Save, Link2, X, Search } from 'lucide-react';
+import { Plus, Trash2, Save, X, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
@@ -62,17 +62,13 @@ export default function FeaturedListsPage() {
 		try { await api('DELETE', `/api/admin/featured-lists/${id}`); toast.success('Deleted'); refresh(); }
 		catch (e) { toast.error((e as Error).message); }
 	};
-	const copyLink = (slug: string | null) => {
-		if (!slug) return;
-		const url = `${window.location.origin}/lists/s/${slug}`;
-		void navigator.clipboard.writeText(url);
-		toast.success('Share link copied');
-	};
+	// No "Copy share link": it pointed at /lists/s/<slug> on the ADMIN origin (a 404), and Atlas
+	// has no page that renders a featured list yet. Bring it back with that page.
 
 	const lists = data ?? [];
 	return (
 		<div>
-			<PageHeader kicker="Curation · featured lists" title="Featured lists" subtitle="Curated, shareable collections shown across the catalog. Filter-based or hand-picked." />
+			<PageHeader kicker="Curation · featured lists" title="Featured lists" subtitle="Curated collections, filter-based or hand-picked. Atlas doesn't show them yet — no public page or share link." />
 
 			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)' }}>
 				<div style={{ flex: 1 }} />
@@ -86,7 +82,7 @@ export default function FeaturedListsPage() {
 			<div className="card">
 				<AsyncState loading={isLoading} error={error} empty={lists.length === 0} emptyMsg="No featured lists yet." onRetry={refresh}>
 					<table className="data-table">
-						<thead><tr><th>Name</th><th>Entity</th><th>Mode</th><th style={{ textAlign: 'right' }}>Items</th><th>Period</th><th>Visibility</th><th>Premium</th><th>Share</th><th style={{ textAlign: 'right' }} /></tr></thead>
+						<thead><tr><th>Name</th><th>Entity</th><th>Mode</th><th style={{ textAlign: 'right' }}>Items</th><th>Period</th><th>Visibility</th><th>Premium</th><th style={{ textAlign: 'right' }} /></tr></thead>
 						<tbody>
 							{lists.map((l) => (
 								<tr key={l.id}>
@@ -97,7 +93,6 @@ export default function FeaturedListsPage() {
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{l.year ? `${l.month ? l.month.slice(0, 3) + ' ' : ''}${l.year}` : '—'}</td>
 									<td>{l.show_in_lists ? <Tag variant="pos">in lists</Tag> : <Tag>hidden</Tag>}</td>
 									<td>{l.is_premium ? <Tag variant="warn">premium</Tag> : '—'}</td>
-									<td><button className="btn ghost" disabled={!l.share_slug} onClick={() => copyLink(l.share_slug)}><Link2 size={12} /> Copy</button></td>
 									<td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
 										<button className="btn ghost" onClick={() => setEditingId(l.id)}>Edit</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)', marginLeft: 6 }} onClick={() => void remove(l.id, l.name)}><Trash2 size={12} /></button>

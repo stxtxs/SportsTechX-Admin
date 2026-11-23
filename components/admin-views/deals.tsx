@@ -206,7 +206,8 @@ function toDealForm(h: DealEdit): DealForm {
 	return {
 		company_id: h.company_id ?? '', round_type_id: h.round_type_id ?? '',
 		announced_date: h.announced_date ? String(h.announced_date).slice(0, 10) : '',
-		amount: h.amount ?? h.amount_usd ?? '', currency_code: h.currency_code ?? '',
+		// Only a USD figure stored (imports): show it as USD, or saving would convert it again.
+		amount: h.amount ?? h.amount_usd ?? '', currency_code: h.amount == null && h.amount_usd != null ? 'USD' : (h.currency_code ?? ''),
 		deal_size_bucket: h.deal_size_bucket ?? '', status: h.status ?? 'active',
 		source_url: h.source_url ?? '', transaction_url: h.transaction_url ?? '',
 		investors: h.investors ?? [],

@@ -217,12 +217,12 @@ function BillingLog() {
 	return (
 		<div className="card">
 			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px var(--space-4)', borderBottom: '1px solid var(--border)', gap: 12 }}>
-				<div style={{ fontWeight: 700 }}>Billing events <span style={{ fontWeight: 400, color: 'var(--fg-muted)', fontSize: 12 }}>· {(data?.total ?? 0).toLocaleString()} total</span></div>
+				<div style={{ fontWeight: 700 }}>Subscriptions <span style={{ fontWeight: 400, color: 'var(--fg-muted)', fontSize: 12 }}>· {(data?.total ?? 0).toLocaleString()} total · newest first</span></div>
 				<input className="search-input" style={{ flex: '0 0 280px', height: 30 }} placeholder="Search by email or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
 			</div>
-			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No matching billing events' : 'No billing events yet'} onRetry={() => void mutate()}>
+			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No matching subscriptions' : 'No subscriptions yet'} onRetry={() => void mutate()}>
 				<table className="data-table">
-					<thead><tr><th>Date</th><th>Customer</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead>
+					<thead><tr><th>Started</th><th>Customer</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead>
 					<tbody>
 						{rows.map((r) => (
 							<tr key={r.id}>
@@ -230,7 +230,7 @@ function BillingLog() {
 								<td>{r.email ?? r.display_name ?? (r.profile_id ? `${r.profile_id.slice(0, 8)}…` : '—')}</td>
 								<td>{r.plan ?? '—'}</td>
 								<td className="num">{r.amount_cents != null ? fmtMoney(r.amount_cents / 100, r.currency ?? 'eur', 2) : '—'}</td>
-								<td><Tag variant={r.status === 'active' ? 'pos' : r.status === 'canceled' ? 'neg' : ''}>{r.status ?? '—'}</Tag></td>
+								<td><Tag variant={r.status === 'active' || r.status === 'trialing' ? 'pos' : r.status === 'canceled' || r.status === 'unpaid' || r.status === 'past_due' ? 'neg' : ''}>{r.status ?? '—'}</Tag></td>
 							</tr>
 						))}
 					</tbody>

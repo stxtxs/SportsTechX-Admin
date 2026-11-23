@@ -71,7 +71,8 @@ export default function HomePinsAdminPage() {
 						<option value="">Choose a published {kind === 'report' ? 'report' : 'guide item'}…</option>
 						{options.map((o) => <option key={o.slug} value={o.slug} disabled={rows.some((r) => r.key === `${kind}:${o.slug}`)}>{o.title}</option>)}
 					</select>
-					<button className="btn" disabled={busy || !slug} onClick={() => void pin()}><Pin size={13} /> Pin</button>
+					{/* Server-enforced too (409): a fifth would leave users no room for their own pins. */}
+					<button className="btn" disabled={busy || !slug || rows.length >= 4} title={rows.length >= 4 ? 'Four are pinned for everyone — unpin one first' : undefined} onClick={() => void pin()}><Pin size={13} /> Pin</button>
 				</div>
 			</Section>
 			<div style={{ marginTop: 'var(--space-4)' }}>

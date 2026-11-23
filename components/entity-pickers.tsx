@@ -401,9 +401,9 @@ export function SectorCascade({ value, onChange }: { value: string; onChange: (s
 }
 
 // ─── Location fields — city typeahead auto-fills country/continent/region ─────
-// Picking a known city back-fills country, continent, region and state from the
-// locations table; everything stays editable for custom entries. The backend
-// persists all of these to the locations row.
+// Picking a known city back-fills country, state and the geo labels. Only city,
+// state and country are stored: continent / region / report region come from the
+// country (countries → regions), so they are shown read-only, never edited.
 
 export interface LocationValue { country: string; city: string; continent: string; region: string; state: string; report_region?: string }
 export const EMPTY_LOCATION: LocationValue = { country: '', city: '', continent: '', region: '', state: '', report_region: '' };
@@ -431,9 +431,6 @@ export function LocationFields({ value, onChange, prefix }: { value: LocationVal
 	// over the options) so 150-country lists stay usable.
 	const geoOpts = { dedupingInterval: 60 * 60_000, keepPreviousData: true } as const;
 	const countries = useSWR<string[]>(['/api/locations/values', { field: 'country' }], geoOpts);
-	const continents = useSWR<string[]>(['/api/locations/values', { field: 'continent' }], geoOpts);
-	const regions = useSWR<string[]>(['/api/locations/values', { field: 'region', ...(value.continent ? { continent: value.continent } : {}) }], geoOpts);
-	const reportRegions = useSWR<string[]>(['/api/locations/values', { field: 'report_region', ...(value.continent ? { continent: value.continent } : {}) }], geoOpts);
 	const states = useSWR<string[]>(['/api/locations/values', { field: 'state', ...(value.country ? { country: value.country } : {}) }], geoOpts);
 	const geoField = (key: keyof LocationValue, label: string, opts: string[] | undefined) => {
 		const cur = value[key] ?? '';
@@ -443,7 +440,10 @@ export function LocationFields({ value, onChange, prefix }: { value: LocationVal
 		return (
 			<div>
 				<div className="co-stat-label" style={{ marginBottom: 6 }}>{lbl(label)}</div>
-				<Select value={cur} onChange={(v) => onChange({ ...value, [key]: v })} options={options} searchable placeholder="Select…" width="100%" style={{ display: 'block', width: '100%' }} />
+				<Select value={cur} onChange={(v) => onChange(key === 'country' && v !== value.country
+					// The derived labels belonged to the old country; they're refilled from the new one on save.
+					? { ...value, country: v, continent: '', region: '', report_region: '' }
+					: { ...value, [key]: v })} options={options} searchable placeholder="Select…" width="100%" style={{ display: 'block', width: '100%' }} />
 			</div>
 		);
 	};
@@ -486,9 +486,10 @@ export function LocationFields({ value, onChange, prefix }: { value: LocationVal
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 				{geoField('country', 'country', countries.data)}
 				{geoField('state', 'state', states.data)}
-				{geoField('region', 'region', regions.data)}
-				{geoField('continent', 'continent', continents.data)}
-				{geoField('report_region', 'report region', reportRegions.data)}
+			</div>
+			<div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+				{lbl('region')}: {value.region || '—'} · {lbl('continent')}: {value.continent || '—'} · {lbl('report region')}: {value.report_region || '—'}
+				<span> — set by the country</span>
 			</div>
 		</div>
 	);

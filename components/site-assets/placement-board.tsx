@@ -35,7 +35,7 @@ import {
  * registers).
  */
 export function PlacementBoard({
-	site, sections, placements, assets, loading, error, reload, mutatePlacements,
+	site, sections, placements, assets, loading, error, reload, retry, mutatePlacements,
 }: {
 	site: string;
 	sections: [string, SectionSpec][];
@@ -44,6 +44,8 @@ export function PlacementBoard({
 	loading: boolean;
 	error: unknown;
 	reload: () => void;
+	/** Error-screen retry: also refetches the schema, which an edit never changes. */
+	retry: () => void;
 	mutatePlacements: (next: Placement[]) => void;
 }) {
 	const [dragging, setDragging] = useState<string | null>(null);
@@ -152,7 +154,7 @@ export function PlacementBoard({
 				<Tray assets={assets} />
 
 				<div style={{ display: 'grid', gap: 'var(--space-4)', minWidth: 0 }}>
-					<AsyncState loading={loading} error={error} onRetry={reload}>
+					<AsyncState loading={loading} error={error} onRetry={retry}>
 						<>
 							{sections.map(([name, spec]) => (
 								<SectionDrop
@@ -227,7 +229,7 @@ function TrayTile({ asset }: { asset: Asset }) {
 			title={asset.filename ?? asset.url}
 			style={{ cursor: 'grab', opacity: isDragging ? 0.3 : 1, border: '1px solid var(--border)', lineHeight: 0 }}
 		>
-			<img src={asset.url} alt="" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: 'var(--bg-3)', pointerEvents: 'none' }} />
+			<img src={asset.url} alt="" loading="lazy" decoding="async" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: 'var(--bg-3)', pointerEvents: 'none' }} />
 		</div>
 	);
 }
@@ -392,7 +394,7 @@ function Card({
 				style={{ flex: 'none', padding: 0, border: 0, background: 'none', cursor: 'pointer', lineHeight: 0, opacity: card.is_active ? 1 : 0.45 }}
 			>
 				{card.asset_url ? (
-					<img src={card.asset_url} alt="" style={{ width: 96, height: 72, objectFit: 'cover', background: 'var(--bg-3)' }} />
+					<img src={card.asset_url} alt="" loading="lazy" decoding="async" style={{ width: 96, height: 72, objectFit: 'cover', background: 'var(--bg-3)' }} />
 				) : (
 					<span style={{ width: 96, height: 72, display: 'grid', placeItems: 'center', background: 'var(--bg-3)', color: 'var(--fg-muted)' }}>
 						<ImageOff size={16} />
@@ -640,7 +642,7 @@ function LibraryPicker({
 							title={a.filename ?? a.url}
 							style={{ padding: 0, border: '1px solid var(--border)', background: 'var(--bg-2)', cursor: 'pointer', textAlign: 'left' }}
 						>
-							<img src={a.url} alt={a.alt_text} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', background: 'var(--bg-3)' }} />
+							<img src={a.url} alt={a.alt_text} loading="lazy" decoding="async" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', background: 'var(--bg-3)' }} />
 							<span style={{ display: 'block', padding: '4px 6px', fontSize: 10, color: 'var(--fg-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
 								{a.filename ?? 'image'}{a.usage_count ? ` · used ${a.usage_count}×` : ''}
 							</span>

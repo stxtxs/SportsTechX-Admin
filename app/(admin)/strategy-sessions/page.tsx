@@ -5,7 +5,10 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, AsyncState } from '@/components/atoms';
+import { PageHeader, AsyncState, Pager } from '@/components/atoms';
+import { useUrlNumber } from '@/hooks/use-url-state';
+
+const LIMIT = 50;
 
 interface StrategySession {
 	id: string;
@@ -18,18 +21,20 @@ interface StrategySession {
 	company_name: string | null;
 	founder_email: string | null;
 }
-interface Resp { data: StrategySession[] }
+interface Resp { data: StrategySession[]; total: number; totalPages?: number }
 
 export default function StrategySessionsPage() {
 	const [when, setWhen] = useState<Record<string, string>>({});
 	const [link, setLink] = useState<Record<string, string>>({});
 	const [pending, setPending] = useState<string | null>(null);
+	const [page, setPage] = useUrlNumber('ss', 'page', 1);
 
 	// Only 'booked' rows exist (bookStrategy always inserts 'booked'; locked/
 	// available are states the home service derives, never persisted), so there's
 	// nothing to filter — the "requested"/"confirmed" chip carries the distinction.
+	// Paged (was the first 100 only, newest first).
 	const { data, error, isLoading, mutate } = useSWR<Resp>(
-		['/api/admin/strategy-sessions', { status: 'booked', limit: 100 }],
+		['/api/admin/strategy-sessions', { status: 'booked', limit: LIMIT, offset: (page - 1) * LIMIT }],
 		{ dedupingInterval: 15_000 },
 	);
 	const rows = data?.data ?? [];
@@ -95,6 +100,7 @@ export default function StrategySessionsPage() {
 						</tbody>
 					</table>
 				</AsyncState>
+				<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 			</div>
 		</div>
 	);

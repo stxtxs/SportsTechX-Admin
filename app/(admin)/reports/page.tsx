@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Trash2, FileText, Eye, EyeOff, Pencil, Languages, RefreshCw } from 'lucide-react';
+import { Trash2, FileText, Eye, EyeOff, Pencil, Download, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
@@ -211,7 +211,7 @@ export default function ReportsAdminPage() {
 										</Link>
 									)}
 									<button className="btn ghost" onClick={() => setEditingId(r.id)} title="Edit metadata"><Pencil size={12} /> Edit</button>
-										<button className="btn ghost" onClick={() => setEditionsId(r.id)} title="Language editions"><Languages size={12} /> Editions</button>
+										<button className="btn ghost" onClick={() => setEditionsId(r.id)} title="Free PDF for Explore, paid PDF for Raise & Scout, other languages"><Download size={12} /> PDFs</button>
 									<button
 										className="btn ghost"
 										onClick={() => void togglePublished(r.id, r.is_published === false)}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Save, Trash2, Layers, CalendarClock, Package, GraduationCap, Lightbulb, Banknote } from 'lucide-react';
+import { Plus, Save, Trash2, Layers, CalendarClock, Package, GraduationCap, Lightbulb, Banknote, Building2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
@@ -18,7 +18,7 @@ import { ImageInput } from '@/components/image-input';
 import { useConfirm } from '@/components/confirm';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { SportsPicker, LocationFields, SocialLinks, CompanySelectOne, EMPTY_SOCIAL, EMPTY_LOCATION, type SocialValue, type LocationValue } from '@/components/entity-pickers';
-import { InvestorsView } from '@/components/admin-views/investors';
+import { InvestorsView, useEditParam } from '@/components/admin-views/investors';
 import { ClaimsView } from '@/components/admin-views/claims';
 import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
@@ -52,6 +52,7 @@ const TYPE_META = [
 	{ key: 'program' as const, label: 'Program', Icon: GraduationCap, desc: 'Accelerator, incubator, or startup program' },
 	{ key: 'event' as const, label: 'Event', Icon: CalendarClock, desc: 'Conference, summit, or networking event' },
 	{ key: 'initiative' as const, label: 'Initiative', Icon: Lightbulb, desc: 'Industry initiative, body, or partnership' },
+	{ key: 'organization' as const, label: 'Organization', Icon: Building2, desc: 'Club, league, federation or company running programs/events' },
 ];
 const PROGRAM_CATEGORIES = ['Accelerator', 'Incubator', 'Challenge/Competition'] as const;
 const EVENT_MODES = ['in_person', 'virtual', 'hybrid'] as const;
@@ -79,7 +80,8 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const [page, setPage] = useUrlNumber(ns, 'page', 1);
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
-	const [editingId, setEditingId] = useState<string | null>(null);
+	// `?edit=<id>` opens that entity's edit form (the Data changes "Open record" link).
+	const [editingId, setEditingId] = useEditParam();
 	const [removePending, setRemovePending] = useState(false);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 	const [viewingId, setViewingId] = useState<string | null>(null);
@@ -331,6 +333,9 @@ function EntityForm({ id, initial, onClose, onSaved }: { id: string | null; init
 	const yesNoNull = (s: string) => (s === '' ? null : s === 'yes');
 
 	const submit = async () => {
+		if (form.entity_type === 'event' && form.event.start_date && form.event.end_date && form.event.end_date < form.event.start_date) {
+			setTab('details'); toast.error('The end date is before the start date.'); return;
+		}
 		setPending(true);
 		try {
 			const body: Record<string, unknown> = {
@@ -535,10 +540,10 @@ function EntityForm({ id, initial, onClose, onSaved }: { id: string | null; init
 	);
 }
 
-const REL_TYPES = ['initiative_has_program', 'initiative_has_event', 'program_has_event', 'program_has_initiative', 'program_has_program', 'initiative_has_initiative', 'organization_has_program', 'organization_has_event'] as const;
 const PART_STATUS = ['applied', 'accepted', 'graduated', 'dropped'] as const;
 
-interface RelRow { id: string; relationship_type: string; child_id: string; child_name: string; child_type: string }
+/** `direction: 'child'` = this entity contains it; `'parent'` = this entity is part of it. */
+interface RelRow { id: string; relationship_type: string; direction: 'child' | 'parent'; other_id: string; other_name: string; other_type: string }
 interface PartRow { id: string; company_id: string | null; name: string | null; cohort_name: string | null; cohort_year: number | null; participation_status: string }
 interface EcoHit { id: string; name: string; entity_type: string }
 
@@ -551,17 +556,27 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 	const refreshRels = () => mutate([`/api/admin/ecosystem-entities/${entityId}/relationships`]);
 	const refreshParts = () => mutate([`/api/admin/ecosystem-entities/${entityId}/participants`]);
 
-	// relationship add state
-	const [relType, setRelType] = useState<string>('program_has_event');
+	// relationship add state — the type follows from the two entities (server-derived); the
+	// admin only says which way round: this entity contains the other, or is part of it.
+	const [relDir, setRelDir] = useState<'contains' | 'part_of'>('contains');
 	const [childQ, setChildQ] = useState('');
 	const [childId, setChildId] = useState('');
 	const childSearch = useSWR<{ data: EcoHit[] }>(childQ.length >= 2 ? ['/api/ecosystem-entities', { q: childQ, limit: 8 }] : null, { dedupingInterval: 10_000, keepPreviousData: true });
 	const addRel = async () => {
 		if (!childId) { toast.error('Pick an entity to link.'); return; }
-		try { await api('POST', `/api/admin/ecosystem-entities/${entityId}/relationships`, { child_id: childId, relationship_type: relType }); toast.success('Linked'); setChildId(''); setChildQ(''); void refreshRels(); }
+		const [parent, child] = relDir === 'contains' ? [entityId, childId] : [childId, entityId];
+		try {
+			await api('POST', `/api/admin/ecosystem-entities/${parent}/relationships`, { child_id: child });
+			toast.success('Linked'); setChildId(''); setChildQ('');
+			// The other entity's panel (if cached) lists the link too.
+			void refreshRels(); void mutate([`/api/admin/ecosystem-entities/${childId}/relationships`]);
+		} catch (e) { toast.error((e as Error).message); }
+	};
+	const delRel = async (r: RelRow) => {
+		if (!(await ask(`Remove the link with “${r.other_name}”?`))) return;
+		try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/relationships/${r.id}`); void refreshRels(); void mutate([`/api/admin/ecosystem-entities/${r.other_id}/relationships`]); }
 		catch (e) { toast.error((e as Error).message); }
 	};
-	const delRel = async (relId: string) => { try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/relationships/${relId}`); void refreshRels(); } catch (e) { toast.error((e as Error).message); } };
 
 	// participant add state — prefer linking a real company; fall back to a free-text name.
 	const [pCompanyId, setPCompanyId] = useState('');
@@ -587,7 +602,20 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 		try { await api('PATCH', `/api/admin/ecosystem-entities/${entityId}/participants/${ppId}`, { company_id: companyId }); toast.success('Linked'); setLinkingId(null); void refreshParts(); }
 		catch (e) { toast.error((e as Error).message); }
 	};
-	const delPart = async (ppId: string) => { try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/participants/${ppId}`); void refreshParts(); } catch (e) { toast.error((e as Error).message); } };
+	const delPart = async (pp: PartRow) => {
+		if (!(await ask(`Remove ${pp.name ?? 'this participant'} from the cohort?`))) return;
+		try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/participants/${pp.id}`); void refreshParts(); } catch (e) { toast.error((e as Error).message); }
+	};
+	// Edit status / cohort name / year of an existing participant.
+	const patchPart = async (ppId: string, patch: Record<string, unknown>): Promise<boolean> => {
+		try { await api('PATCH', `/api/admin/ecosystem-entities/${entityId}/participants/${ppId}`, patch); void refreshParts(); return true; }
+		catch (e) { toast.error((e as Error).message); return false; }
+	};
+	const [editPart, setEditPart] = useState<{ id: string; cohort: string; year: string } | null>(null);
+	const saveEditPart = async () => {
+		if (!editPart) return;
+		if (await patchPart(editPart.id, { cohort_name: editPart.cohort.trim() || null, cohort_year: editPart.year ? Number(editPart.year) : null })) { toast.success('Saved'); setEditPart(null); }
+	};
 	const delCohort = async (year: number) => {
 		if (!(await ask(`Delete all participants in the ${year} cohort?`))) return;
 		try { await api('DELETE', `/api/admin/ecosystem-entities/${entityId}/cohorts/${year}`); toast.success(`${year} cohort cleared`); void refreshParts(); }
@@ -605,7 +633,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 			<div>
 				<div className="co-stat-label" style={{ marginBottom: 8 }}>Related entities</div>
 				<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 10 }}>
-					<Select value={relType} onChange={setRelType} searchable width={230} options={REL_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))} />
+					<Select value={relDir} onChange={(v) => setRelDir(v as 'contains' | 'part_of')} width={190} ariaLabel="Link direction" options={[{ value: 'contains', label: 'This entity contains…' }, { value: 'part_of', label: 'This entity is part of…' }]} />
 					<div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
 						<input className="search-input" style={{ width: '100%', height: 32 }} placeholder="Search entity to link…" value={childId ? '' : childQ} onChange={(e) => { setChildQ(e.target.value); setChildId(''); }} />
 						{childId === '' && childQ.length >= 2 && (childSearch.data?.data?.length ?? 0) > 0 && (
@@ -622,7 +650,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 				<AsyncState loading={rels.isLoading} error={rels.error} empty={(rels.data?.length ?? 0) === 0} emptyMsg="No linked entities." onRetry={() => void refreshRels()}>
 					<table className="data-table"><tbody>
 						{(rels.data ?? []).map((r) => (
-							<tr key={r.id}><td>{onView ? <button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600 }} onClick={() => onView(r.child_id)}>{r.child_name}</button> : r.child_name} <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>· {r.child_type}</span></td><td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{r.relationship_type.replace(/_/g, ' ')}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void delRel(r.id)}><Trash2 size={12} /></button></td></tr>
+							<tr key={r.id}><td style={{ fontSize: 11, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>{r.direction === 'child' ? 'contains' : 'part of'}</td><td>{onView ? <button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600 }} onClick={() => onView(r.other_id)}>{r.other_name}</button> : r.other_name} <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>· {r.other_type}</span></td><td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{r.relationship_type.replace(/_/g, ' ')}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} aria-label="Remove link" onClick={() => void delRel(r)}><Trash2 size={12} /></button></td></tr>
 						))}
 					</tbody></table>
 				</AsyncState>
@@ -654,7 +682,19 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 											? <span className="tag pos" style={{ marginLeft: 6 }}>linked</span>
 											: linkingId === pp.id
 												? <div style={{ marginTop: 6, display: 'flex', gap: 6, alignItems: 'center' }}><div style={{ flex: 1 }}><CompanySelectOne value="" onChange={(cid) => void linkPart(pp.id, cid)} placeholder={`Find ${pp.name ?? 'the company'}…`} /></div><button className="btn ghost" onClick={() => setLinkingId(null)}>Cancel</button></div>
-												: <button className="btn ghost" style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px' }} onClick={() => setLinkingId(pp.id)} title="Link this name to a company in the catalog">Link</button>}</td><td>{pp.cohort_name ?? '—'}</td><td>{pp.participation_status}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void delPart(pp.id)}><Trash2 size={12} /></button></td></tr>
+												: <button className="btn ghost" style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px' }} onClick={() => setLinkingId(pp.id)} title="Link this name to a company in the catalog">Link</button>}</td>
+											{editPart?.id === pp.id ? (
+												<td colSpan={2}><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+													<input className="search-input" style={{ height: 30, width: 110 }} placeholder="Cohort" value={editPart.cohort} onChange={(e) => setEditPart({ ...editPart, cohort: e.target.value })} />
+													<div style={{ width: 100 }}><YearSelect value={editPart.year} onChange={(v) => setEditPart({ ...editPart, year: v })} placeholder="Year" /></div>
+													<button className="btn" onClick={() => void saveEditPart()}>Save</button>
+													<button className="btn ghost" onClick={() => setEditPart(null)}>Cancel</button>
+												</div></td>
+											) : (
+												<td>{pp.cohort_name ?? '—'} <button className="btn ghost" style={{ fontSize: 11, padding: '1px 6px' }} title="Edit cohort name / year" onClick={() => setEditPart({ id: pp.id, cohort: pp.cohort_name ?? '', year: pp.cohort_year != null ? String(pp.cohort_year) : '' })}>Edit</button></td>
+											)}
+											{editPart?.id !== pp.id && <td style={{ width: 130 }}><Select value={pp.participation_status} onChange={(v) => { if (v !== pp.participation_status) void patchPart(pp.id, { status: v }); }} width="100%" ariaLabel="Participation status" style={{ display: 'block', width: '100%' }} options={PART_STATUS.map((s) => ({ value: s, label: s }))} /></td>}
+											<td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} aria-label="Remove participant" onClick={() => void delPart(pp)}><Trash2 size={12} /></button></td></tr>
 									))}
 								</tbody></table>
 							</div>
@@ -726,12 +766,13 @@ function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () =
 // Like Companies & Deals: one destination for the four ecosystem entities, with
 // a combined Statistics panel (date-range filter) and in-page tabs. Active tab
 // persists in the URL (?tab=).
-type EcoTab = 'programs' | 'events' | 'investors' | 'initiatives' | 'investor-claims' | 'entity-claims' | 'changes';
+type EcoTab = 'programs' | 'events' | 'investors' | 'initiatives' | 'organizations' | 'investor-claims' | 'entity-claims' | 'changes';
 const ECO_TABS: ReadonlyArray<{ key: EcoTab; label: string }> = [
 	{ key: 'programs', label: 'Programs' },
 	{ key: 'events', label: 'Events' },
 	{ key: 'investors', label: 'Investors' },
 	{ key: 'initiatives', label: 'Initiatives' },
+	{ key: 'organizations', label: 'Organizations' },
 	{ key: 'investor-claims', label: 'Investor claims' },
 	{ key: 'entity-claims', label: 'Entity claims' },
 	{ key: 'changes', label: 'Data changes' },
@@ -782,6 +823,7 @@ export default function EcosystemAdminPage() {
 			{tab === 'events' && <EcosystemView embedded entityType="event" />}
 			{tab === 'investors' && <InvestorsView embedded />}
 			{tab === 'initiatives' && <EcosystemView embedded entityType="initiative" />}
+			{tab === 'organizations' && <EcosystemView embedded entityType="organization" />}
 			{tab === 'investor-claims' && <ClaimsView embedded lockType="investor" />}
 			{tab === 'entity-claims' && <ClaimsView embedded lockType="ecosystem_entity" />}
 			{tab === 'changes' && <DataRequestsView embedded lockEntity="investor,ecosystem,investor_fund,investor_portfolio" />}

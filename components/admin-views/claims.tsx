@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, ExternalLink, Mail, MailCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
-import { PageHeader, AsyncState, StatCard, StatsPanel, Section } from '@/components/atoms';
+import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager } from '@/components/atoms';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
 import { Funnel } from '@/components/charts';
@@ -67,6 +67,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const [claimTypeUrl, setClaimType] = useUrlState(ns, 'type');
 	const claimType = lockType ?? claimTypeUrl;
 	const [page, setPage] = useUrlNumber(ns, 'page', 1);
+	const [cpage, setCpage] = useUrlNumber(ns, 'cpage', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [sendEmail, setSendEmail] = useState(true);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -74,8 +75,15 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const [search, setSearch] = useUrlState(ns, 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
 
+	// Pending (open) and Completed are separate server queries, each with its own pages: one
+	// mixed page split in the browser hid older pending claims behind newer completed ones.
+	const filters = { claim_type: claimType || undefined, q: debouncedSearch || undefined };
 	const { data, error, isLoading } = useSWR<ClaimsResponse>(
-		['/api/admin/claims', { claim_type: claimType || undefined, q: debouncedSearch || undefined, page, limit: 50 }],
+		['/api/admin/claims', { ...filters, status: 'open', page, limit: 50 }],
+		{ dedupingInterval: 30_000 },
+	);
+	const done = useSWR<ClaimsResponse>(
+		['/api/admin/claims', { ...filters, status: 'completed', page: cpage, limit: 50 }],
 		{ dedupingInterval: 30_000 },
 	);
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
@@ -106,8 +114,9 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const assign = (id: string, adminId: string) => act(id, () => api('POST', `/api/admin/claims/${id}/pickup`, { picked_up: true, assign_to: adminId }), 'Claim assigned');
 	const verify = (id: string) => act(id, () => api('POST', `/api/admin/claims/${id}/verify`, { send_email: sendEmail }), 'Claim verified');
 	const reject = (id: string) => {
-		const reason = window.prompt('Reason for rejection (optional):') ?? undefined;
+		const reason = window.prompt('Reason for rejection (optional, up to 500 characters):') ?? undefined;
 		if (reason === undefined) return; // cancelled
+		if (reason.trim().length > 500) { toast.error(`The reason is ${reason.trim().length} characters — keep it to 500.`); return; }
 		void act(id, () => api('POST', `/api/admin/claims/${id}/reject`, { reason }), 'Claim rejected');
 	};
 	const reopen = (id: string) => act(id, () => api('POST', `/api/admin/claims/${id}/reopen`), 'Claim re-opened');
@@ -121,9 +130,9 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const toggleActive = (id: string, active: boolean) => act(id, () => api('POST', `/api/admin/claims/${id}/toggle-active`, { active }), active ? 'Marked active' : 'Marked inactive');
 	const copyShare = (token: string) => { void navigator.clipboard.writeText(`${window.location.origin}/verified/${token}`); toast.success('Share link copied'); };
 
-	// Old-admin layout: split into Pending (unverified, not rejected) + Completed.
-	const pending = claims.filter((cl) => !cl.is_verified && cl.status !== 'rejected');
-	const completed = claims.filter((cl) => cl.is_verified || cl.status === 'rejected');
+	// Old-admin layout: Pending (unverified, not rejected) + Completed.
+	const pending = claims;
+	const completed = done.data?.data ?? [];
 	const typeLabel = (cl: Claim) => cl.claim_type === 'company' ? 'Companies' : cl.claim_type === 'investor' ? 'Investors' : cl.claim_type === 'ecosystem_entity' ? 'Ecosystem' : cl.claim_type;
 
 	const claimsHead = (
@@ -256,7 +265,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 
 	return (
 		<div>
-			{!embedded && <PageHeader kicker={`Queues · ${(data?.total ?? 0).toLocaleString()} claims`} title="Claims" />}
+			{!embedded && <PageHeader kicker={`Queues · ${((data?.total ?? 0) + (done.data?.total ?? 0)).toLocaleString()} claims`} title="Claims" />}
 
 			{!embedded && (
 				<StatsPanel>
@@ -283,9 +292,9 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 			<div style={{ height: 'var(--space-4)' }} />
 
 			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', alignItems: 'center' }}>
-				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search company / claimant…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search company / claimant…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); setCpage(1); }} />
 				{!lockType && (
-					<Select value={claimType} onChange={(v) => { setClaimType(v); setPage(1); }} width={150} options={TYPE_FILTERS.map((tf) => ({ value: tf.key, label: tf.label }))} />
+					<Select value={claimType} onChange={(v) => { setClaimType(v); setPage(1); setCpage(1); }} width={150} options={TYPE_FILTERS.map((tf) => ({ value: tf.key, label: tf.label }))} />
 				)}
 				<div style={{ flex: 1 }} />
 				<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--fg-2)' }}>
@@ -296,7 +305,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 
 			<div style={{ marginBottom: 'var(--space-4)' }}>
 				<div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-					Pending <span className="tag">{pending.length}</span>
+					Pending <span className="tag">{(data?.total ?? 0).toLocaleString()}</span>
 				</div>
 				<div className="card" style={{ padding: 0, maxHeight: 420, overflow: 'auto' }}>
 					<AsyncState loading={isLoading} error={error} empty={pending.length === 0} emptyMsg="No pending claims" onRetry={() => void refresh()}>
@@ -306,31 +315,25 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 						</table>
 					</AsyncState>
 				</div>
+				<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 			</div>
 
-			{completed.length > 0 && (
+			{(done.data?.total ?? 0) > 0 && (
 				<div style={{ marginBottom: 'var(--space-4)' }}>
 					<button className="btn ghost" style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, padding: '2px 4px', display: 'inline-flex', alignItems: 'center', gap: 8 }} onClick={() => setShowCompleted((v) => !v)}>
-						{showCompleted ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed <span className="tag">{completed.length}</span>
+						{showCompleted ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Completed <span className="tag">{(done.data?.total ?? 0).toLocaleString()}</span>
 					</button>
 					{showCompleted && (
-						<div className="card" style={{ padding: 0, maxHeight: 360, overflow: 'auto' }}>
-							<table className="data-table">
-								{claimsHead}
-								<tbody>{completed.map(renderRow)}</tbody>
-							</table>
-						</div>
+						<>
+							<div className="card" style={{ padding: 0, maxHeight: 360, overflow: 'auto' }}>
+								<table className="data-table">
+									{claimsHead}
+									<tbody>{completed.map(renderRow)}</tbody>
+								</table>
+							</div>
+							<Pager page={cpage} totalPages={done.data?.totalPages} onPage={setCpage} />
+						</>
 					)}
-				</div>
-			)}
-
-			{data && data.totalPages > 1 && (
-				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-					<span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)', alignSelf: 'center', marginRight: 8 }}>
-						Page {page} of {data.totalPages}
-					</span>
-					<button className="btn ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
-					<button className="btn ghost" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
 				</div>
 			)}
 		</div>
@@ -548,6 +551,7 @@ interface ClaimDetails {
 	founded_year?: number | null; year_launched?: number | null; category?: string | null;
 	entity_type?: string | null; op_type?: string | null;
 	hq_city?: string | null; hq_country?: string | null; location?: string | null; country?: string | null;
+	applications_open?: boolean | null; next_intake?: string | null; key_date?: string | null; offer?: string | null;
 }
 interface ClaimFormResp {
 	company?: { details?: ClaimDetails | null };
@@ -686,6 +690,16 @@ function CreateEntityPanel({ claim, onDone }: { claim: Claim; onDone: () => void
 				{L(kind === 'investor' ? 'Year launched' : 'Founded year', <YearSelect value={year} onChange={setYear} />)}
 			</div>
 			{L('Headquarters', <LocationFields key={locKey} value={hq} onChange={setHq} />)}
+			{kind === 'ecosystem_entity' && (() => {
+				// The operator's intake answers, copied onto the program (or event start date) on create.
+				const d = form?.entity?.details;
+				const parts = [d?.applications_open != null && `Applications ${d.applications_open ? 'open' : 'closed'}`, d?.next_intake && `Next intake: ${d.next_intake}`, d?.key_date && `Key date: ${d.key_date}`, d?.offer && `Offer: ${d.offer}`].filter(Boolean);
+				return parts.length ? (
+					<div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
+						Carried over {entityType === 'program' ? 'to the program details' : entityType === 'event' ? '(key date → event start date)' : '— only for a program or event'}: {parts.join(' · ')}
+					</div>
+				) : null;
+			})()}
 			{dupOf && (
 				<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-2)', fontSize: 12 }}>
 					<span style={{ flex: 1 }}>{dupOf}</span>

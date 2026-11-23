@@ -53,11 +53,11 @@ export default function SiteAssetsPage() {
 	const reload = () => {
 		void mutate([ASSETS_KEY]);
 		void mutate([PLACEMENTS_KEY, { site }]);
-		// The schema too: it is the board's Retry handler, and a schema fetch
-		// that failed would otherwise keep the error screen up forever - its own
-		// key deduped for 5 minutes and never revalidated by the button.
-		void mutate([SCHEMA_KEY]);
 	};
+	// The board's Retry also refetches the schema: a schema fetch that failed would
+	// otherwise keep the error screen up (its key is deduped for 5 minutes). Edits
+	// never change the schema, so they use `reload` and skip it.
+	const retry = () => { reload(); void mutate([SCHEMA_KEY]); };
 
 	const sections = Object.entries(schemaQ.data?.sites?.[site] ?? {})
 		.filter((e): e is [string, SectionSpec] => e[1] !== undefined);
@@ -107,6 +107,7 @@ export default function SiteAssetsPage() {
 					loading={schemaQ.isLoading || placementsQ.isLoading}
 					error={schemaQ.error ?? placementsQ.error}
 					reload={reload}
+					retry={retry}
 					mutatePlacements={(next) => void mutate([PLACEMENTS_KEY, { site }], next, { revalidate: false })}
 				/>
 			)}

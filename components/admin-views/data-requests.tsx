@@ -21,6 +21,8 @@ interface Dcr {
 	entity_type: string | null;
 	entity_id: string | null;
 	target_company_id: string | null;
+	target_investor_id?: string | null;
+	target_ecosystem_entity_id?: string | null;
 	target_name_snapshot: string | null;
 	field_change: string | null;
 	old_value: string | null;
@@ -131,8 +133,8 @@ const idNameMap = (resp: unknown): Map<string, string> => {
 	return m;
 };
 
-// The live company's editable fields (`GET /api/admin/companies/:id/edit`) —
-// only the ones that map to a claim_edit detail key, for the current→requested diff.
+// The live record's editable fields (`GET /api/admin/{companies|investors|ecosystem-entities}/:id/edit`)
+// — only the ones that map to a claim_edit detail key, for the current→requested diff.
 interface CompanyEditLite {
 	description?: string | null; sector_id?: string | null; business_model?: string | null;
 	founded_year?: number | null; hq_city?: string | null; hq_country?: string | null;
@@ -142,12 +144,59 @@ interface CompanyEditLite {
 	facebook_url?: string | null; linkedin_url?: string | null;
 	poc_first_name?: string | null; poc_last_name?: string | null; poc_job_position?: string | null;
 	poc_email?: string | null; poc_linkedin?: string | null;
+	// investor
+	category?: string | null; year_launched?: number | null; actively_investing?: boolean | null;
+	thesis_amount_min?: string | number | null; thesis_amount_max?: string | number | null;
+	poc_name?: string | null; poc_position?: string | null;
+	// ecosystem
+	entity_type?: string | null; program?: { entries_open?: boolean | null } | null;
 }
-// Current value of a detail key on the live company, formatted like the requested
+type LiveKind = 'company' | 'investor' | 'ecosystem';
+/** The live record a request points at: its kind, id, edit payload path and (investor /
+ *  ecosystem) the admin link that opens its edit form. null when it isn't linked to one. */
+function liveKind(r: Dcr): LiveKind | null {
+	return r.entity_type === 'company' || r.entity_type === 'investor' || r.entity_type === 'ecosystem' ? r.entity_type : null;
+}
+function liveTarget(r: Dcr): { id: string; editPath: string; openHref: string | null } | null {
+	const kind = liveKind(r);
+	const id = kind === 'company' ? r.target_company_id : kind === 'investor' ? r.target_investor_id : kind === 'ecosystem' ? r.target_ecosystem_entity_id : null;
+	if (!kind || !id) return null;
+	const api = { company: 'companies', investor: 'investors', ecosystem: 'ecosystem-entities' }[kind];
+	const openHref = kind === 'investor' ? `/ecosystem?tab=investors&edit=${id}` : kind === 'ecosystem' ? `/ecosystem?tab=programs&edit=${id}` : null;
+	return { id, editPath: `/api/admin/${api}/${id}/edit`, openHref };
+}
+// Batch "apply as submitted" can only write one plain column; a profile-update bundle or a
+// fund / portfolio row always needs the edit form, so those are skipped instead of failing.
+const batchApplyable = (r: Dcr) => APPLYABLE.has(r.entity_type ?? '') && !asClaimEdit(r.context) && r.status !== 'resolved';
+// Current value of a detail key on the live record, formatted like the requested
 // value so the two compare as strings. null = no clean mapping (show requested only).
-function companyCurrent(key: string, c: CompanyEditLite | null | undefined, sectorMap: Map<string, string>): string | null {
+function companyCurrent(key: string, c: CompanyEditLite | null | undefined, sectorMap: Map<string, string>, kind: LiveKind = 'company'): string | null {
 	if (!c) return null;
 	const str = (v: unknown): string | null => (v == null || v === '' ? null : String(v));
+	const money = (v: unknown): string | null => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : fmtMoney(Number(v)));
+	const yn = (v: unknown): string | null => (v == null ? null : v ? 'Yes' : 'No');
+	if (kind === 'investor') {
+		switch (key) {
+			case 'category': return str(c.category);
+			case 'year_launched': return str(c.year_launched);
+			case 'actively_investing': return yn(c.actively_investing);
+			case 'thesis_amount_min_usd': return money(c.thesis_amount_min);
+			case 'thesis_amount_max_usd': return money(c.thesis_amount_max);
+			case 'contact_name': return str(c.poc_name);
+			case 'contact_position': return str(c.poc_position);
+			case 'contact_email': return str(c.poc_email);
+			case 'contact_linkedin': return str(c.poc_linkedin);
+		}
+	}
+	if (kind === 'ecosystem') {
+		switch (key) {
+			case 'entity_type': return str(c.entity_type);
+			case 'op_type': return str(c.category);
+			case 'location': return str(c.hq_city);
+			case 'country': return str(c.hq_country);
+			case 'applications_open': return c.entity_type === 'program' ? yn(c.program?.entries_open) : null;
+		}
+	}
 	switch (key) {
 		case 'description': return str(c.description);
 		case 'sector_id': return c.sector_id ? sectorMap.get(String(c.sector_id)) ?? null : null;
@@ -238,7 +287,7 @@ function ClaimEditSummary({ r, sectorMap, roundMap, techMap, rounds, current, de
 	const changes = (ctx?.changes ?? {}) as Record<string, unknown>;
 	const details = (changes.details ?? {}) as Record<string, unknown>;
 	const detailRows: DiffRow[] = DETAIL_FIELDS
-		.map(([k, label]) => ({ label, current: companyCurrent(k, current, sectorMap), requested: fmtDetail(k, details[k], sectorMap, roundMap) }))
+		.map(([k, label]) => ({ label, current: companyCurrent(k, current, sectorMap, liveKind(r) ?? 'company'), requested: fmtDetail(k, details[k], sectorMap, roundMap) }))
 		.filter((row): row is DiffRow => row.requested != null);
 	const changedCount = detailRows.filter((row) => row.current !== null && row.current !== row.requested).length;
 	// Thesis sectors + tech tags are UUID arrays → resolve to names; the rest are plain strings.
@@ -374,10 +423,9 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 	const [showRaw, setShowRaw] = useState(false);
 	const openModal = (r: Dcr) => { setShowRaw(false); setEditVal(r.requested_value ?? ''); setModalRow(r); };
 	const closeModal = () => setModalRow(null);
-	// Live company fields, for the current→requested diff on a company claim_edit.
-	const { data: currentCompany } = useEditPayload<CompanyEditLite>(modalRow?.entity_type === 'company' && modalRow.target_company_id && asClaimEdit(modalRow.context)
-			? `/api/admin/companies/${modalRow.target_company_id}/edit`
-			: null);
+	// Live record fields (company / investor / ecosystem), for the current→requested diff on a claim_edit.
+	const modalTarget = modalRow ? liveTarget(modalRow) : null;
+	const { data: currentCompany } = useEditPayload<CompanyEditLite>(modalRow && modalTarget && asClaimEdit(modalRow.context) ? modalTarget.editPath : null);
 	const applyChange = async (r: Dcr) => {
 		setApplyPending(r.id);
 		try {
@@ -412,15 +460,24 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 	};
 
 	const toggleSel = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-	const batch = async (label: string, fn: (id: string) => Promise<unknown>) => {
-		let ok = 0, fail = 0;
-		for (const id of [...selected]) { try { await fn(id); ok++; } catch { fail++; } }
-		if (fail) toast.error(`${label}: ${ok} succeeded, ${fail} failed`); else toast.success(`${label}: ${ok}`);
+	const batch = async (label: string, fn: (id: string) => Promise<unknown>, only?: (r: Dcr) => boolean) => {
+		let ok = 0, fail = 0, skipped = 0;
+		let firstError = '';
+		const byId = new Map((data?.data ?? []).map((r) => [r.id, r]));
+		for (const id of [...selected]) {
+			const r = byId.get(id);
+			if (r && only && !only(r)) { skipped++; continue; }
+			try { await fn(id); ok++; } catch (e) { fail++; firstError ||= `${r?.target_name_snapshot ?? 'A request'}: ${(e as Error).message}`; }
+		}
+		const skip = skipped ? ` · ${skipped} skipped (profile updates / funds / portfolio / already resolved — use Review)` : '';
+		if (fail) toast.error(`${label}: ${ok} succeeded, ${fail} failed${skip}`, { description: firstError });
+		else if (ok || skipped) (ok ? toast.success : toast.warning)(`${label}: ${ok}${skip}`);
 		setSelected(new Set());
 		void refresh();
 	};
-	// Batch apply uses each row's submitted value as-is (apply-as-submitted).
-	const batchApply = () => batch('Applied', (id) => api('POST', `/api/admin/data-change-requests/${id}/apply`, {}));
+	// Batch apply uses each row's submitted value as-is (apply-as-submitted); rows that can only
+	// be applied from the edit form are skipped rather than counted as failures.
+	const batchApply = () => batch('Applied', (id) => api('POST', `/api/admin/data-change-requests/${id}/apply`, {}), batchApplyable);
 	const batchReject = () => batch('Rejected', (id) => api('POST', `/api/admin/data-change-requests/${id}/status`, { status: 'rejected' }));
 
 	const items = data?.data ?? [];
@@ -577,6 +634,9 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 								<div><div className="co-stat-label">Requested by</div>{r.user_email ?? '—'}</div>
 								<div><div className="co-stat-label">Submitted</div>{new Date(r.created_at).toLocaleString()}</div>
 								{r.resolution_notes && <div><div className="co-stat-label">Note</div>{r.resolution_notes}</div>}
+								{modalTarget?.openHref && (
+									<div><div className="co-stat-label">Record</div><a href={modalTarget.openHref} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Open {r.entity_type}’s edit form ↗</a></div>
+								)}
 							</div>
 							{ce ? (
 								<>

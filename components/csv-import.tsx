@@ -15,12 +15,38 @@ import { Modal } from '@/components/modal';
 
 type Entity = 'companies' | 'deals' | 'acquisitions' | 'ecosystem';
 
-interface ImportResult { created: number; failed: number; errors: Array<{ index: number; name: string; message: string }> }
+type RowIssue = { index: number; name: string; message: string };
+interface ImportResult { created: number; failed: number; errors: RowIssue[]; warnings?: RowIssue[] }
+
+// Rows go up in batches: the API body limit is 1 MB and each row is its own transaction.
+const CHUNK = 500;
+/** POST `rows` in CHUNK-sized batches; `index` in the replies is mapped back to the row's file position. */
+async function postChunked<T>(url: string, rows: Record<string, string>[], positions: number[], merge: (acc: T | null, res: T, toFile: (i: number) => number) => T): Promise<T | null> {
+	let acc: T | null = null;
+	for (let off = 0; off < rows.length; off += CHUNK) {
+		const res = await api<T>('POST', url, { rows: rows.slice(off, off + CHUNK) });
+		acc = merge(acc, res, (i) => positions[off + i] ?? off + i);
+	}
+	return acc;
+}
+const mergeImport = (acc: ImportResult | null, r: ImportResult, toFile: (i: number) => number): ImportResult => {
+	const fix = (xs?: RowIssue[]) => (xs ?? []).map((x) => ({ ...x, index: toFile(x.index) }));
+	return {
+		created: (acc?.created ?? 0) + r.created, failed: (acc?.failed ?? 0) + r.failed,
+		errors: [...(acc?.errors ?? []), ...fix(r.errors)], warnings: [...(acc?.warnings ?? []), ...fix(r.warnings)],
+	};
+};
+/** Catalog-duplicate row positions (file order) for the whole file. */
+async function catalogDupes(entity: Entity, rows: Record<string, string>[]): Promise<number[]> {
+	const r = await postChunked<{ existing: number[] }>(`/api/admin/import/${entity}/check-duplicates`, rows, rows.map((_, i) => i),
+		(acc, res, toFile) => ({ existing: [...(acc?.existing ?? []), ...res.existing.map(toFile)] }));
+	return r?.existing ?? [];
+}
 
 // Canonical columns per entity + the help text shown to the admin.
 const COLUMNS: Record<Entity, { keys: string[]; help: string }> = {
 	companies: { keys: ['name', 'website', 'description', 'sector', 'business_model', 'founded_year', 'country', 'city', 'region', 'continent', 'status'], help: 'name (required), website (required, unique), description, sector, business_model, founded_year, country, city, region, continent, status' },
-	deals: { keys: ['company', 'round_type', 'announced_date', 'amount_usd', 'currency_code', 'status'], help: 'company (required — name or website), round_type, announced_date, amount_usd, currency_code, status' },
+	deals: { keys: ['company', 'round_type', 'announced_date', 'amount', 'currency_code', 'status', 'investors'], help: 'company (required — name or website), round_type, announced_date, amount (in currency_code, USD if blank — converted to USD like the deal form), currency_code, status, investors (separate with ; — end a name with * for the lead)' },
 	acquisitions: { keys: ['acquiree', 'acquirer', 'acquisition_date', 'amount_usd', 'acquisition_type'], help: 'acquiree (required), acquirer, acquisition_date, amount_usd, acquisition_type' },
 	ecosystem: { keys: ['name', 'entity_type', 'description', 'website', 'category', 'founded_year', 'country', 'city', 'region', 'continent', 'status'], help: 'name (required), entity_type, description, website, category, founded_year, country, city, region, continent, status' },
 };
@@ -32,7 +58,9 @@ const ALIASES: Record<string, string> = {
 	company_name: 'company', startup: 'company', company: 'company',
 	round: 'round_type', round_type: 'round_type', funding_round: 'round_type', round_name: 'round_type',
 	date: 'announced_date', vc_date: 'announced_date', announced_date: 'announced_date', deal_date: 'announced_date',
-	amount: 'amount_usd', round_amount: 'amount_usd', amount_usd: 'amount_usd', round_amount_usd: 'amount_usd',
+	// `amount` is in currency_code; an explicit *_usd column is taken as USD as-is.
+	amount: 'amount', round_amount: 'amount', amount_usd: 'amount_usd', round_amount_usd: 'amount_usd',
+	investor: 'investors', investors: 'investors', investor_names: 'investors',
 	currency: 'currency_code', currency_code: 'currency_code',
 	target: 'acquiree', acquiree: 'acquiree', acquiree_name: 'acquiree',
 	buyer: 'acquirer', acquirer: 'acquirer', acquirer_name: 'acquirer',
@@ -70,8 +98,8 @@ const SAMPLES: Record<Entity, string[][]> = {
 		['StrideWear', 'https://stridewear.com', 'Smart running apparel with embedded sensors', 'Wearables', 'd2c', '2019', 'United States', 'Portland', 'North America', 'Americas', 'active'],
 	],
 	deals: [
-		['https://pitchside.io', 'Series A', '2023-03-14', '8000000', 'USD', 'active'],
-		['https://courtvision.ai', 'Seed', '2022-11-02', '2500000', 'USD', 'active'],
+		['https://pitchside.io', 'Series A', '2023-03-14', '8000000', 'USD', 'active', 'Atlas Ventures*; Kickoff Capital'],
+		['https://courtvision.ai', 'Seed', '2022-11-02', '2300000', 'EUR', 'active', 'Baseline Angels'],
 	],
 	acquisitions: [
 		['StrideWear', 'Nike', '2023-07-01', '120000000', 'acquisition'],
@@ -93,12 +121,13 @@ export function downloadCsv(filename: string, header: string[], rows: string[][]
 }
 
 // ── Duplicate detection (client-side in-file key + server-side DB check) ──────
-const normWebsite = (v?: string): string => (v ?? '').trim().toLowerCase().replace(/\/+$/, '');
+// Same identity as the server's websiteKey(): case, scheme, leading www. and trailing slashes ignored.
+const normWebsite = (v?: string): string => (v ?? '').trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
 const slugifyName = (v?: string): string => (v ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 function rowKey(entity: Entity, r: Record<string, string>): string {
 	if (entity === 'companies') return normWebsite(r.website);
 	if (entity === 'ecosystem') return slugifyName(r.name);
-	if (entity === 'deals') return [r.company, r.announced_date, r.amount_usd].map((x) => (x ?? '').trim().toLowerCase()).join('|');
+	if (entity === 'deals') return [r.company, r.announced_date, r.amount || r.amount_usd].map((x) => (x ?? '').trim().toLowerCase()).join('|');
 	return [r.acquiree, r.acquirer, r.acquisition_date].map((x) => (x ?? '').trim().toLowerCase()).join('|'); // acquisitions
 }
 
@@ -139,8 +168,7 @@ export function CsvImportButton({ entity, onDone }: { entity: Entity; onDone: ()
 		});
 		// DB duplicates (companies/ecosystem have a unique key); takes precedence.
 		try {
-			const res = await api<{ existing: number[] }>('POST', `/api/admin/import/${entity}/check-duplicates`, { rows });
-			for (const idx of res.existing) info.set(idx, 'Already in catalog');
+			for (const idx of await catalogDupes(entity, rows)) info.set(idx, 'Already in catalog');
 		} catch (e) { toast.error((e as Error).message); }
 		setDupInfo(info);
 		setReviewed(true);
@@ -151,11 +179,14 @@ export function CsvImportButton({ entity, onDone }: { entity: Entity; onDone: ()
 	const submit = async () => {
 		setPending(true);
 		try {
-			const toImport = skipDupes && dupInfo.size ? rows.filter((_, i) => !dupInfo.has(i)) : rows;
-			const res = await api<ImportResult>('POST', `/api/admin/import/${entity}`, { rows: toImport });
+			const positions = rows.map((_, i) => i).filter((i) => !(skipDupes && dupInfo.has(i)));
+			const res = await postChunked<ImportResult>(`/api/admin/import/${entity}`, positions.map((i) => rows[i]!), positions, mergeImport);
+			if (!res) return;
 			setResult(res);
 			toast[res.failed ? 'warning' : 'success'](`Imported ${res.created}${res.failed ? ` · ${res.failed} failed` : ''}`);
 			if (res.created > 0) onDone();
+			// The file is done: clear it so a second click can't import the same rows again.
+			setRows([]); setDupInfo(new Map()); setReviewed(false);
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(false); }
 	};
@@ -250,6 +281,12 @@ export function CsvImportButton({ entity, onDone }: { entity: Entity; onDone: ()
 										{result.errors.map((er) => <div key={er.index}>row {er.index + 1} ({er.name}): {er.message}</div>)}
 									</div>
 								)}
+								{!!result.warnings?.length && (
+									<div style={{ marginTop: 6, maxHeight: 160, overflow: 'auto', color: 'var(--warn)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+										<div style={{ fontWeight: 600 }}>Imported with warnings (check these rows):</div>
+										{result.warnings.map((w, k) => <div key={k}>row {w.index + 1} ({w.name}): {w.message}</div>)}
+									</div>
+								)}
 							</div>
 						)}
 					</div>
@@ -311,8 +348,7 @@ export function CsvCheckButton({ entity }: { entity: Entity }) {
 			if (seen.has(k)) info.set(i, 'Repeated in file'); else seen.set(k, i);
 		});
 		try {
-			const res = await api<{ existing: number[] }>('POST', `/api/admin/import/${entity}/check-duplicates`, { rows });
-			for (const idx of res.existing) info.set(idx, 'Already in catalog');
+			for (const idx of await catalogDupes(entity, rows)) info.set(idx, 'Already in catalog');
 		} catch (e) { toast.error((e as Error).message); }
 		setDupInfo(info); setChecked(true); setChecking(false);
 	};

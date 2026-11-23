@@ -1,8 +1,49 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Upload, FileDown } from 'lucide-react';
+import { toast } from 'sonner';
 import { downloadCsv } from './csv-import';
+import { Modal } from './modal';
+
+/**
+ * Edit a queued candidate's name / website (both queues). Sends only what changed; a new
+ * website re-runs enrichment server-side, which is how a candidate queued without one (most
+ * deal-added investors) gets enriched.
+ */
+export function EditCandidateModal({ name, website, onClose, onSave }: {
+	name: string; website: string | null; onClose: () => void;
+	onSave: (body: { name?: string; website?: string | null }) => Promise<unknown>;
+}) {
+	const [n, setN] = useState(name);
+	const [w, setW] = useState(website ?? '');
+	const [pending, setPending] = useState(false);
+	const submit = async () => {
+		const body: { name?: string; website?: string | null } = {};
+		if (n.trim() !== name) body.name = n.trim();
+		if (w.trim() !== (website ?? '')) body.website = w.trim() || null;
+		if (!Object.keys(body).length) { onClose(); return; }
+		setPending(true);
+		try { await onSave(body); } catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
+	};
+	return (
+		<Modal title={`Edit ${name}`} onClose={onClose} width={440} footer={
+			<>
+				<button className="btn ghost" onClick={onClose}>Cancel</button>
+				<button className="btn" disabled={!n.trim() || pending} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save'}</button>
+			</>
+		}>
+			<div style={{ display: 'grid', gap: 12 }}>
+				<div><div className="co-stat-label" style={{ marginBottom: 6 }}>Name</div><input className="search-input" value={n} onChange={(e) => setN(e.target.value)} /></div>
+				<div>
+					<div className="co-stat-label" style={{ marginBottom: 6 }}>Website</div>
+					<input className="search-input" value={w} onChange={(e) => setW(e.target.value)} placeholder="acme.com" />
+					<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>A new website runs enrichment again (Apollo first, Attio as fallback).</div>
+				</div>
+			</div>
+		</Modal>
+	);
+}
 
 /**
  * Shared input pane for the lightweight "candidate" importers (startups

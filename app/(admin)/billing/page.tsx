@@ -130,11 +130,12 @@ export default function BillingAdminPage() {
 			/>
 
 			<div className="grid-2" style={{ gap: 'var(--space-4)' }}>
-				<Section title="Grant trial" meta="Extends or starts a free trial for one user">
+				<Section title="Grant trial" meta="Extends a live admin grant or trial for one user">
 					<Hint>
 						New end date is <b>{trialDays} day{trialDays === 1 ? '' : 's'}</b> from now, or from the current
 						trial end if it&apos;s later. Writes <Code>profile_subscriptions.trial_ends_at</Code> — the tier is
-						left unchanged (use <b>Bulk grant access</b> to promote a tier).
+						left unchanged (use <b>Bulk grant access</b> to promote a tier). Refused for Explore users, Stripe
+						payers and anyone with a permanent tier, since a trial window would make that tier expire.
 					</Hint>
 					<div style={{ marginBottom: 12 }}>
 						<Label>User</Label>
@@ -153,7 +154,8 @@ export default function BillingAdminPage() {
 						<Label>Bulk — by email</Label>
 						<p style={{ fontSize: 12.5, color: 'var(--fg-2)', margin: '6px 0 10px', lineHeight: 1.5 }}>
 							Sets the tier <i>and</i> the trial window for many accounts at once. Profile-only — no Stripe
-							subscription is created, so this is the one for comps and pilots. One email per line.
+							subscription is created, so this is the one for comps and pilots. Stripe payers and permanent
+							tiers are skipped (a trial window would end them). One email per line.
 						</p>
 						<textarea
 							className="search-input" rows={3} style={{ width: '100%', marginBottom: 10, fontFamily: 'var(--font-mono)', fontSize: 12 }}
@@ -181,6 +183,9 @@ export default function BillingAdminPage() {
 							<div style={{ marginTop: 12, fontSize: 12, color: 'var(--fg-muted)' }}>
 								{bulkTrialResults.summary.succeeded}/{bulkTrialResults.summary.total} succeeded
 								{bulkTrialResults.summary.failed > 0 && ` · ${bulkTrialResults.summary.failed} failed`}
+								{bulkTrialResults.results.filter((r) => !r.success).map((r) => (
+									<div key={r.email} style={{ color: 'var(--neg)', marginTop: 4 }}>✗ {r.email} — {r.error ?? 'failed'}</div>
+								))}
 							</div>
 						)}
 					</div>

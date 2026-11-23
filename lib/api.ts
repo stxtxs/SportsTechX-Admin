@@ -56,6 +56,17 @@ async function friendlyError(res: Response): Promise<string> {
 	};
 	let body: unknown;
 	try { body = await res.json(); } catch { body = null; }
+	const err = (body as { error?: { details?: { issues?: Array<{ path?: unknown[]; message?: string }> } } } | null)?.error;
+	// Validation failures: name the field(s) instead of the generic "request validation failed".
+	const issues = err?.details?.issues;
+	if (Array.isArray(issues) && issues.length) {
+		const field = (p?: unknown[]) => (p ?? []).filter((x) => typeof x === 'string').join(' › ').replace(/_/g, ' ');
+		const lines = issues.slice(0, 3).map((i) => (field(i.path) ? `${field(i.path)}: ${i.message ?? 'invalid'}` : i.message ?? 'invalid'));
+		return lines.join('; ') + (issues.length > 3 ? ` (+${issues.length - 3} more)` : '');
+	}
+	// A server error carries a request id: show it so the admin can report which failure they hit.
+	const ref = res.status >= 500 ? (body as { requestId?: string } | null)?.requestId : undefined;
+	const withRef = (m: string) => (ref ? `${m} (ref ${ref})` : m);
 	const pick = (v: unknown): string | null => {
 		if (!v) return null;
 		if (typeof v === 'string') return v;
@@ -67,9 +78,13 @@ async function friendlyError(res: Response): Promise<string> {
 		return null;
 	};
 	const msg = pick(body);
-	if (msg) return msg;
-	return fallback[res.status] ?? `Something went wrong (${res.status}). Please try again.`;
+	if (msg) return withRef(msg);
+	return withRef(fallback[res.status] ?? `Something went wrong (${res.status}). Please try again.`);
 }
+
+/** Called after every successful change (POST/PUT/PATCH/DELETE); the providers refresh shared counters from it. */
+let afterWrite: ((path: string) => void) | null = null;
+export function onAfterWrite(fn: ((path: string) => void) | null): void { afterWrite = fn; }
 
 async function doFetch(method: string, url: string, body: unknown, forceRefresh: boolean): Promise<Response> {
 	const auth = await getAuthHeader(forceRefresh);
@@ -106,9 +121,26 @@ export async function api<T = unknown>(
 	if (!res.ok) {
 		throw new ApiError(res.status, await friendlyError(res));
 	}
+	if (method.toUpperCase() !== 'GET') afterWrite?.(url);
 	const ct = res.headers.get('content-type') ?? '';
 	if (ct.includes('application/json')) return (await res.json()) as T;
 	return undefined as T;
+}
+
+/**
+ * Every row of a paged list endpoint, for CSV exports. List endpoints cap `limit` at 200,
+ * so asking for 5000 in one call was a 400; this walks the pages instead (up to `max` rows).
+ */
+export async function fetchAllPages<T>(path: string, params: Record<string, string>, max = 5000): Promise<{ rows: T[]; capped: boolean }> {
+	const rows: T[] = [];
+	for (let page = 1; rows.length < max; page++) {
+		const qs = new URLSearchParams({ ...params, limit: '200', page: String(page) });
+		const r = await api<{ data?: T[] }>('GET', `${path}?${qs}`);
+		const batch = r?.data ?? [];
+		rows.push(...batch);
+		if (batch.length < 200) return { rows, capped: false };
+	}
+	return { rows: rows.slice(0, max), capped: true };
 }
 
 /**

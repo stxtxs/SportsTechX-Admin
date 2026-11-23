@@ -11,6 +11,7 @@ import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState, Tag, Loading } from '@/components/atoms';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { YearSelect } from '@/components/year-select';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 const ENTITY_TYPES = ['companies', 'investors', 'deals', 'acquisitions', 'programs', 'events'] as const;
 type EntityType = (typeof ENTITY_TYPES)[number];
@@ -138,7 +139,7 @@ function toListForm(h: ListDetail): ListForm {
 
 function ListModal({ id, onClose, onSaved }: { id: string | null; onClose: () => void; onSaved: () => void }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<ListDetail>(isEdit ? [`/api/admin/featured-lists/${id}`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<ListDetail>(isEdit ? `/api/admin/featured-lists/${id}` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit featured list" onClose={onClose}><Loading msg="Loading list…" /></Modal>;
 	return <ListForm id={id} initial={hydrated ? toListForm(hydrated) : EMPTY} onClose={onClose} onSaved={onSaved} />;
 }
@@ -155,7 +156,7 @@ function ListForm({ id, initial, onClose, onSaved }: { id: string | null; initia
 		setPending(true);
 		try {
 			const body: Record<string, unknown> = {
-				name: form.name.trim(), description: form.description.trim() || undefined,
+				name: form.name.trim(), description: form.description.trim() || (isEdit ? null : undefined),
 				entity_type: form.entity_type, is_premium: form.is_premium, show_in_lists: form.show_in_lists,
 				month: form.month || null, year: form.year ? Number(form.year) : null,
 			};

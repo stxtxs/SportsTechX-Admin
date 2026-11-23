@@ -49,7 +49,7 @@ export function ReportDetailsForm({
 		try {
 			await api('PATCH', `/api/admin/reports/${reportId}`, {
 				title: title.trim(),
-				short_title: shortTitle.trim() || undefined,
+				short_title: shortTitle.trim() || null,   // null clears it
 				slug: slug.trim() || undefined,
 				report_month: month === '' ? null : Number(month),
 				report_year: year === '' ? null : Number(year),

@@ -18,9 +18,8 @@ import { getSupabaseBrowser } from '@/lib/supabase';
  * parents (Report cover, profile avatar) from writing the partial URL of
  * "h", "ht", "htt", … to the DB while the admin is mid-typing.
  *
- * The Reset button deletes the file from Storage when the current value
- * lives in our bucket, then clears the field. External URLs are just
- * cleared (no storage call).
+ * The Remove button only clears the field (the stored file is kept, so a
+ * record is never left pointing at a deleted file before it is saved).
  *
  * RLS on `storage.objects` for `public-images` is the security boundary
  * (see migration 20260522120000). Admin paths require `public.is_admin()`;
@@ -123,30 +122,16 @@ export function ImageInput({
 		if (f) void doUpload(f);
 	};
 
+	// Remove only clears the field; the stored file is kept. Deleting it here happened before the
+	// form was saved (and on Cancel too), so the live record kept pointing at a deleted file and a
+	// broken image went live. An unused file in storage costs nothing that matters.
 	const doReset = async () => {
 		if (disabled || resetting || !value) return;
-		const ourBucket = isOurBucketUrl(value, bucket);
-		const msg = ourBucket
-			? 'Delete this image from storage and clear the field? This cannot be undone.'
-			: 'Clear this image URL? (External link — nothing is deleted from storage.)';
-		if (!confirm(msg)) return;
+		if (!confirm('Remove this image? It is removed from the record when you save.')) return;
 		setResetting(true);
 		try {
-			if (ourBucket) {
-				const key = extractStorageKey(value, bucket);
-				if (key) {
-					const supabase = getSupabaseBrowser();
-					const { error } = await supabase.storage.from(bucket).remove([key]);
-					if (error) throw error;
-				}
-			}
 			onChange('');
-			toast.success(ourBucket ? 'Image deleted' : 'Cleared');
-		} catch (e) {
-			toast.error(`Couldn't delete file: ${(e as Error).message}`);
-			// Field stays as-is on failure so the admin can retry; if they
-			// want to clear the field anyway they can switch to URL tab and
-			// blank the input.
+			toast.success('Image removed');
 		} finally {
 			setResetting(false);
 		}
@@ -264,7 +249,7 @@ export function ImageInput({
 						type="button"
 						onClick={() => void doReset()}
 						className="btn ghost"
-						title={isOurBucketUrl(value, bucket) ? 'Delete from storage + clear field' : 'Clear field'}
+						title="Remove image"
 						disabled={disabled || resetting}
 					>
 						{resetting
@@ -301,15 +286,4 @@ function mimeExt(mime: string): string {
 	return 'bin';
 }
 
-function isOurBucketUrl(url: string, bucket: string): boolean {
-	return !!url && url.includes(`/storage/v1/object/public/${bucket}/`);
-}
 
-/** Pulls the object key out of a Supabase public URL so we can call
- *  storage.remove([key]) on it. Returns '' if the URL doesn't match our shape. */
-function extractStorageKey(url: string, bucket: string): string {
-	const marker = `/storage/v1/object/public/${bucket}/`;
-	const idx = url.indexOf(marker);
-	if (idx < 0) return '';
-	return url.slice(idx + marker.length).split('?')[0]!;
-}

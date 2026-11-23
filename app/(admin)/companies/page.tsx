@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type CSSProperties } from 'react';
-import { useSearchParams, useRouter, usePathname } from 'next/navigation';
+import { useSearchParams, usePathname } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Building2, BadgeCheck, Rocket, Coins, Layers, CircleDollarSign, GitMerge } from 'lucide-react';
@@ -1160,12 +1160,11 @@ const CD_TABS: ReadonlyArray<{ key: CdTab; label: string }> = [
 ];
 export default function CompaniesAdminPage() {
 	const searchParams = useSearchParams();
-	const router = useRouter();
 	const pathname = usePathname();
 	const raw = searchParams.get('tab');
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); router.replace(`${pathname}?${q}`, { scroll: false }); };
+	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const from = dateRange.from, to = dateRange.to;

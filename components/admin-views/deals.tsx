@@ -15,6 +15,7 @@ import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter, SectorT
 import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components/csv-import';
 import { Field } from '@/components/tabbed-form';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 import {
 	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker,
 	type DealInvestor,
@@ -218,7 +219,7 @@ export interface StagedDeal { body: Record<string, unknown>; label: { round?: st
 
 export function DealModal({ id, onClose, onSaved, lockedCompanyId, onStage }: { id: string | null; onClose: () => void; onSaved: () => void; lockedCompanyId?: string; onStage?: (d: StagedDeal) => void }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<DealEdit>(isEdit ? [`/api/admin/deals/${id}/edit`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<DealEdit>(isEdit ? `/api/admin/deals/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit deal" onClose={onClose}><Loading msg="Loading deal…" /></Modal>;
 	const initial = hydrated ? toDealForm(hydrated) : { ...EMPTY_DEAL, company_id: lockedCompanyId ?? '' };
 	return <DealForm id={id} initial={initial} onClose={onClose} onSaved={onSaved} onStage={onStage} />;
@@ -232,21 +233,23 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 
 	const set = <K extends keyof DealForm>(k: K, v: DealForm[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+	// On edit an emptied field is sent as null so it clears; undefined would keep the old value.
+	const blank = isEdit ? null : undefined;
 	const submit = async () => {
 		setPending(true);
 		try {
 			const body: Record<string, unknown> = {
 				company_id: form.company_id,
-				round_type_id: form.round_type_id || undefined,
-				announced_date: form.announced_date || undefined,
-				amount: form.amount.trim() ? Number(form.amount) : undefined,
-				currency_code: form.currency_code || undefined,
+				round_type_id: form.round_type_id || blank,
+				announced_date: form.announced_date || blank,
+				amount: form.amount.trim() ? Number(form.amount) : blank,
+				currency_code: form.currency_code || blank,
 				// Only an explicit pick is sent; otherwise the server derives the band from the USD amount
 				// (sending back the loaded band kept stale ones, e.g. "under 1m" on a $25M round).
 				deal_size_bucket: (form.deal_size_bucket !== initial.deal_size_bucket && form.deal_size_bucket) || undefined,
 				status: form.status,
-				source_url: form.source_url.trim() || undefined,
-				transaction_url: form.transaction_url.trim() || undefined,
+				source_url: form.source_url.trim() || blank,
+				transaction_url: form.transaction_url.trim() || blank,
 				investors: form.investors,
 			};
 			if (onStage) {

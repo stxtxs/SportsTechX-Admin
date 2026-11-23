@@ -1,10 +1,11 @@
 'use client';
 
-import { SWRConfig, type Cache } from 'swr';
+import { SWRConfig, useSWRConfig, type Cache } from 'swr';
+import { useEffect } from 'react';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
 import { AuthSessionProvider } from '@/hooks/use-auth-session';
-import { swrFetcher, ApiError } from '@/lib/api';
+import { swrFetcher, ApiError, onAfterWrite } from '@/lib/api';
 
 /**
  * Bounded (LRU) SWR cache.
@@ -33,6 +34,28 @@ function boundedCache(max = 500): Cache {
 		delete: (key) => { map.delete(key); },
 		keys: () => map.keys(),
 	} as Cache;
+}
+
+/**
+ * After any successful change, refresh the shared counters (stat cards, tab counts under
+ * /api/admin/stats/*). They are read on many pages and no single write knows them all.
+ * Mounted ones refetch now; others refetch next time they are shown.
+ */
+function RefreshCountersAfterWrite() {
+	const { mutate } = useSWRConfig();
+	useEffect(() => {
+		// Debounced: a loop of writes (batch apply, bulk actions) refreshes once, after the burst.
+		let t: ReturnType<typeof setTimeout> | undefined;
+		onAfterWrite(() => {
+			clearTimeout(t);
+			// Stat cards / tab counts, plus open record views (/edit — e.g. the ecosystem drill-down),
+			// which would otherwise keep showing pre-save values. Refetch only: shown data stays until
+			// the new data arrives, and an open form keeps what the admin typed.
+			t = setTimeout(() => { void mutate((k) => Array.isArray(k) && typeof k[0] === 'string' && (k[0].startsWith('/api/admin/stats/') || k[0].endsWith('/edit'))); }, 500);
+		});
+		return () => { clearTimeout(t); onAfterWrite(null); };
+	}, [mutate]);
+	return null;
 }
 
 /**
@@ -74,6 +97,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 					},
 				}}
 			>
+				<RefreshCountersAfterWrite />
 				<AuthSessionProvider>{children}</AuthSessionProvider>
 				<Toaster position="top-right" />
 			</SWRConfig>

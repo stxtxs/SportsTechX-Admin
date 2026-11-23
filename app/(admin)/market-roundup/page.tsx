@@ -97,7 +97,11 @@ function MarketRoundupMonth({ year, month, onChange }: { year: number; month: nu
 			<RoundupPreview year={year} month={month} mode={mode} perspective={perspective} />
 
 			<div style={{ height: 16 }} />
-			<EditionEditor key={`${year}-${month}`} year={year} month={month} edition={edition.data?.edition ?? null} onSaved={refresh} />
+			{/* Mount the editor only once THIS month's edition has loaded. Mounted earlier, it seeded from
+			    nothing (or the previous month's kept data), and its Save then unpublished the month. */}
+			<AsyncState loading={edition.isLoading} error={edition.error} onRetry={() => void edition.mutate()}>
+				<EditionEditor key={`${year}-${month}`} year={year} month={month} edition={edition.data?.edition ?? null} onSaved={refresh} />
+			</AsyncState>
 
 			<div className="filter-bar" style={{ margin: '20px 0 12px' }}>
 				<div style={{ fontWeight: 700, fontSize: 15 }}>News items</div>

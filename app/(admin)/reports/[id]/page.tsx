@@ -25,6 +25,7 @@ import type { Section as RkSection } from '@/components/reports/report-kit/types
 import type { ReportThemeOverride } from '@/components/reports/report-kit/report-theme';
 import { ThemeControls } from '@/components/reports/theme-controls';
 import { ReportDetailsForm } from '@/components/reports/report-details-form';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 /**
  * Reports that render on the live site from a bespoke hardcoded page (not the
@@ -201,10 +202,7 @@ export default function ReportSectionsEditorPage(
 		{ revalidateOnFocus: false },
 	);
 	const sections = data?.data ?? [];
-	const { data: report } = useSWR<ReportMeta>(
-		[`/api/admin/reports/${reportId}/edit`],
-		{ revalidateOnFocus: false },
-	);
+	const { data: report } = useEditPayload<ReportMeta>(`/api/admin/reports/${reportId}/edit`);
 
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [pickerOpen, setPickerOpen] = useState(false);

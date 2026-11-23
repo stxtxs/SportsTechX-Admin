@@ -31,6 +31,7 @@ import { DateRangePicker, type RangeValue } from '@/components/date-range-picker
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useEditPayload } from '@/hooks/use-edit-payload';
 
 interface Company {
 	id: string;
@@ -295,7 +296,7 @@ function toCompanyForm(h: CompanyEdit): CompanyForm {
 // setState-in-effect, no cascading renders.
 export function CompanyModal({ id, onClose, onSaved, seed, promotePipelineId, enrichedFields }: { id: string | null; onClose: () => void; onSaved: (createdId?: string) => void; seed?: Partial<CompanyForm>; promotePipelineId?: string; enrichedFields?: string[] }) {
 	const isEdit = !!id;
-	const { data: hydrated } = useSWR<CompanyEdit>(isEdit ? [`/api/admin/companies/${id}/edit`] : null, { revalidateOnFocus: false });
+	const { data: hydrated } = useEditPayload<CompanyEdit>(isEdit ? `/api/admin/companies/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit company" onClose={onClose}><Loading msg="Loading company…" /></Modal>;
 	return <CompanyForm id={id} initial={hydrated ? toCompanyForm(hydrated) : { ...EMPTY_COMPANY, ...seed }} onClose={onClose} onSaved={onSaved} promotePipelineId={promotePipelineId} enrichedFields={enrichedFields} />;
 }
@@ -948,6 +949,8 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 		} catch (e) { toast.error((e as Error).message); } finally { setEnriching(false); }
 	};
 
+	// On edit an emptied field is sent as null so it clears; undefined would keep the old value.
+	const blank = isEdit ? null : undefined;
 	const submit = async () => {
 		setPending(true);
 		try {
@@ -958,39 +961,39 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 				// could fail a save that never touched the website.
 				website: (!isEdit || form.website.trim() !== (initial.website ?? '').trim()) ? form.website.trim() : undefined,
 				slug: form.slug.trim() || undefined,
-				description: form.description.trim() || undefined,
-				custom_logo_url: form.custom_logo_url.trim() || undefined,
-				sector_id: form.sector_id || undefined,
-				business_model: form.business_model || undefined,
-				hq_country: form.hq.country.trim() || undefined,
-				hq_city: form.hq.city.trim() || undefined,
-				hq_continent: form.hq.continent.trim() || undefined,
-				hq_region: form.hq.region.trim() || undefined,
-				hq_state: form.hq.state.trim() || undefined,
-					hq_report_region: (form.hq.report_region ?? '').trim() || undefined,
-				founded_year: form.founded_year ? Number(form.founded_year) : undefined,
-				ipo_date: form.ipo_date || undefined,
+				description: form.description.trim() || blank,
+				custom_logo_url: form.custom_logo_url.trim() || blank,
+				sector_id: form.sector_id || blank,
+				business_model: form.business_model || blank,
+				hq_country: form.hq.country.trim() || blank,
+				hq_city: form.hq.city.trim() || blank,
+				hq_continent: form.hq.continent.trim() || blank,
+				hq_region: form.hq.region.trim() || blank,
+				hq_state: form.hq.state.trim() || blank,
+					hq_report_region: (form.hq.report_region ?? '').trim() || blank,
+				founded_year: form.founded_year ? Number(form.founded_year) : blank,
+				ipo_date: form.ipo_date || blank,
 				status: form.status,
 				is_verified: form.is_verified,
 				is_unicorn: form.is_unicorn,
 				is_hidden: form.is_hidden,
 				is_actively_raising: form.is_actively_raising,
-				actively_raising_amount: form.raising_amount.trim() ? Number(form.raising_amount) : undefined,
-				actively_raising_round: form.raising_round.trim() || undefined,
-				actively_raising_valuation: form.raising_valuation.trim() ? Number(form.raising_valuation) : undefined,
-				actively_raising_pitch_deck_url: form.raising_pitch_deck_url.trim() || undefined,
+				actively_raising_amount: form.raising_amount.trim() ? Number(form.raising_amount) : blank,
+				actively_raising_round: form.raising_round.trim() || blank,
+				actively_raising_valuation: form.raising_valuation.trim() ? Number(form.raising_valuation) : blank,
+				actively_raising_pitch_deck_url: form.raising_pitch_deck_url.trim() || blank,
 				social: form.social,
 				sport_ids: form.sport_ids,
 				tech_tag_ids: form.tech_tag_ids,
-					poc_first_name: form.poc_first_name.trim() || undefined,
-					poc_last_name: form.poc_last_name.trim() || undefined,
-					poc_job_position: form.poc_job_position.trim() || undefined,
-					poc_email: form.poc_email.trim() || undefined,
-					poc_linkedin: form.poc_linkedin.trim() || undefined,
-					poc_personal_email: form.poc_personal_email.trim() || undefined,
-					poc_personal_linkedin: form.poc_personal_linkedin.trim() || undefined,
-					accelerator: form.accelerator.trim() || undefined,
-					cohort: form.cohort.trim() || undefined,
+					poc_first_name: form.poc_first_name.trim() || blank,
+					poc_last_name: form.poc_last_name.trim() || blank,
+					poc_job_position: form.poc_job_position.trim() || blank,
+					poc_email: form.poc_email.trim() || blank,
+					poc_linkedin: form.poc_linkedin.trim() || blank,
+					poc_personal_email: form.poc_personal_email.trim() || blank,
+					poc_personal_linkedin: form.poc_personal_linkedin.trim() || blank,
+					accelerator: form.accelerator.trim() || blank,
+					cohort: form.cohort.trim() || blank,
 				};
 			let createdId: string | undefined;
 			if (isEdit) await api('PATCH', `/api/admin/companies/${id}`, body);

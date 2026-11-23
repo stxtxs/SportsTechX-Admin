@@ -105,7 +105,7 @@ Never force-push to `main`. Never commit directly to `main`.
 
 | Task | Endpoint(s) | Backend file |
 |---|---|---|
-| Approve a claim (no tier access is granted) | `POST /api/admin/claims/:id/verify` | `server/src/modules/admin/admin.controller.ts` |
+| Approve a claim (first company claim → 30-day Raise trial) | `POST /api/admin/claims/:id/verify` | `server/src/modules/admin/admin.controller.ts` |
 | Bulk-promote users to growth/pro for N days | `POST /api/admin/billing/bulk-grant-access` | `server/src/modules/admin/admin-billing.controller.ts` |
 | Grant a single user a per-feature override | `POST /api/admin/users/:profileId/feature-grants` | `server/src/modules/feature-grants/` |
 | Re-run the recommendations job | `POST /api/admin/jobs/recommendations/score` | `server/src/processors/` |

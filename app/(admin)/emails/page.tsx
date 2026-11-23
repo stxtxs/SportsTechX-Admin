@@ -7,6 +7,7 @@ import { Eye, RefreshCw, Save, Send, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader, AsyncState, PillTabs, StatCard, Pager, Tag } from '@/components/atoms';
 import { Select } from '@/components/select';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useConfirm } from '@/components/confirm';
 
 interface Field { key: string; label: string; multiline?: boolean }
@@ -219,8 +220,10 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 	const [delivery, setDelivery] = useState('');
 	const [q, setQ] = useState('');
 	const [page, setPage] = useState(1);
+	// Debounced: every keystroke used to be its own request (log + 30-day stats).
+	const dq = useDebouncedValue(q.trim());
 	const { data, error, isLoading, mutate } = useSWR<LogResp>(
-		['/api/admin/emails/log', { status, provider, delivery, q: q.trim(), batch, limit: PAGE, offset: (page - 1) * PAGE }],
+		['/api/admin/emails/log', { status, provider, delivery, q: dq, batch, limit: PAGE, offset: (page - 1) * PAGE }],
 		{ refreshInterval: 15_000 },
 	);
 	const s = data?.stats;
@@ -240,7 +243,7 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 			<div className="card" style={{ padding: 'var(--space-4)' }}>
 				<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
 					<input className="search-input" placeholder="Search recipient or subject" style={{ width: 240 }} value={q} onChange={(e) => reset(setQ)(e.target.value)} />
-					<Select value={status} onChange={reset(setStatus)} width={140} options={[{ value: '', label: 'Any status' }, ...['pending', 'sending', 'sent', 'failed'].map((v) => ({ value: v, label: v }))]} />
+					<Select value={status} onChange={reset(setStatus)} width={140} options={[{ value: '', label: 'Any status' }, ...['pending', 'sending', 'sent', 'failed', 'stuck'].map((v) => ({ value: v, label: v }))]} />
 					<Select value={provider} onChange={reset(setProvider)} width={140} options={[{ value: '', label: 'Any provider' }, { value: 'ses', label: 'SES' }, { value: 'resend', label: 'Resend' }]} />
 					<Select value={delivery} onChange={reset(setDelivery)} width={160} options={[{ value: '', label: 'Any delivery' }, ...['delivered', 'bounced', 'complained', 'delayed', 'rejected'].map((v) => ({ value: v, label: v })), { value: 'none', label: 'no report yet' }]} />
 					{batch && <button className="chip on" onClick={clearBatch} title="Show all emails">This send only ✕</button>}

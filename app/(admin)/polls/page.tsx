@@ -10,7 +10,7 @@ import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState } from '@/components/atoms';
 
-interface PollOption { id: string; poll_id: string; label: string; sort_order: number }
+interface PollOption { id: string; poll_id: string; label: string; sort_order: number; votes?: number }
 interface Poll {
 	id: string;
 	report_id: string;
@@ -33,7 +33,9 @@ export default function PollsAdminPage() {
 		['/api/admin/polls', { report_id: reportFilter || undefined }],
 		{ dedupingInterval: 30_000 },
 	);
-	const { data: reports } = useSWR<ReportsResponse>(['/api/reports'], { dedupingInterval: 5 * 60_000 });
+	// The endpoint's default page is 50; the library is past that, so older reports were unpickable.
+	const { data: reports } = useSWR<ReportsResponse>(['/api/reports', { limit: 200 }], { dedupingInterval: 5 * 60_000 });
+	const reportTitle = (id: string) => reports?.data.find((r) => r.id === id)?.title ?? id.slice(0, 8);
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/admin/polls');
 
@@ -56,7 +58,10 @@ export default function PollsAdminPage() {
 		catch (e) { toast.error((e as Error).message); }
 	};
 
-	const removeOption = async (optionId: string) => {
+	const removeOption = async (o: PollOption) => {
+		const votes = o.votes ?? 0;
+		if (!(await ask(votes ? `Delete "${o.label}"? Its ${votes} vote${votes === 1 ? '' : 's'} will be deleted too.` : `Delete "${o.label}"?`))) return;
+		const optionId = o.id;
 		try { await api('DELETE', `/api/admin/polls/options/${optionId}`); void refresh(); }
 		catch (e) { toast.error((e as Error).message); }
 	};
@@ -109,7 +114,7 @@ export default function PollsAdminPage() {
 				{(polls?.data ?? []).map((p) => (
 					<div key={p.id} className="card" style={{ padding: 'var(--space-4)' }}>
 						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-							<EditableQuestion poll={p} onSave={(q) => void saveQuestion(p.id, q)} />
+							<EditableQuestion poll={p} reportTitle={reportTitle(p.report_id)} onSave={(q) => void saveQuestion(p.id, q)} />
 							<div style={{ display: 'flex', gap: 6 }}>
 								<button className="btn ghost" onClick={() => void togglePoll(p)}>
 									{p.is_open ? 'Close' : 'Reopen'}
@@ -129,7 +134,7 @@ export default function PollsAdminPage() {
 									onUp={() => void swapOptions(o, p.options[idx - 1])}
 									onDown={() => void swapOptions(o, p.options[idx + 1])}
 									onRename={(label) => void renameOption(o.id, label)}
-									onRemove={() => void removeOption(o.id)}
+									onRemove={() => void removeOption(o)}
 								/>
 							))}
 							<AddOptionInline onAdd={(label) => void addOption(p, label)} />
@@ -142,7 +147,7 @@ export default function PollsAdminPage() {
 	);
 }
 
-function EditableQuestion({ poll, onSave }: { poll: Poll; onSave: (q: string) => void }) {
+function EditableQuestion({ poll, reportTitle, onSave }: { poll: Poll; reportTitle: string; onSave: (q: string) => void }) {
 	const [editing, setEditing] = useState(false);
 	const [value, setValue] = useState(poll.question);
 	if (editing) {
@@ -161,7 +166,7 @@ function EditableQuestion({ poll, onSave }: { poll: Poll; onSave: (q: string) =>
 				<button className="btn ghost" style={{ padding: '2px 6px' }} onClick={() => setEditing(true)}><Pencil size={11} /></button>
 			</div>
 			<div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>
-				report: {poll.report_id.slice(0, 8)} · {poll.is_open ? 'open' : 'closed'}
+				report: {reportTitle} · {poll.is_open ? 'open' : 'closed'} · {poll.options.reduce((n, o) => n + (o.votes ?? 0), 0)} votes
 			</div>
 		</div>
 	);
@@ -187,6 +192,7 @@ function OptionRow({ option, canUp, canDown, onUp, onDown, onRename, onRemove }:
 			) : (
 				<>
 					<span style={{ flex: 1 }}>{option.label}</span>
+					<span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{option.votes ?? 0} votes</span>
 					<button className="btn ghost" style={{ padding: '2px 6px' }} onClick={() => setEditing(true)}><Pencil size={11} /></button>
 					<button className="btn ghost" style={{ padding: '2px 6px' }} onClick={onRemove}><X size={11} /></button>
 				</>

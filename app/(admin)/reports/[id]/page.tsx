@@ -222,8 +222,13 @@ export default function ReportSectionsEditorPage(
 		if (report && !themeLoaded) { setTheme(report.theme ?? null); setThemeLoaded(true); }
 	}, [report, themeLoaded]);
 
-	const reload = () => mutate((k) => Array.isArray(k) && typeof k[0] === 'string' && k[0].includes(`/admin/reports/${reportId}/sections`));
+	// Also the live-data feeds (`/api/reports/sections/:id/data`, string keys): they are
+	// resolved from the SAVED query and cached 5 min, so a saved chart change didn't show.
+	const reload = () => mutate((k) => (Array.isArray(k) && typeof k[0] === 'string' && k[0].includes(`/admin/reports/${reportId}/sections`))
+		|| (typeof k === 'string' && k.startsWith('/api/reports/sections/')));
 	const reloadReport = () => mutate([`/api/admin/reports/${reportId}/edit`]);
+	// The Reports list shows the published/draft tag; refresh it too.
+	const reloadList = () => mutate((k) => Array.isArray(k) && k[0] === '/api/reports');
 
 	// What the preview renders: the saved list with the active section's unsaved
 	// draft merged in, mapped to the renderer's Section shape. Admin sees all
@@ -292,6 +297,7 @@ export default function ReportSectionsEditorPage(
 			await api('PATCH', `/api/admin/reports/${reportId}/flags`, { is_published: next });
 			toast.success(next ? 'Report published' : 'Report unpublished');
 			reloadReport();
+			void reloadList();
 		} catch (e) {
 			toast.error((e as Error).message);
 		}

@@ -24,6 +24,9 @@ export interface ReportDetailsValue {
 	show_on_dashboard?: boolean;
 }
 
+/** Same rule as the Reports list's create/edit forms: the slug is the /reports/<slug> URL. */
+const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
 export function ReportDetailsForm({
 	reportId, initial, onClose, onSaved,
 }: {
@@ -50,7 +53,7 @@ export function ReportDetailsForm({
 			await api('PATCH', `/api/admin/reports/${reportId}`, {
 				title: title.trim(),
 				short_title: shortTitle.trim() || null,   // null clears it
-				slug: slug.trim() || undefined,
+				slug: slugify(slug) || undefined,
 				report_month: month === '' ? null : Number(month),
 				report_year: year === '' ? null : Number(year),
 				tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
@@ -86,7 +89,7 @@ export function ReportDetailsForm({
 				<input className="search-input" value={shortTitle} onChange={(e) => setShortTitle(e.target.value)} placeholder="e.g. GSTER26" />
 			</Field>
 			<Field label="Slug" hint="URL segment — /reports/<slug>.">
-				<input className="search-input" value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="auto from title if blank" />
+				<input className="search-input" value={slug} onChange={(e) => setSlug(e.target.value)} onBlur={(e) => setSlug(slugify(e.target.value))} placeholder="auto from title if blank" />
 			</Field>
 
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

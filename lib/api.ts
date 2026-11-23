@@ -30,11 +30,17 @@ async function getAuthHeader(forceRefresh = false): Promise<Record<string, strin
 	return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
 }
 
-/** Redirect to the login page, preserving where we came from. */
-function redirectToLogin(): void {
+/**
+ * Redirect to the login page, preserving where we came from. Signs out locally first: the
+ * proxy bounces anyone still carrying an `sb-*-auth-token` cookie from /login back to the
+ * app, so a 401 the refresh couldn't fix (cookie still set) looped /login ↔ /dashboard.
+ */
+async function redirectToLogin(): Promise<void> {
 	if (typeof window === 'undefined') return;
-	if (window.location.pathname === '/login') return;
-	window.location.assign('/login');
+	const { pathname, search } = window.location;
+	if (pathname === '/login') return;
+	try { await getSupabaseBrowser().auth.signOut({ scope: 'local' }); } catch { /* still leave */ }
+	window.location.assign(`/login?redirectTo=${encodeURIComponent(pathname + search)}`);
 }
 
 /**
@@ -113,7 +119,7 @@ export async function api<T = unknown>(
 	if (res.status === 401) {
 		res = await doFetch(method, url, body, true);
 		if (res.status === 401) {
-			redirectToLogin();
+			await redirectToLogin();
 			throw new ApiError(401, 'Session expired — please sign in again.');
 		}
 	}

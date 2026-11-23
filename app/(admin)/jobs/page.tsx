@@ -219,7 +219,7 @@ export default function JobsPage() {
 				</Section>
 			</div>
 
-			<Section title="Recent runs" meta={`${history.data?.total ?? 0} runs · refreshes every 30s`} padded={false}>
+			<Section title="Recent runs" meta={`${history.data?.total ?? 0} runs · refreshes every 60s`} padded={false}>
 				<div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
 					<input className="search-input" style={{ flex: '0 0 220px', height: 30 }} placeholder="Search queue, job or entity id…"
 						value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />

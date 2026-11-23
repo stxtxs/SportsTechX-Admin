@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Loading } from '@/components/atoms';
+import { PageHeader, AsyncState, Loading, ErrorState } from '@/components/atoms';
 import { RoundupPreview, Pills, type RoundupMode, type Perspective } from '@/components/market-roundup-preview';
 
 interface Edition { id: string; year: number; month: number; title: string | null; summary: string | null; is_published: boolean }
@@ -99,9 +99,10 @@ function MarketRoundupMonth({ year, month, onChange }: { year: number; month: nu
 			<div style={{ height: 16 }} />
 			{/* Mount the editor only once THIS month's edition has loaded. Mounted earlier, it seeded from
 			    nothing (or the previous month's kept data), and its Save then unpublished the month. */}
-			<AsyncState loading={edition.isLoading} error={edition.error} onRetry={() => void edition.mutate()}>
-				<EditionEditor key={`${year}-${month}`} year={year} month={month} edition={edition.data?.edition ?? null} onSaved={refresh} />
-			</AsyncState>
+			{/* Explicit, not AsyncState: never mount on an error either (kept data may be another month's). */}
+			{edition.isLoading ? <Loading msg="Loading edition…" />
+				: edition.error ? <ErrorState error={edition.error} onRetry={() => void edition.mutate()} />
+				: <EditionEditor key={`${year}-${month}`} year={year} month={month} edition={edition.data?.edition ?? null} onSaved={refresh} />}
 
 			<div className="filter-bar" style={{ margin: '20px 0 12px' }}>
 				<div style={{ fontWeight: 700, fontSize: 15 }}>News items</div>

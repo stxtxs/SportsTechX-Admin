@@ -609,6 +609,20 @@ textarea.search-input { border-radius: var(--radius-md); }
 .g26-part.is-active { background: var(--bg-3); border-left-color: var(--accent); }
 .g26-part__label { font-size: 12px; font-weight: 600; }
 .g26-part__meta { font-size: 10px; color: var(--fg-muted); }
+.g26-part--sub { margin-left: 22px; padding: 7px 10px; }
+/* A movable page block: drag handle, name (selects its part when it has one), lock toggle. */
+.g26-block { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 4px; background: var(--bg-1); border: 1px solid var(--border); border-left: 3px solid transparent; }
+.g26-block.is-active { background: var(--bg-3); border-left-color: var(--accent); }
+.g26-block.is-locked { border-left-color: #d97706; }
+.g26-block.is-active.is-locked { border-left-color: var(--accent); }
+.g26-grip { display: inline-flex; padding: 3px; background: none; border: 0; color: var(--fg-muted); cursor: grab; touch-action: none; border-radius: 4px; }
+.g26-grip:hover { background: var(--bg-2); color: var(--fg); }
+.g26-grip:active { cursor: grabbing; }
+.g26-block__label { flex: 1; min-width: 0; display: grid; gap: 2px; text-align: left; background: none; border: 0; padding: 2px 0; color: var(--fg); cursor: pointer; }
+.g26-block__label:disabled { cursor: default; }
+.g26-lock { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-2); color: var(--fg-muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; }
+.g26-lock:hover { color: var(--fg); }
+.g26-lock.is-on { background: color-mix(in srgb, #d97706 14%, var(--bg-1)); border-color: color-mix(in srgb, #d97706 45%, var(--border)); color: #b45309; }
 .g26-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin: 0 0 12px; display: grid; gap: 10px; min-width: 0; }
 .g26-group > legend { font-size: 12px; font-weight: 700; padding: 0 6px; color: var(--fg); }
 .g26-field { display: grid; gap: 5px; min-width: 0; }

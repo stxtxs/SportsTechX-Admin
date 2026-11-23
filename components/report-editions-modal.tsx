@@ -16,12 +16,18 @@ interface Edition {
 	title: string | null; description: string | null; summary_points: string | null;
 	cover_url: string | null; pdf_url: string | null; drive_link: string | null;
 }
-const emptyEdition = () => ({ language_code: '', access_tier: 'explore', title: '', description: '', summary_points: '', cover_url: '', pdf_url: '', drive_link: '' });
+// A new entry starts as the English paid PDF: the usual next step after the free one.
+const emptyEdition = () => ({ language_code: 'en', access_tier: 'raise', title: '', description: '', summary_points: '', cover_url: '', pdf_url: '', drive_link: '' });
+
+/** Who gets an edition's PDF. Raise and Scout see the same content, so "scout" (older reports) is paid too. */
+const TIER_LABEL: Record<string, string> = { explore: 'Free · every reader', raise: 'Paid · Raise & Scout', scout: 'Paid · Raise & Scout' };
 
 /**
- * Manage a report's language/tier editions (report_versions). The English/free
- * edition is canonical (also editable from the metadata form) and can't be
- * deleted here; add other languages with their own PDF / cover / copy.
+ * A report's PDFs (report_versions): one per language and audience. The English
+ * free PDF is canonical (also editable from Details) and can't be deleted here.
+ * Explore readers download the free PDF; Raise and Scout download the paid one
+ * when there is one, else the free one. A report with only a free PDF is free
+ * for everyone.
  */
 export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () => void }) {
 	const ask = useConfirm();
@@ -46,7 +52,7 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 				title: draft.title.trim() || null, description: draft.description.trim() || null, summary_points: draft.summary_points.trim() || null,
 				cover_url: draft.cover_url.trim() || null, pdf_url: draft.pdf_url.trim() || null, drive_link: draft.drive_link.trim() || null,
 			});
-			toast.success('Edition saved'); reset(); void mutate();
+			toast.success('PDF saved'); reset(); void mutate();
 		} catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
 	};
 	const remove = async (e: Edition) => {
@@ -56,17 +62,21 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 	};
 
 	return (
-		<Modal title="Language editions" onClose={onClose} width={680} footer={<button className="btn ghost" onClick={onClose}>Close</button>}>
+		<Modal title="PDFs — free, paid and other languages" onClose={onClose} width={680} footer={<button className="btn ghost" onClick={onClose}>Close</button>}>
 			<div style={{ display: 'grid', gap: 14 }}>
+				<div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+					<strong>Free</strong> PDF: what Explore readers download. <strong>Paid</strong> PDF: what Raise and Scout download (the full version).
+					A report with only a free PDF is free for everyone. Add other languages the same way.
+				</div>
 				{isLoading ? <Loading msg="Loading editions…" /> : (
 					<table className="data-table" style={{ fontSize: 12 }}>
-						<thead><tr><th>Language</th><th>Tier</th><th>Title</th><th>PDF</th><th /></tr></thead>
+						<thead><tr><th>Language</th><th>Who gets it</th><th>Title</th><th>PDF</th><th /></tr></thead>
 						<tbody>
 							{editions.length === 0 && <tr><td colSpan={5} style={{ color: 'var(--fg-muted)' }}>No editions yet.</td></tr>}
 							{editions.map((e) => (
 								<tr key={e.id}>
 									<td style={{ textTransform: 'uppercase' }}>{e.language_code}</td>
-									<td>{e.access_tier}</td>
+									<td>{TIER_LABEL[e.access_tier] ?? e.access_tier}</td>
 									<td>{e.title ?? '—'}</td>
 									<td>{e.pdf_url ? '✓' : '—'}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -82,13 +92,15 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 				)}
 
 				<div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, display: 'grid', gap: 10, background: 'var(--bg-2)' }}>
-					<div style={{ fontWeight: 600, fontSize: 13 }}>{editing ? 'Edit edition' : 'Add edition'}</div>
+					<div style={{ fontWeight: 600, fontSize: 13 }}>{editing ? 'Edit PDF' : 'Add a PDF'}</div>
 					<div style={{ display: 'grid', gridTemplateColumns: '120px 140px 1fr', gap: 8 }}>
 						{/* Lang + tier are the edition's identity (the upsert key); lock them when
 						    editing so a change can't silently fork a new edition. */}
 						<input className="search-input" placeholder="Lang (en, fr…)" value={draft.language_code} disabled={!!editing} title={editing ? 'Delete and re-add to change the language' : undefined} onChange={(e) => set('language_code', e.target.value)} />
 						<select className="search-input" value={draft.access_tier} disabled={!!editing} onChange={(e) => set('access_tier', e.target.value)}>
-							{['explore', 'raise', 'scout'].map((t) => <option key={t} value={t}>{t}</option>)}
+							<option value="explore">Free · every reader</option>
+							<option value="raise">Paid · Raise &amp; Scout</option>
+							{draft.access_tier === 'scout' && <option value="scout">Paid · Raise &amp; Scout (tagged Scout)</option>}
 						</select>
 						<input className="search-input" placeholder="Title (in this language)" value={draft.title} onChange={(e) => set('title', e.target.value)} />
 					</div>
@@ -98,9 +110,9 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 					<textarea className="search-input" placeholder="Description" value={draft.description} onChange={(e) => set('description', e.target.value)} style={{ minHeight: 56, resize: 'vertical' }} />
 					<textarea className="search-input" placeholder="Summary points (one per line)" value={draft.summary_points} onChange={(e) => set('summary_points', e.target.value)} style={{ minHeight: 48, resize: 'vertical' }} />
 					<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-						{editing && <button className="btn ghost" onClick={reset}>New edition</button>}
+						{editing && <button className="btn ghost" onClick={reset}>Add another</button>}
 						<button className="btn" disabled={pending || !draft.language_code.trim()} onClick={() => void save()}>
-							{editing ? <Save size={12} /> : <Plus size={12} />} {pending ? 'Saving…' : editing ? 'Save edition' : 'Add edition'}
+							{editing ? <Save size={12} /> : <Plus size={12} />} {pending ? 'Saving…' : editing ? 'Save' : 'Add PDF'}
 						</button>
 					</div>
 				</div>

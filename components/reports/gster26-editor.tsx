@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, GripVertical, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, ExternalLink, GripVertical, Lock, Plus, RotateCcw, Trash2, Unlock, X } from 'lucide-react';
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -197,9 +197,9 @@ function ListField({ name, value, like, onChange, depth }: { name: string; value
 	);
 }
 
-// ---- page order (drag to reorder the parts between the hero and the closing quote) ----
+// ---- the page's parts: one list — drag a block to move it, lock a block for Explore ----
 
-/** Names for each report's page blocks in the Page order list (ids as the Atlas page renders them). */
+/** Names for each report's page blocks (ids as the Atlas page renders them, = content.partOrder). */
 const ORDER_LABELS: Record<string, Record<string, string>> = {
 	gster26: { trends: 'Trends', peak: 'PEAK 2026', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem map', ngsc: 'NGSC', data: 'Data in Full' },
 	ftabr26: { trends: 'Insights & FIFA WC26 Recap', featured: 'Featured company', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem', soccerment: 'Soccerment feature', partners: 'Partner spotlights', data: 'Data in Full' },
@@ -210,32 +210,87 @@ const ORDER_NOTE: Record<string, string> = {
 	ftabr26: 'The hero stays first and the footer last.',
 	'investors-survey26': 'The cover stays first. Section numbers and the header links follow this order.',
 };
+/** Each part → the page block it sits in; '' = pinned (hero / cover / closing quote); '*' = the
+ *  Benchmark's Findings part, which edits every numbered section. Must match the server's
+ *  CUSTOM_PART_KEYS (server/src/modules/reports/gated-reports.ts). */
+const BLOCK_OF: Record<string, Record<string, string>> = {
+	gster26: { hero: '', trends: 'trends', 'trend-ma': 'trends', 'trend-running': 'trends', 'trend-dtc': 'trends', 'deep-dives': 'trends', peak: 'peak', innovators: 'innovators', startups: 'startups', ecomap: 'ecomap', ngsc: 'ngsc', data: 'data', closing: '' },
+	ftabr26: { hero: '', insights: 'trends', worldcup: 'trends', featured: 'featured', innovators: 'innovators', startups: 'startups', soccerment: 'soccerment', ecosystem: 'ecomap', data: 'data' },
+	'investors-survey26': { meta: '', intro: 'why-now', sections: '*', closing: 'closing', method: 'method' },
+};
+/** The Benchmark's intro, closing and method always stay open (only its numbered sections lock). */
+const lockable = (slug: string, block: string) => slug !== 'investors-survey26' || !['why-now', 'closing', 'method'].includes(block);
 
-function PageOrder({ order, onChange }: { order: string[]; onChange: (next: string[]) => void }) {
+type Part = (typeof GSTER26_PARTS)[number];
+
+function PartsList({ slug, parts, order, locked, partId, meta, labelOf, onSelect, onReorder, onToggleLock }: {
+	slug: string; parts: Part[]; order: string[]; locked: string[]; partId: string;
+	meta: (p: Part) => string; labelOf: (block: string) => string;
+	onSelect: (id: string) => void; onReorder: (next: string[]) => void; onToggleLock: (block: string) => void;
+}) {
 	const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+	const of = BLOCK_OF[slug] ?? {};
+	const named = new Set(Object.values(of));
+	const partsOf = (block: string) => parts.filter((p) => of[p.id] === block || (of[p.id] === '*' && !named.has(block)));
+	const shown = new Set(order.flatMap((b) => partsOf(b).map((p) => p.id)));
+	const firstBlock = parts.findIndex((p) => shown.has(p.id));
+	// Pinned parts keep their place; a part no block shows yet (page order still loading) is listed plainly.
+	const loose = parts.filter((p) => !shown.has(p.id));
+	const top = loose.filter((p) => firstBlock < 0 || parts.indexOf(p) < firstBlock);
+	const bottom = loose.filter((p) => !top.includes(p));
+	const plain = (p: Part) => (
+		<button key={p.id} type="button" className={`g26-part${p.id === partId ? ' is-active' : ''}`} onClick={() => onSelect(p.id)}>
+			<span className="g26-part__label">{p.label}</span>
+			<span className="g26-part__meta">{meta(p)}</span>
+		</button>
+	);
 	const onDragEnd = ({ active, over }: DragEndEvent) => {
 		if (!over || active.id === over.id) return;
-		onChange(arrayMove(order, order.indexOf(String(active.id)), order.indexOf(String(over.id))));
+		onReorder(arrayMove(order, order.indexOf(String(active.id)), order.indexOf(String(over.id))));
 	};
 	return (
-		<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-			<SortableContext items={order} strategy={verticalListSortingStrategy}>
-				<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-					{order.map((id) => <OrderRow key={id} id={id} />)}
-				</div>
-			</SortableContext>
-		</DndContext>
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+			{top.map(plain)}
+			<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+				<SortableContext items={order} strategy={verticalListSortingStrategy}>
+					{order.map((b) => (
+						<BlockRow key={b} id={b} label={labelOf(b)} parts={partsOf(b)} partId={partId} meta={meta}
+							canLock={lockable(slug, b)} locked={locked.includes(b)} onSelect={onSelect} onToggleLock={() => onToggleLock(b)} />
+					))}
+				</SortableContext>
+			</DndContext>
+			{bottom.map(plain)}
+		</div>
 	);
 }
 
-function OrderRow({ id }: { id: string }) {
+function BlockRow({ id, label, parts, partId, meta, canLock, locked, onSelect, onToggleLock }: {
+	id: string; label: string; parts: Part[]; partId: string; meta: (p: Part) => string;
+	canLock: boolean; locked: boolean; onSelect: (id: string) => void; onToggleLock: () => void;
+}) {
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-	const labels = ORDER_LABELS[useContext(SlugContext)] ?? {};
+	const single = parts.length === 1 ? parts[0]! : null;
 	return (
-		<div ref={setNodeRef} {...attributes} {...listeners} className="g26-order"
-			style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, cursor: 'grab', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--bg-1)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 600, touchAction: 'none' }}>
-			<GripVertical size={14} style={{ color: 'var(--fg-muted)' }} />
-			<span>{labels[id] ?? id}</span>
+		<div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, display: 'grid', gap: 4 }}>
+			<div className={`g26-block${single && single.id === partId ? ' is-active' : ''}${locked ? ' is-locked' : ''}`}>
+				<button type="button" className="g26-grip" {...attributes} {...listeners} aria-label={`Drag ${label} to reorder`} title="Drag to reorder"><GripVertical size={14} /></button>
+				<button type="button" className="g26-block__label" disabled={!single} onClick={() => single && onSelect(single.id)}>
+					<span className="g26-part__label">{label}</span>
+					{single && <span className="g26-part__meta">{meta(single)}</span>}
+				</button>
+				{canLock && (
+					<button type="button" className={`g26-lock${locked ? ' is-on' : ''}`} aria-pressed={locked} onClick={onToggleLock}
+						title={locked ? 'Paid: Explore readers see only the heading and “Unlocked with Raise or Scout”. Click to open it to everyone.' : 'Open to every reader. Click to lock it for Raise and Scout.'}>
+						{locked ? <Lock size={11} /> : <Unlock size={11} />}{locked ? 'Paid' : 'Everyone'}
+					</button>
+				)}
+			</div>
+			{!single && parts.map((p) => (
+				<button key={p.id} type="button" className={`g26-part g26-part--sub${p.id === partId ? ' is-active' : ''}`} onClick={() => onSelect(p.id)}>
+					<span className="g26-part__label">{p.label}</span>
+					<span className="g26-part__meta">{meta(p)}</span>
+				</button>
+			))}
 		</div>
 	);
 }
@@ -257,6 +312,7 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 	const PARTS = CUSTOM_REPORT_PARTS[slug] ?? GSTER26_PARTS;
 	const [partId, setPartId] = useState(PARTS[0]!.id);
 	const [saving, setSaving] = useState(false);
+	const [asExplore, setAsExplore] = useState(false);
 	const frame = useRef<HTMLIFrameElement>(null);
 	const part = PARTS.find((p) => p.id === partId)!;
 	const dirty = JSON.stringify(draft) !== JSON.stringify(saved ?? {});
@@ -287,9 +343,10 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 	}, [defaults, post, slug]);
 	useEffect(() => {
 		if (!defaults) return;
-		const t = setTimeout(() => post({ type: `${slug}:content`, content: draft }), 120);
+		// `__asExplore` (preview only, never saved) draws the locked blocks as an Explore reader sees them.
+		const t = setTimeout(() => post({ type: `${slug}:content`, content: asExplore ? { ...draft, __asExplore: true } : draft }), 120);
 		return () => clearTimeout(t);
-	}, [draft, defaults, post, slug]);
+	}, [draft, defaults, post, slug, asExplore]);
 	useEffect(() => {
 		if (previewOpen) post({ type: `${slug}:jump`, anchor: part.anchor });
 	}, [previewOpen, part.anchor, post, slug]);
@@ -312,6 +369,27 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setSaving(false); }
 	};
+	// Page blocks in page order: the saved order, then any the page has that it doesn't name.
+	const order = defaults && Array.isArray(defaults.partOrder)
+		? [...new Set([...((Array.isArray(draft.partOrder) ? draft.partOrder : []) as string[]), ...(defaults.partOrder as string[])])]
+		: [];
+	const setOrder = (next: string[]) => setDraft((d) => {
+		if (!(saved && 'partOrder' in saved) && defaults && JSON.stringify(next) === JSON.stringify(defaults.partOrder)) { const { partOrder: _, ...rest } = d; return rest; }
+		return { ...d, partOrder: next };
+	});
+	const locked = (Array.isArray(draft.lockedParts) ? draft.lockedParts : []) as string[];
+	const toggleLock = (block: string) => setDraft((d) => {
+		const cur = (Array.isArray(d.lockedParts) ? d.lockedParts : []) as string[];
+		const next = cur.includes(block) ? cur.filter((x) => x !== block) : [...cur, block];
+		if (!next.length && !(saved && 'lockedParts' in saved)) { const { lockedParts: _, ...rest } = d; return rest; }
+		return { ...d, lockedParts: next };
+	});
+	// Benchmark findings are named by their own heading; the other pages by ORDER_LABELS.
+	const sectionHeading = (id: string) => {
+		const secs = (Array.isArray(draft.sections) ? draft.sections : Array.isArray(defaults?.sections) ? defaults!.sections : []) as { id?: string; heading?: string }[];
+		return secs.find((s) => s?.id === id)?.heading;
+	};
+	const labelOf = (block: string) => ORDER_LABELS[slug]?.[block] ?? sectionHeading(block) ?? block;
 	const resetPart = async () => {
 		if (!(await ask(`Reset "${part.label}" to the report’s original copy? Your edits to this part are discarded when you save.`))) return;
 		setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k]) => !part.keys.includes(k))) as Content);
@@ -321,28 +399,15 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 		<SlugContext.Provider value={slug}>
 			<div className="rep-editor">
 				<aside className="rep-editor__list">
-					<div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Page parts</div>
-					<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-						{PARTS.map((p) => (
-							<button key={p.id} type="button" className={`g26-part${p.id === partId ? ' is-active' : ''}`} onClick={() => setPartId(p.id)}>
-								<span className="g26-part__label">{p.label}</span>
-								<span className="g26-part__meta">{p.keys.length} block{p.keys.length === 1 ? '' : 's'}{partDirty(p) ? ' · edited' : ''}</span>
-							</button>
-						))}
+					<div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Page parts</div>
+					<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8, lineHeight: 1.45 }}>
+						Drag <GripVertical size={10} style={{ verticalAlign: -1 }} /> to reorder. {ORDER_NOTE[slug] ?? ''} <strong>Paid</strong> blocks show Explore readers only their heading and “Unlocked with Raise or Scout”.
 					</div>
-					{defaults && Array.isArray(defaults.partOrder) && (
-						<>
-							<div style={{ fontWeight: 700, fontSize: 14, margin: '16px 0 4px' }}>Page order</div>
-							<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8 }}>Drag to reorder. {ORDER_NOTE[slug] ?? ''}</div>
-							<PageOrder
-								order={[...new Set([...((Array.isArray(draft.partOrder) ? draft.partOrder : []) as string[]), ...(defaults.partOrder as string[])])]}
-								onChange={(next) => setDraft((d) => {
-									if (!(saved && 'partOrder' in saved) && JSON.stringify(next) === JSON.stringify(defaults.partOrder)) { const { partOrder: _, ...rest } = d; return rest; }
-									return { ...d, partOrder: next };
-								})}
-							/>
-						</>
-					)}
+					<PartsList
+						slug={slug} parts={PARTS} order={order} locked={locked} partId={partId} labelOf={labelOf}
+						meta={(p) => `${p.keys.length} block${p.keys.length === 1 ? '' : 's'}${partDirty(p) ? ' · edited' : ''}`}
+						onSelect={setPartId} onReorder={setOrder} onToggleLock={toggleLock}
+					/>
 				</aside>
 
 				<main style={{ minWidth: 0 }}>
@@ -377,7 +442,13 @@ export function Gster26Editor({ reportId, slug = 'gster26', saved, previewOpen, 
 				<iframe ref={frame} title="Report preview" src={`${ATLAS}/report-preview/${slug}`} onLoad={() => post({ type: `${slug}:hello` })} />
 				{previewOpen && (
 					<div className="preview-bar">
-						<span className="preview-bar__label">Preview · the live page with your unsaved edits</span>
+						<span className="preview-bar__label">Preview · the live page with your unsaved edits{asExplore ? ' · as an Explore reader' : ''}</span>
+						{locked.length > 0 && (
+							<button type="button" className="preview-bar__btn" aria-pressed={asExplore} onClick={() => setAsExplore((v) => !v)}
+								title="Show the locked (Paid) blocks as Explore readers see them">
+								{asExplore ? <Unlock size={11} /> : <Lock size={11} />} {asExplore ? 'View as Raise / Scout' : 'View as Explore'}
+							</button>
+						)}
 						<a href={`${ATLAS}/reports/${slug}`} target="_blank" rel="noopener noreferrer" className="preview-bar__btn" title="The saved, live version">Live page <ExternalLink size={11} /></a>
 						<button type="button" className="preview-bar__btn preview-bar__btn--primary" onClick={onClosePreview}><X size={12} /> Close</button>
 					</div>

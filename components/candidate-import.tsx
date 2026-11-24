@@ -11,8 +11,10 @@ import { Modal } from './modal';
  * website re-runs enrichment server-side, which is how a candidate queued without one (most
  * deal-added investors) gets enriched.
  */
-export function EditCandidateModal({ name, website, onClose, onSave }: {
+export function EditCandidateModal({ name, website, onClose, onSave, websiteRequired = false }: {
 	name: string; website: string | null; onClose: () => void;
+	/** Investors: the website identifies the candidate, so it can't be removed. */
+	websiteRequired?: boolean;
 	onSave: (body: { name?: string; website?: string | null }) => Promise<unknown>;
 }) {
 	const [n, setN] = useState(name);
@@ -30,13 +32,13 @@ export function EditCandidateModal({ name, website, onClose, onSave }: {
 		<Modal title={`Edit ${name}`} onClose={onClose} width={440} footer={
 			<>
 				<button className="btn ghost" onClick={onClose}>Cancel</button>
-				<button className="btn" disabled={!n.trim() || pending} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save'}</button>
+				<button className="btn" disabled={!n.trim() || pending || (websiteRequired && !!website && !w.trim())} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save'}</button>
 			</>
 		}>
 			<div style={{ display: 'grid', gap: 12 }}>
 				<div><div className="co-stat-label" style={{ marginBottom: 6 }}>Name</div><input className="search-input" value={n} onChange={(e) => setN(e.target.value)} /></div>
 				<div>
-					<div className="co-stat-label" style={{ marginBottom: 6 }}>Website</div>
+					<div className="co-stat-label" style={{ marginBottom: 6 }}>Website{websiteRequired ? ' (required)' : ''}</div>
 					<input className="search-input" value={w} onChange={(e) => setW(e.target.value)} placeholder="acme.com" />
 					<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>A new website runs enrichment again (Apollo first, Attio as fallback).</div>
 				</div>

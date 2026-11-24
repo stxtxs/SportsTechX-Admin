@@ -37,13 +37,14 @@ export function AddCandidateModal({ initialName = '', onClose, onSaved }: { init
 		<Modal title="Add candidate" onClose={onClose} width={580} footer={
 			<>
 				<button className="btn ghost" onClick={onClose}>Cancel</button>
-				<button className="btn" disabled={!f.name.trim() || pending} onClick={() => void submit()}>{pending ? 'Saving…' : 'Add'}</button>
+				<button className="btn" disabled={!f.name.trim() || !f.website.trim() || pending} title={f.website.trim() ? undefined : 'A website is required'} onClick={() => void submit()}>{pending ? 'Saving…' : 'Add'}</button>
 			</>
 		}>
 			<div style={{ display: 'grid', gap: 12 }}>
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>The website identifies the investor: it's how duplicates are caught and what enrichment looks up.</div>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<L label="Name"><input className="search-input" value={f.name} onChange={(e) => set('name', e.target.value)} /></L>
-					<L label="Website"><input className="search-input" value={f.website} onChange={(e) => set('website', e.target.value)} placeholder="https://" /></L>
+					<L label="Website (required)"><input className="search-input" required aria-required value={f.website} onChange={(e) => set('website', e.target.value)} placeholder="acme.com" /></L>
 				</div>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
 					<L label="Category"><input className="search-input" value={f.category} onChange={(e) => set('category', e.target.value)} placeholder="VC, PE…" /></L>

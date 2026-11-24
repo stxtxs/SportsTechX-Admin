@@ -536,6 +536,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 					{ value: 'company,deal', label: 'Companies & deals' },
 					{ value: 'investor,investor_fund,investor_portfolio', label: 'Investors' },
 					{ value: 'ecosystem', label: 'Ecosystem' },
+					{ value: 'investor,ecosystem,investor_fund,investor_portfolio', label: 'Investors & ecosystem' },
 				]} />
 				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>

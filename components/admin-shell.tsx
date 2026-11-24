@@ -53,8 +53,7 @@ function useCollapsedGroups(): [Set<string>, (id: string) => void] {
 function NavSection({ group, activeHref, collapsed, onToggle, counts, onNavigate }: {
 	group: NavGroup; activeHref: string | null; collapsed: boolean; onToggle: () => void; counts?: NavCounts; onNavigate: () => void;
 }) {
-	// The group holding the current page is always open.
-	const open = !collapsed || group.items.some((i) => i.href === activeHref);
+	const open = !collapsed;
 	const waiting = group.items.reduce((n, i) => n + countOf(i, counts), 0);
 	return (
 		<div className="nav-group">
@@ -133,6 +132,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	// What waits in each review queue (sidebar counts); refreshed every minute and after writes.
+	// Arriving on a page inside a folded group opens that group (it can still be folded again).
+	// Above the early return below: hooks must run on every render.
+	useEffect(() => {
+		const here = activeNavItem(pathname)?.href;
+		const g = NAV_GROUPS.find((x) => x.items.some((i) => i.href === here));
+		if (g && collapsed.has(g.id)) toggleGroup(g.id);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [pathname]);
 	const { data: counts } = useSWR<NavCounts>(shellReady ? ['/api/admin/stats/nav'] : null, { refreshInterval: 60_000, dedupingInterval: 30_000 });
 
 	if (authLoading || adminLoading || !session || !isAdmin) {

@@ -151,11 +151,16 @@ export default function InvestorReviewPage() {
 	const remove = (id: string) => { void (async () => { if (await ask('Delete this candidate?')) void act(() => api('DELETE', `/api/admin/investor-review/${id}`), 'Deleted'); })(); };
 	const unskip = (id: string) => act(() => api('PATCH', `/api/admin/investor-review/${id}`, { status: 'pending', skip_reason: '' }), 'Moved back to pending');
 	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/investor-review/${id}/re-enrich`), 'Enrichment queued');
-	const bulkEnrich = () => act(async () => {
-		const r = await api<{ queued: number; no_website: number }>('POST', '/api/admin/investor-review/bulk-enrich', { ids: [...selected] });
-		if (r.no_website) toast.message(`${r.no_website} without a website were skipped — add one with Edit to enrich them.`);
-		return r;
-	}, 'Enrichment queued — results fill in over the next minutes');
+	const bulkEnrich = async () => {
+		try {
+			const r = await api<{ queued: number; no_website: number; already_enriched?: number }>('POST', '/api/admin/investor-review/bulk-enrich', { ids: [...selected] });
+			const skipped = [r.already_enriched ? `${r.already_enriched} already enriched` : '', r.no_website ? `${r.no_website} without a website` : ''].filter(Boolean).join(', ');
+			if (r.queued) toast.success(`Enriching ${r.queued} — results fill in over the next minutes${skipped ? ` (skipped: ${skipped})` : ''}`);
+			else toast.message(`Nothing to enrich${skipped ? ` — ${skipped}` : ''}.`);
+			setSelected(new Set());
+			refreshAll();
+		} catch (e) { toast.error((e as Error).message); }
+	};
 	const saveEdit = async (id: string, body: { name?: string; website?: string | null }) => {
 		await api('PATCH', `/api/admin/investor-review/${id}`, body);
 		toast.success(body.website ? 'Saved — enrichment queued for the new website' : 'Saved');

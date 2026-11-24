@@ -235,7 +235,8 @@ body {
   text-overflow: ellipsis;
 }
 .data-table tbody td:not([colspan]):not(.wrap) > div { overflow: hidden; text-overflow: ellipsis; }
-.data-table tbody td:has(input, textarea, select, [aria-expanded]) { overflow: visible; }
+.data-table tbody td:not([colspan]):not(.wrap):has(input, textarea, select, [aria-expanded]),
+.data-table tbody td:not([colspan]):not(.wrap):has(input, textarea, select, [aria-expanded]) > div { overflow: visible; }
 .data-table tbody td.wrap { white-space: normal; min-width: 220px; }
 
 /* --- Pills never spill out of their box ------------------------------------ */

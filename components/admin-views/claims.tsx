@@ -89,7 +89,8 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 	const [sendEmail, setSendEmail] = useState(true);
 	// `?open=<id>` expands a claim directly (global search, shared links).
 	const [expandedId, setExpandedId] = useEditParam('open');
-	const [showCompleted, setShowCompleted] = useState(false);
+	// Linked to a specific claim (?open=, e.g. from a user's page): it may be finished, so show Completed too.
+	const [showCompleted, setShowCompleted] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('open'));
 	const [search, setSearch] = useUrlState(ns, 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
 

@@ -185,8 +185,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 					<AdminNotifications />
 					<ThemeToggle />
 					<div className="admin-avatar" title={profile?.email ?? undefined}>{initials}</div>
-					<button onClick={() => signOut().then(() => router.replace('/login'))} className="btn ghost" title="Sign out">
-						<LogOut size={12} /> Sign out
+					<button onClick={() => signOut().then(() => router.replace('/login'))} className="btn ghost" title="Sign out" aria-label="Sign out">
+						<LogOut size={12} /> <span className="hide-sm">Sign out</span>
 					</button>
 				</header>
 				<div style={{ flex: 1, padding: 'var(--space-5) var(--space-4)' }}>

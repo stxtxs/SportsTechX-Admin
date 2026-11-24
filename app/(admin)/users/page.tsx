@@ -380,7 +380,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 										</div>
 									</td>
 									<td className="hide-md" style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{u.company_name ?? '—'}</td>
-									<td>
+									<td style={{ whiteSpace: 'nowrap' }}>
 										<span className="tag">{tierLabel(u.user_type ?? 'explore')}</span>
 										{u.is_trial
 											? <span className="tag warn" title={u.trial_ends_at ? `Trial ends ${fmtDate(u.trial_ends_at)}` : 'On trial'} style={{ marginLeft: 4 }}>trial</span>
@@ -390,9 +390,9 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 										{u.access_source ? accessSourceLabel(u.access_source) : <span style={{ color: 'var(--fg-muted)' }}>{(u.user_type ?? 'explore') === 'explore' ? 'Free plan' : '—'}</span>}
 									</td>
 									<td className="num" style={{ textAlign: 'right' }}>{(u.login_count ?? 0).toLocaleString()}</td>
-									<td className="num">{u.last_seen_at ? fmtDate(u.last_seen_at) : <span style={{ color: 'var(--fg-muted)' }}>{u.login_count ? '—' : 'Never'}</span>}</td>
-									<td className="num">{fmtDate(u.created_at)}</td>
-									<td className="num">
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{u.last_seen_at ? fmtDate(u.last_seen_at) : <span style={{ color: 'var(--fg-muted)' }}>{u.login_count ? '—' : 'Never'}</span>}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtDate(u.created_at)}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>
 										{u.is_trial && u.trial_ends_at
 											? <span className={new Date(u.trial_ends_at) < new Date() ? 'tag' : 'tag warn'} title={`Trial ends ${fmtDate(u.trial_ends_at)}`}>{fmtDate(u.trial_ends_at)}</span>
 											: u.expires_at && u.renews

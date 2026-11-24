@@ -9,6 +9,7 @@ import { useConfirm } from '@/components/confirm';
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState, Section, Tag } from '@/components/atoms';
+import { tidy, tierLabel } from '@/lib/labels';
 
 interface FeatureRow {
 	id: string;
@@ -41,7 +42,7 @@ export default function FeaturesAdminPage() {
 	const reactivate = async (row: FeatureRow) => {
 		try {
 			await api('PATCH', `/api/admin/features/${row.id}`, { is_active: true });
-			toast.success(`Reactivated ${row.slug}`);
+			toast.success(`Reactivated ${row.name}`);
 			void mutate();
 		} catch (e) {
 			toast.error((e as Error).message ?? 'Could not reactivate');
@@ -70,7 +71,7 @@ export default function FeaturesAdminPage() {
 		if (!(await ask(`Deactivate "${row.name}"? It stays in the DB but is hidden from the catalog.`))) return;
 		try {
 			await api('DELETE', `/api/admin/features/${row.id}`);
-			toast.success(`Deactivated ${row.slug}`);
+			toast.success(`Deactivated ${row.name}`);
 			void mutate();
 		} catch (e) {
 			toast.error((e as Error).message ?? 'Could not deactivate');
@@ -95,7 +96,7 @@ export default function FeaturesAdminPage() {
 			<FilterBar>
 				<input className="search-input" style={{ flex: '0 0 240px', height: 32 }} placeholder="Search name or slug…"
 					value={q} onChange={(e) => setQ(e.target.value)} />
-				<FilterSelect ariaLabel="Category" value={cat} onChange={setCat} options={categories} allLabel="All categories" />
+				<FilterSelect ariaLabel="Category" value={cat} onChange={setCat} options={categories.map((c) => ({ value: c, label: tidy(c) }))} allLabel="All categories" />
 				<div style={{ flex: 1 }} />
 				<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--fg-2)' }}>
 					<input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} /> Show inactive
@@ -131,18 +132,18 @@ export default function FeaturesAdminPage() {
 						{rows.map((row) => (
 							<tr key={row.id} style={{ opacity: row.is_active ? 1 : 0.5 }}>
 								<td>
-									<div style={{ fontWeight: 600 }}>{row.name}{!row.is_active && <Tag>inactive</Tag>}</div>
+									<div style={{ fontWeight: 600 }}>{row.name}{!row.is_active && <Tag>Inactive</Tag>}</div>
 									{row.description && <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 2 }}>{row.description}</div>}
 								</td>
 								<td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{row.slug}</td>
-								<td style={{ color: 'var(--fg-2)' }}>{row.category ?? '—'}</td>
+								<td style={{ color: 'var(--fg-2)' }}>{tidy(row.category)}</td>
 								{TIERS.map((t) => (
 									<td key={t} style={{ textAlign: 'center' }}>
 										<button
 											className={`chip ${row[t] ? 'on' : ''}`}
 											style={{ minWidth: 32 }}
 											onClick={() => void toggleTier(row, t)}
-											aria-label={`Toggle ${t} for ${row.slug}`}
+											aria-label={`Toggle ${tierLabel(t)} for ${row.name}`}
 										>
 											{row[t] ? '✓' : '·'}
 										</button>
@@ -192,7 +193,7 @@ function FeatureModal({ initial, onClose, onSaved }: { initial: FeatureRow | nul
 					sort_order: sortOrder,
 					tiers,
 				});
-				toast.success(`Saved ${slug}`);
+				toast.success(`Saved ${name.trim() || slug}`);
 			} else {
 				await api('POST', '/api/admin/features', {
 					slug: slug.trim(),
@@ -202,7 +203,7 @@ function FeatureModal({ initial, onClose, onSaved }: { initial: FeatureRow | nul
 					sort_order: sortOrder,
 					tiers,
 				});
-				toast.success(`Created ${slug}`);
+				toast.success(`Created ${name.trim() || slug}`);
 			}
 			onSaved();
 		} catch (e) {
@@ -253,7 +254,7 @@ function FeatureModal({ initial, onClose, onSaved }: { initial: FeatureRow | nul
 								className={`chip ${tiers[t] ? 'on' : ''}`}
 								onClick={() => setTiers({ ...tiers, [t]: !tiers[t] })}
 							>
-								{t}
+								{tierLabel(t)}
 							</button>
 						))}
 					</div>

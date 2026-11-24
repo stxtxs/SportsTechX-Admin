@@ -10,6 +10,7 @@ import { FilterBar, FilterSelect } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { refundStatusLabel } from '@/lib/labels';
 
 /**
  * Refunds owed after an in-app downgrade.
@@ -43,7 +44,6 @@ interface RefundRequest {
 interface Resp { data: RefundRequest[]; total: number; totalPages: number }
 
 const STATUSES = ['pending', 'refunded', 'rejected', 'failed'] as const;
-const STATUS_LABEL: Record<string, string> = { pending: 'Waiting', refunded: 'Refunded', rejected: 'Rejected', failed: 'Failed' };
 const statusChip: Record<string, string> = { pending: 'warn', refunded: 'on', rejected: '', failed: 'bad' };
 
 const money = (cents: number, ccy: string) =>
@@ -102,14 +102,14 @@ export default function RefundsPage() {
 				/>
 				<FilterSelect
 					ariaLabel="Status" value={status} onChange={f(setStatus)} allLabel="All statuses"
-					options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+					options={STATUSES.map((s) => ({ value: s, label: refundStatusLabel(s) }))}
 				/>
 				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
 			<div className="card" ref={cols.ref}>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
-					{data ? `${data.total.toLocaleString()} refund${data.total === 1 ? '' : 's'}${status ? ` · ${STATUS_LABEL[status] ?? status}` : ''}${search ? ' matching the search' : ''}` : 'Loading…'} · click a column header to sort
+					{data ? `${data.total.toLocaleString()} refund${data.total === 1 ? '' : 's'}${status ? ` · ${refundStatusLabel(status)}` : ''}${search ? ' matching the search' : ''}` : 'Loading…'} · click a column header to sort
 					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
 </div>
 				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No refunds match the search.' : 'Nothing to refund.'} onRetry={() => void mutate()}>
@@ -146,7 +146,7 @@ export default function RefundsPage() {
 										{r.basis ? `${r.basis.days_remaining} of ${r.basis.days_total} days` : '—'}
 									</td>
 									<td>
-										<span className={`chip ${statusChip[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
+										<span className={`chip ${statusChip[r.status] ?? ''}`}>{refundStatusLabel(r.status)}</span>
 										{r.failure_reason && (
 											<div style={{ fontSize: 11, color: 'var(--fg-muted)', maxWidth: 240 }}>{r.failure_reason}</div>
 										)}

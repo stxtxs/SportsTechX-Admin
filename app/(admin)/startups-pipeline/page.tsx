@@ -5,7 +5,7 @@ import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Check, X, Trash2, Upload, Rocket, RefreshCw, Eye, Pencil, Undo2, Download } from 'lucide-react';
 import { api, fetchAllPages } from '@/lib/api';
-import { tidy } from '@/lib/labels';
+import { businessModelLabel, enrichmentStatusLabel, pipelineStatusLabel, tidy } from '@/lib/labels';
 import { downloadCsv } from '@/components/csv-import';
 import { qk } from '@/lib/query-keys';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
@@ -149,7 +149,7 @@ export default function StartupsPipelinePage() {
 			const { rows, capped } = await fetchAllPages<Entry>('/api/admin/startups-pipeline', params);
 			downloadCsv('startups-to-add.csv',
 				['Added', 'Name', 'Website', 'HQ city', 'HQ country', 'Source', 'Status', 'Enrichment', 'Assigned to'],
-				rows.map((e) => [e.created_at.slice(0, 10), e.name, e.website ?? '', e.hq_city ?? '', e.hq_country ?? '', e.source ?? '', tidy(e.status), tidy(e.enrichment_status), e.assigned_to ? adminName(e.assigned_to) : '']));
+				rows.map((e) => [e.created_at.slice(0, 10), e.name, e.website ?? '', e.hq_city ?? '', e.hq_country ?? '', e.source ?? '', pipelineStatusLabel(e.status), enrichmentStatusLabel(e.enrichment_status), e.assigned_to ? adminName(e.assigned_to) : '']));
 			toast.success(`Exported ${rows.length.toLocaleString()} row${rows.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
 		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
 	};
@@ -261,10 +261,10 @@ export default function StartupsPipelinePage() {
 									<td title={e.website ? (e.enrichment_error ?? undefined) : 'Enrichment needs a website — add one with Edit'}>
 										{!e.website && e.enrichment_status !== 'enriched'
 											? <Tag>no website</Tag>
-											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{tidy(e.enrichment_status)}</Tag>}
+											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(e.enrichment_status)}</Tag>}
 									</td>
 									<td>{adminName(e.assigned_to)}</td>
-									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{tidy(e.status)}</Tag></td>
+									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{pipelineStatusLabel(e.status)}</Tag></td>
 									<td style={{ textAlign: 'right' }}>
 										<div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
 											<button className="btn ghost" title="View enriched data" onClick={() => setViewing(e)}><Eye size={12} /></button>
@@ -510,7 +510,7 @@ function ViewModal({ row, onClose }: { row: Entry; onClose: () => void }) {
 	const kw = Array.isArray(raw.keywords) ? (raw.keywords as unknown[]).join(', ') : '';
 	const notEnriched = !!data && data.enrichment_status !== 'enriched' && !data.apollo_raw;
 	const fields: Array<[string, React.ReactNode]> = data ? [
-		['Enrichment', <Tag key="e" variant={data.enrichment_status === 'enriched' ? 'pos' : data.enrichment_status === 'failed' ? 'warn' : ''}>{data.enrichment_status}</Tag>],
+		['Enrichment', <Tag key="e" variant={data.enrichment_status === 'enriched' ? 'pos' : data.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(data.enrichment_status)}</Tag>],
 		['Description', val(data.description)],
 		['HQ', val([data.hq_city, raw.state, data.hq_country].filter(Boolean).join(', '))],
 		['Founded (Apollo)', val(raw.founded_year)],
@@ -558,7 +558,7 @@ function SuggestionChips({ s }: { s: Suggestions }) {
 		['Sectors', s.sectors ?? []],
 		['Tech', s.tech_tags ?? []],
 		['Sports', s.sports ?? []],
-		['Model', s.business_model ? [s.business_model.toUpperCase()] : []],
+		['Model', s.business_model ? [businessModelLabel(s.business_model)] : []],
 	].filter(([, v]) => v.length) as Array<[string, string[]]>;
 	if (!groups.length) return null;
 	return (

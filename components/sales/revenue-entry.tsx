@@ -12,6 +12,7 @@ import { Field } from '@/components/tabbed-form';
 import { AsyncState, StatCard, Pager, SortableTh } from '@/components/atoms';
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { Select } from '@/components/select';
+import { tidy } from '@/lib/labels';
 
 // Sales Entry — CRUD over sales_revenue (ported from revenue-entry-tab). Add
 // form (with graceful Attio company search) + bulk CSV import + a
@@ -106,7 +107,7 @@ export function RevenueEntry() {
 			<FilterBar>
 				<input className="search-input" style={{ flex: '0 0 220px', height: 32 }} placeholder="Search company / client / email…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
 				<FilterSelect ariaLabel="Product" value={product} onChange={(v) => { setProduct(v); setPage(1); }} allLabel="All products" options={(opts.data?.products ?? []).map((p) => ({ value: p.id, label: p.name }))} />
-				<FilterSelect ariaLabel="Segment" value={segment} onChange={(v) => { setSegment(v); setPage(1); }} allLabel="All segments" options={(opts.data?.audience_segments ?? []).map((s) => ({ value: s, label: s }))} />
+				<FilterSelect ariaLabel="Segment" value={segment} onChange={(v) => { setSegment(v); setPage(1); }} allLabel="All segments" options={(opts.data?.audience_segments ?? []).map((s) => ({ value: s, label: tidy(s) }))} />
 				<input className="search-input" type="date" style={{ height: 32 }} value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} aria-label="From" />
 				<input className="search-input" type="date" style={{ height: 32 }} value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} aria-label="To" />
 				{anyFilter && <button className="btn ghost" onClick={() => { setSearch(''); setProduct(''); setSegment(''); setFrom(''); setTo(''); setPage(1); }}><X size={12} /> Clear</button>}
@@ -139,7 +140,7 @@ export function RevenueEntry() {
 									<tr key={r.id}>
 										<td>{fmtDate(r.invoice_date)}</td>
 										<td>{r.product_name ?? '—'}</td>
-										<td style={{ textTransform: 'capitalize' }}>{r.audience_segment ?? '—'}</td>
+										<td>{tidy(r.audience_segment)}</td>
 										<td>{r.client_website
 											? <a href={r.client_website.startsWith('http') ? r.client_website : `https://${r.client_website}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>{r.company_name ?? '—'}</a>
 											: (r.company_name ?? '—')}</td>

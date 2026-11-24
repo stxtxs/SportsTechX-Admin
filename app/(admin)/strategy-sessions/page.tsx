@@ -111,7 +111,7 @@ export default function StrategySessionsPage() {
 									<td style={{ whiteSpace: 'nowrap', color: 'var(--fg-muted)', fontSize: 12 }}>{r.booked_at ? new Date(r.booked_at).toLocaleDateString() : '—'}</td>
 									<td style={{ fontSize: 13 }}>{r.company_name ?? '—'}</td>
 									<td style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{r.founder_email ?? '—'}</td>
-									<td><span className={`chip ${r.scheduled_at ? 'on' : 'warn'}`}>{r.scheduled_at ? 'confirmed' : 'requested'}</span></td>
+									<td><span className={`chip ${r.scheduled_at ? 'on' : 'warn'}`}>{r.scheduled_at ? 'Confirmed' : 'Requested'}</span></td>
 									<td>
 										<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 											<input

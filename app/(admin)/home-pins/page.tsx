@@ -7,6 +7,7 @@ import { Pin, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader, Section, AsyncState, Tag } from '@/components/atoms';
 import { useConfirm } from '@/components/confirm';
+import { tidy } from '@/lib/labels';
 
 /**
  * SportsTechX pins: pinned to every user's Home ("Latest from Atlas", first). A user can unpin one and
@@ -90,7 +91,7 @@ export default function HomePinsAdminPage() {
 									{rows.map((p) => (
 										<tr key={p.key}>
 											<td><div style={{ fontWeight: 600 }}>{p.title}</div>{p.body && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{p.body}</div>}</td>
-											<td><Tag>{p.kind}</Tag></td>
+											<td><Tag>{tidy(p.kind)}</Tag></td>
 											<td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.href}</td>
 											<td>{new Date(p.pinned_at).toLocaleDateString(undefined, { month: 'short', day: '2-digit', year: 'numeric' })}</td>
 											<td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} title="Unpin for everyone" onClick={() => void unpin(p)}><Trash2 size={12} /></button></td>

@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, ExternalLink, Mail, MailCheck } from 'lucide-react';
@@ -16,6 +17,7 @@ import { SectorCascade, LocationFields, EMPTY_LOCATION, type LocationValue } fro
 import { YearSelect } from '@/components/year-select';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { activeFlagLabel, businessModelLabel, claimStatusLabel, claimTypeLabel, entityTypeLabel, investorCategoryLabel, tidy } from '@/lib/labels';
 
 type ClaimStatus = 'pending' | 'picked_up' | 'verified' | 'rejected';
 interface QueueStats { claims: { pending: number; picked_up: number; verified: number; rejected: number } }
@@ -51,6 +53,16 @@ interface Claim {
 
 /** The report page lives in the Atlas app, not the admin panel. */
 const ATLAS_BASE = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
+
+/** The claimed record's admin page (company edit form, investor edit form, ecosystem entry). */
+const entityHref = (cl: Claim): string | null => {
+	if (!cl.entity_id) return null;
+	if (cl.claim_type === 'company') return `/companies?edit=${cl.entity_id}`;
+	if (cl.claim_type === 'investor') return `/ecosystem?tab=investors&edit=${cl.entity_id}`;
+	// The claims list doesn't return the ecosystem entry's type (program/event/…); its detail opens by id.
+	return `/ecosystem?open=${cl.entity_id}`;
+};
+const linkStyle = { color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 2 } as const;
 
 const TYPE_FILTERS = [
 	{ label: 'Companies', value: 'company' },
@@ -139,16 +151,15 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 	// Old-admin layout: Pending (unverified, not rejected) + Completed.
 	const pending = claims;
 	const completed = done.data?.data ?? [];
-	const typeLabel = (cl: Claim) => cl.claim_type === 'company' ? 'Companies' : cl.claim_type === 'investor' ? 'Investors' : cl.claim_type === 'ecosystem_entity' ? 'Ecosystem' : cl.claim_type;
 
 	const claimsHead = (
 		<thead>
 			<tr>
-				<SortableTh label="Company" field="name" sort={sort} onSort={f(setSort)} />
+				<SortableTh label="Claimed" field="name" sort={sort} onSort={f(setSort)} />
 				<SortableTh label="Contact" field="contact" sort={sort} onSort={f(setSort)} />
 				<SortableTh label="Type" field="type" sort={sort} onSort={f(setSort)} />
 				<th style={{ textAlign: 'center' }}>Verified</th>
-				<th style={{ textAlign: 'center' }}>Actively&nbsp;Raising</th>
+				<th style={{ textAlign: 'center' }}>Actively raising / investing</th>
 				<SortableTh label="Picked Up By" field="picked_up_by" sort={sort} onSort={f(setSort)} />
 				<SortableTh label="Sent" field="sent" sort={sort} onSort={f(setSort)} />
 				<th style={{ textAlign: 'center' }}>Notify</th>
@@ -165,7 +176,9 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 							{expandedId === cl.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
 						</button>
 						<div style={{ minWidth: 0 }}>
-							<div style={{ fontWeight: 600, fontSize: 12 }}>{cl.entity_name ?? cl.entity_id ?? '—'}</div>
+							<div style={{ fontWeight: 600, fontSize: 12 }}>
+								{entityHref(cl) ? <Link href={entityHref(cl)!} style={linkStyle} title="Open the record">{cl.entity_name ?? 'Unnamed record'}</Link> : (cl.entity_name ?? '—')}
+							</div>
 							{cl.target_website_snapshot && (
 								<a href={cl.target_website_snapshot.startsWith('http') ? cl.target_website_snapshot : `https://${cl.target_website_snapshot}`} target="_blank" rel="noopener noreferrer"
 									style={{ fontSize: 11, color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -176,13 +189,13 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 					</div>
 				</td>
 				<td style={{ fontSize: 12 }}>
-					{cl.claimant_name && <div>{cl.claimant_name}</div>}
-					<div style={{ color: 'var(--fg-muted)' }}>{cl.claimant_email ?? cl.company_email ?? '—'}</div>
+					{cl.claimant_name && <div>{cl.profile_id ? <Link href={`/users/${cl.profile_id}`} style={linkStyle} title="Open the user">{cl.claimant_name}</Link> : cl.claimant_name}</div>}
+					<div style={{ color: 'var(--fg-muted)' }}>{cl.profile_id && !cl.claimant_name && cl.claimant_email ? <Link href={`/users/${cl.profile_id}`} style={linkStyle} title="Open the user">{cl.claimant_email}</Link> : (cl.claimant_email ?? cl.company_email ?? '—')}</div>
 					{cl.position_at_company && <div style={{ color: 'var(--fg-muted)' }}>{cl.position_at_company}</div>}
 				</td>
 				<td>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-						<span className="tag">{typeLabel(cl)}</span>
+						<span className="tag">{claimTypeLabel(cl.claim_type)}</span>
 						{cl.new_entry_request && <span className="tag warn">New Entry</span>}
 						{(cl.entity_verified_count ?? 0) > 0 && (
 							<span className="tag" title={`${cl.entity_verified_count} other ${cl.entity_verified_count === 1 ? 'person is' : 'people are'} already verified for this entity — verifying this one adds another.`}>
@@ -206,7 +219,7 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 				<td style={{ textAlign: 'center' }}>
 					{cl.entity_id && (cl.claim_type === 'company' || cl.claim_type === 'investor') ? (
 						<button className={`tg ${cl.is_actively_raising ? 'on' : ''}`} disabled={pendingId === cl.id}
-							title={cl.claim_type === 'company' ? 'Actively raising' : 'Actively investing'}
+							title={activeFlagLabel(cl.claim_type)}
 							onClick={() => void toggleActive(cl.id, !cl.is_actively_raising)}>
 							<span className="tg-knob" />
 						</button>
@@ -224,10 +237,10 @@ export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
 				<tr>
 					<td colSpan={8} style={{ background: 'var(--bg-2)' }}>
 						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, padding: '4px 4px 10px', fontSize: 12 }}>
-							<div><div className="co-stat-label">Claim type</div>{cl.claim_type}</div>
-							<div><div className="co-stat-label">Target</div>{cl.entity_name ?? cl.entity_id ?? '—'}</div>
+							<div><div className="co-stat-label">Claim type</div>{claimTypeLabel(cl.claim_type)} · {claimStatusLabel(cl.status)}</div>
+							<div><div className="co-stat-label">Claimed</div>{entityHref(cl) ? <Link href={entityHref(cl)!} style={{ color: 'var(--accent)' }}>{cl.entity_name ?? 'Unnamed record'} ↗</Link> : (cl.entity_name ?? '—')}</div>
 							<div><div className="co-stat-label">Position</div>{cl.position_at_company ?? '—'}</div>
-							<div><div className="co-stat-label">Claimant</div>{cl.claimant_name ?? '—'}</div>
+							<div><div className="co-stat-label">Claimant</div>{cl.profile_id ? <Link href={`/users/${cl.profile_id}`} style={{ color: 'var(--accent)' }}>{cl.claimant_name ?? cl.claimant_email ?? 'Open user'} ↗</Link> : (cl.claimant_name ?? '—')}</div>
 							<div><div className="co-stat-label">Claimant email</div>{cl.claimant_email ?? '—'}</div>
 							<div><div className="co-stat-label">Company email</div>{cl.company_email ?? '—'}</div>
 							<div><div className="co-stat-label">Submitted</div>{new Date(cl.created_at).toLocaleString()}</div>
@@ -391,7 +404,7 @@ function EntryBadge({ id, details }: { id: unknown; details: unknown }) {
 function EntryDetails({ id, details }: { id: unknown; details: unknown }) {
 	if (id || !details || typeof details !== 'object') return null;
 	const d = details as Row;
-	const parts = [str(d.website), [str(d.hq_city), str(d.hq_country)].filter(Boolean).join(', '), str(d.category).replace(/_/g, ' '), str(d.founded_year) && `founded ${str(d.founded_year)}`].filter(Boolean);
+	const parts = [str(d.website), [str(d.hq_city), str(d.hq_country)].filter(Boolean).join(', '), d.category ? investorCategoryLabel(str(d.category)) : '', str(d.founded_year) && `founded ${str(d.founded_year)}`].filter(Boolean);
 	return (
 		<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 2 }}>
 			{parts.join(' · ')}{d.description ? <> — {str(d.description)}</> : null}
@@ -448,7 +461,7 @@ function SubmittedEntries({ claimId, verified }: { claimId: string; verified: bo
 				{head('M&A')}
 				{mna.map((m, i) => (
 					<div key={i} style={line}>
-						<span style={{ marginRight: 6 }}>{[str(m.deal_type), str(m.counterparty)].filter(Boolean).join(' — ')}</span><EntryBadge id={m.counterparty_company_id} details={m.new_counterparty} />
+						<span style={{ marginRight: 6 }}>{[m.deal_type ? tidy(str(m.deal_type)) : '', str(m.counterparty)].filter(Boolean).join(' — ')}</span><EntryBadge id={m.counterparty_company_id} details={m.new_counterparty} />
 						<EntryDetails id={m.counterparty_company_id} details={m.new_counterparty} />
 					</div>
 				))}
@@ -532,7 +545,7 @@ function DeckAnalysisPanel({ claimId }: { claimId: string }) {
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
 						<div><div className="co-stat-label">Stage</div>{a.stage ?? '—'}</div>
 						<div><div className="co-stat-label">Raising</div>{a.raise_amount_usd ? `$${Number(a.raise_amount_usd).toLocaleString()}` : '—'}</div>
-						<div><div className="co-stat-label">Business model</div>{a.business_model ?? '—'}</div>
+						<div><div className="co-stat-label">Business model</div>{a.business_model ? businessModelLabel(a.business_model) : '—'}</div>
 						<div><div className="co-stat-label">Team</div>{a.team_summary ?? '—'}</div>
 						<div style={{ gridColumn: '1 / -1' }}><div className="co-stat-label">Traction</div>{a.traction_summary ?? '—'}</div>
 						<div style={{ gridColumn: '1 / -1' }}><div className="co-stat-label">Market</div>{a.market_summary ?? '—'}</div>
@@ -677,7 +690,7 @@ function CreateEntityPanel({ claim, onDone }: { claim: Claim; onDone: () => void
 	return (
 		<div style={{ padding: '4px 4px 12px', display: 'grid', gap: 10 }}>
 			<div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>
-				This is a <strong>new {kind.replace('_', ' ')}</strong> request — review &amp; edit, then create it as a live record.
+				This is a <strong>new {claimTypeLabel(kind).toLowerCase()}</strong> request — review &amp; edit, then create it as a live record.
 			</div>
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
 				{L('Name', <input className="search-input" value={name} onChange={(e) => setName(e.target.value)} />)}
@@ -687,13 +700,13 @@ function CreateEntityPanel({ claim, onDone }: { claim: Claim; onDone: () => void
 			<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
 				{kind === 'company' && L('Sector', <SectorCascade value={sectorId} onChange={setSectorId} />)}
 				{kind === 'company' && L('Business model', (
-					<Select value={businessModel} onChange={setBusinessModel} width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...BUSINESS_MODELS.map((m) => ({ value: m, label: m.toUpperCase() }))]} />
+					<Select value={businessModel} onChange={setBusinessModel} width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...BUSINESS_MODELS.map((m) => ({ value: m, label: businessModelLabel(m) }))]} />
 				))}
 				{kind === 'investor' && L('Category', (
-					<Select value={category} onChange={setCategory} width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...INVESTOR_CATEGORIES.map((c) => ({ value: c, label: c.replace(/_/g, ' ') }))]} />
+					<Select value={category} onChange={setCategory} width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...INVESTOR_CATEGORIES.map((c) => ({ value: c, label: investorCategoryLabel(c) }))]} />
 				))}
 				{kind === 'ecosystem_entity' && L('Type', (
-					<Select value={entityType} onChange={setEntityType} width="100%" style={{ display: 'block', width: '100%' }} options={ECOSYSTEM_TYPES.map((t) => ({ value: t, label: t }))} />
+					<Select value={entityType} onChange={setEntityType} width="100%" style={{ display: 'block', width: '100%' }} options={ECOSYSTEM_TYPES.map((t) => ({ value: t, label: entityTypeLabel(t) }))} />
 				))}
 				{kind === 'ecosystem_entity' && L('Category', <input className="search-input" value={category} onChange={(e) => setCategory(e.target.value)} />)}
 				{L(kind === 'investor' ? 'Year launched' : 'Founded year', <YearSelect value={year} onChange={setYear} />)}
@@ -717,7 +730,7 @@ function CreateEntityPanel({ claim, onDone }: { claim: Claim; onDone: () => void
 			)}
 			<div style={{ display: 'flex', justifyContent: 'flex-end' }}>
 				<button className="btn" disabled={pending || !name.trim()} onClick={() => void submit()}>
-					{pending ? 'Creating…' : `Create & verify ${kind.replace('_', ' ')}`}
+					{pending ? 'Creating…' : `Create & verify ${claimTypeLabel(kind).toLowerCase()}`}
 				</button>
 			</div>
 		</div>

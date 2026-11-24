@@ -45,7 +45,9 @@ const Label = ({ children, aside }: { children: React.ReactNode; aside?: React.R
 const parseRecipients = (s: string) => [...new Set(s.split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))];
 
 export default function EmailsPage() {
-	const [tab, setTab] = useState<'send' | 'log'>('send');
+	const [tabRaw, setTabRaw] = useUrlState('em', 'tab', 'send');
+	const tab: 'send' | 'log' = tabRaw === 'log' ? 'log' : 'send';
+	const setTab = (t: 'send' | 'log') => setTabRaw(t);
 	const [batch, setBatch] = useState<string | undefined>();
 	return (
 		<div>

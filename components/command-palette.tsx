@@ -30,6 +30,7 @@ export function CommandPalette() {
 	const [loading, setLoading] = useState(false);
 	const input = useRef<HTMLInputElement>(null);
 	const list = useRef<HTMLDivElement>(null);
+	const wrap = useRef<HTMLDivElement>(null);
 	const term = useDebouncedValue(q.trim(), 200);
 
 	// Shortcuts: ⌘K / Ctrl+K anywhere; "/" when not typing somewhere.
@@ -42,6 +43,12 @@ export function CommandPalette() {
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
 	}, []);
+	useEffect(() => {
+		if (!open) return;
+		const onDown = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+		document.addEventListener('mousedown', onDown);
+		return () => document.removeEventListener('mousedown', onDown);
+	}, [open]);
 	useEffect(() => {
 		if (open) { setSel(0); setTimeout(() => input.current?.focus(), 0); }
 		else { setQ(''); setResults({}); }
@@ -87,58 +94,66 @@ export function CommandPalette() {
 		else if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
 	};
 
+	// Group the flat, keyboard-ordered rows under their type for display.
+	const groups = KINDS.map(([, label]) => ({ label, items: rows.map((h, i) => ({ h, i })).filter((r) => r.h.kind === label) })).filter((g) => g.items.length);
+
 	return (
-		<>
-			<button type="button" className="cmd-trigger admin-search-trigger" onClick={() => setOpen(true)} aria-label="Search the admin (Ctrl+K)">
-				<Search size={14} />
-				<span>Search users, companies, deals, pages…</span>
-				<span className="kbd">Ctrl K</span>
-			</button>
+		<div className="adm-search" ref={wrap}>
+			{open ? (
+				<div className="adm-search-box is-open">
+					<Search size={15} aria-hidden />
+					<input
+						ref={input}
+						value={q}
+						onChange={(e) => setQ(e.target.value)}
+						onKeyDown={onKeyDown}
+						placeholder="Search users, companies, investors, deals, reports, pages…"
+						aria-label="Search the admin"
+						role="combobox"
+						aria-expanded
+						aria-controls="adm-search-results"
+					/>
+					<kbd className="adm-kbd">Esc</kbd>
+				</div>
+			) : (
+				<button type="button" className="adm-search-box admin-search-trigger" onClick={() => setOpen(true)} aria-label="Search the admin (Ctrl+K)">
+					<Search size={15} aria-hidden />
+					<span className="adm-search-ph">Search users, companies, deals, pages…</span>
+					<kbd className="adm-kbd">Ctrl K</kbd>
+				</button>
+			)}
 			{open && (
-				<div className="cmd-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
-					<div className="cmd-modal" role="dialog" aria-modal="true" aria-label="Search the admin">
-						<input
-							ref={input}
-							className="cmd-input"
-							value={q}
-							onChange={(e) => setQ(e.target.value)}
-							onKeyDown={onKeyDown}
-							placeholder="Search users, companies, investors, deals, reports, claims, pages…"
-							aria-label="Search"
-						/>
-						<div className="cmd-list" ref={list} role="listbox">
-							{rows.map((h, i) => (
+				<div className="adm-search-pop" id="adm-search-results" role="listbox" ref={list}>
+					{groups.map((g) => (
+						<div key={g.label} className="adm-search-group">
+							<div className="adm-search-group-label">{g.label === 'Ecosystem' ? 'Ecosystem' : `${g.label}s`}</div>
+							{g.items.map(({ h, i }) => (
 								<div
 									key={`${h.kind}:${h.id}`}
 									data-row={i}
 									role="option"
 									aria-selected={i === sel}
-									className={`cmd-row${i === sel ? ' sel' : ''}`}
+									className={`adm-search-row${i === sel ? ' sel' : ''}`}
 									onMouseEnter={() => setSel(i)}
 									onMouseDown={(e) => { e.preventDefault(); go(h); }}
 								>
-									<div style={{ minWidth: 0 }}>
-										<div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.title}</div>
-										{h.sub && <div style={{ fontSize: 11, opacity: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.sub}</div>}
-									</div>
-									<span className="cmd-cat">{h.kind}</span>
+									<div className="adm-search-title">{h.title}</div>
+									{h.sub && <div className="adm-search-sub">{h.sub}</div>}
 								</div>
 							))}
-							{!rows.length && (
-								<div style={{ padding: '14px', fontSize: 13, color: 'var(--fg-muted)' }}>
-									{loading ? 'Searching…' : q.trim().length < 2 ? 'Type at least 2 characters.' : 'Nothing found.'}
-								</div>
-							)}
 						</div>
-						<div style={{ display: 'flex', gap: 14, padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--fg-muted)' }}>
-							<span><span className="kbd" style={{ marginLeft: 0 }}>↑↓</span> move</span>
-							<span><span className="kbd" style={{ marginLeft: 0 }}>Enter</span> open</span>
-							<span><span className="kbd" style={{ marginLeft: 0 }}>Esc</span> close</span>
-							<span style={{ marginLeft: 'auto' }}>{loading ? 'Searching…' : ''}</span>
-						</div>
+					))}
+					{!rows.length && (
+						<div className="adm-search-empty">{loading ? 'Searching…' : q.trim().length < 2 ? 'Type at least 2 characters to search records.' : `Nothing matches “${q.trim()}”.`}</div>
+					)}
+					<div className="adm-search-foot">
+						<span><kbd className="adm-kbd">↑</kbd><kbd className="adm-kbd">↓</kbd> move</span>
+						<span><kbd className="adm-kbd">Enter</kbd> open</span>
+						<span><kbd className="adm-kbd">Esc</kbd> close</span>
+						{loading && <span style={{ marginLeft: 'auto' }}>Searching…</span>}
 					</div>
 				</div>
 			)}
-		</>
+		</div>
 	);
 }

@@ -10,7 +10,7 @@ import { PageHeader, StatCard, StatsPanel, Section, AsyncState, Pager, SortableT
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
-import { tierLabel } from '@/lib/labels';
+import { aiProviderLabel, tidy, tierLabel } from '@/lib/labels';
 import { ComboBarLine } from '@/components/charts';
 
 /**
@@ -216,8 +216,8 @@ export default function AiUsagePage() {
 					<tbody>
 						{byFeature.map((r) => (
 							<tr key={`${r.feature}:${r.provider}`}>
-								<td title={r.feature}>{r.label ?? r.feature}</td>
-								<td style={{ color: 'var(--fg-muted)' }}>{r.provider}</td>
+								<td title={r.feature}>{r.label ?? tidy(r.feature)}</td>
+								<td style={{ color: 'var(--fg-muted)' }}>{aiProviderLabel(r.provider)}</td>
 								<td className="num">{num(r.calls)}</td>
 								<td className="num">{num(r.tokens)}</td>
 								<td className="num">{usd(r.usd)}</td>
@@ -249,7 +249,7 @@ export default function AiUsagePage() {
 									<tr key={`${m.provider}:${m.model}`}>
 										<td>
 											<div style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{m.model}</div>
-											<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{m.provider}</div>
+											<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{aiProviderLabel(m.provider)}</div>
 										</td>
 										<td className="num" style={{ textAlign: 'right' }}>{num(m.calls)}</td>
 										<td className="num" style={{ textAlign: 'right', color: 'var(--fg-muted)' }}>{num(m.tokens)}</td>
@@ -335,7 +335,7 @@ export default function AiUsagePage() {
 									<td style={{ whiteSpace: 'nowrap', color: 'var(--fg-muted)', fontSize: 12 }}>
 										{new Date(r.created_at).toLocaleString()}
 									</td>
-									<td title={r.feature}>{r.feature_label ?? r.feature}</td>
+									<td title={r.feature}>{r.feature_label ?? tidy(r.feature)}</td>
 									<td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{r.model}</td>
 									<td className="num">{num(r.input_tokens)}</td>
 									<td className="num">{num(r.output_tokens)}</td>
@@ -503,7 +503,7 @@ function ModelRow({ initial, isNew, onSaved }: { initial: PricingModel; isNew?: 
 	};
 	return (
 		<tr>
-			<td>{isNew ? <input className="search-input" style={{ width: 100, height: 28 }} value={m.provider} onChange={(e) => set('provider', e.target.value)} /> : m.provider}</td>
+			<td>{isNew ? <input className="search-input" style={{ width: 100, height: 28 }} value={m.provider} onChange={(e) => set('provider', e.target.value)} /> : aiProviderLabel(m.provider)}</td>
 			<td>{isNew ? <input className="search-input" style={{ width: 160, height: 28 }} placeholder="model id" value={m.model} onChange={(e) => set('model', e.target.value)} /> : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{m.model}</span>}</td>
 			<td>{numInput('input_usd_per_mtok')}</td>
 			<td>{numInput('output_usd_per_mtok')}</td>

@@ -9,7 +9,7 @@ import { PageHeader, Section, StatCard, AsyncState, Tag, Pager, SortableTh } fro
 import { FilterSelect, StatStrip } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
-import { tidy } from '@/lib/labels';
+import { jobStatusLabel as statusLabel, tidy } from '@/lib/labels';
 import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface JobRow {
@@ -35,8 +35,6 @@ interface HistoryResp {
 const STATUS_TONE: Record<string, '' | 'pos' | 'neg' | 'warn'> = {
 	completed: 'pos', failed: 'neg', stuck: 'neg', pending: 'warn', running: '',
 };
-const JOB_STATUS_LABEL: Record<string, string> = { pending: 'Waiting', running: 'Running', completed: 'Done', failed: 'Failed', stuck: 'Stuck' };
-const statusLabel = (s: string) => JOB_STATUS_LABEL[s] ?? tidy(s);
 const secs = (n: number | null): string => {
 	if (n == null) return '—';
 	if (n < 60) return `${n}s`;
@@ -214,7 +212,7 @@ export default function JobsPage() {
 								<tbody>
 									{byQueue.map((q) => (
 										<tr key={q.queue_name}>
-											<td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{q.queue_name}</td>
+											<td style={{ fontSize: 12 }} title={q.queue_name}>{tidy(q.queue_name)}</td>
 											<td className="num" style={{ textAlign: 'right' }}>{q.total.toLocaleString()}</td>
 											<td className="num" style={{ textAlign: 'right', color: 'var(--pos)' }}>{q.completed.toLocaleString()}</td>
 											<td className="num" style={{ textAlign: 'right', color: q.open > 0 ? 'var(--accent)' : 'var(--fg-muted)' }}>
@@ -235,7 +233,7 @@ export default function JobsPage() {
 				<div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
 					<input className="search-input" style={{ flex: '0 0 220px', height: 30 }} placeholder="Search queue, job or entity id…" aria-label="Search job runs"
 						value={q} onChange={(e) => f(setQ)(e.target.value)} />
-					<FilterSelect ariaLabel="Queue" value={queue} onChange={f(setQueue)} allLabel="All queues" options={byQueue.map((b) => ({ value: b.queue_name, label: b.queue_name }))} />
+					<FilterSelect ariaLabel="Queue" value={queue} onChange={f(setQueue)} allLabel="All queues" options={byQueue.map((b) => ({ value: b.queue_name, label: tidy(b.queue_name) }))} />
 					<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Status</span>
 					<button className={`chip ${status === '' ? 'on' : ''}`} onClick={() => f(setStatus)('')}>All</button>
 					{byStatus.map((b) => (
@@ -262,10 +260,10 @@ export default function JobsPage() {
 								{rows.map((r) => (
 									<tr key={r.id}>
 										<td>
-											<div style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.queue_name}</div>
+											<div style={{ fontSize: 12 }} title={r.queue_name}>{tidy(r.queue_name)}</div>
 											{r.entity_type && (
 												<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-													{r.entity_type}{r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
+													{tidy(r.entity_type)}{r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
 												</div>
 											)}
 										</td>

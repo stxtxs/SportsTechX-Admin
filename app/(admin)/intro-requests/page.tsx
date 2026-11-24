@@ -10,6 +10,7 @@ import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { PageHeader, AsyncState, SortableTh, Pager } from '@/components/atoms';
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { introStatusLabel } from '@/lib/labels';
 
 interface IntroRequest {
 	id: string;
@@ -25,7 +26,6 @@ interface IntroRequest {
 interface Resp { data: IntroRequest[]; total: number; totalPages: number }
 
 const STATUSES = ['requested', 'sent', 'declined'] as const;
-const STATUS_LABEL: Record<string, string> = { requested: 'Waiting', sent: 'Introduced', declined: 'Declined' };
 const statusChip: Record<string, string> = { requested: 'warn', sent: 'on', declined: '' };
 
 export default function IntroRequestsPage() {
@@ -51,7 +51,7 @@ export default function IntroRequestsPage() {
 		setPending(id);
 		try {
 			await api('PATCH', `/api/admin/intro-requests/${id}`, { status: next });
-			toast.success(`Marked ${STATUS_LABEL[next] ?? next}`);
+			toast.success(`Marked ${introStatusLabel(next).toLowerCase()}`);
 			void mutate();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(null); }
@@ -72,7 +72,7 @@ export default function IntroRequestsPage() {
 					placeholder="Search founder / investor / company…" aria-label="Search intro requests" value={search}
 					onChange={(e) => f(setSearch)(e.target.value)}
 				/>
-				<FilterSelect ariaLabel="Status" value={status} onChange={f(setStatus)} allLabel="All statuses" options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))} />
+				<FilterSelect ariaLabel="Status" value={status} onChange={f(setStatus)} allLabel="All statuses" options={STATUSES.map((s) => ({ value: s, label: introStatusLabel(s) }))} />
 				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
@@ -105,7 +105,7 @@ export default function IntroRequestsPage() {
 									<td>{r.investor_name ?? '—'}</td>
 									<td style={{ color: 'var(--fg-2)' }}>{r.company_name ?? '—'}</td>
 									<td style={{ maxWidth: 280, fontSize: 12, color: 'var(--fg-2)' }}>{r.note ?? '—'}</td>
-									<td><span className={`chip ${statusChip[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span></td>
+									<td><span className={`chip ${statusChip[r.status] ?? ''}`}>{introStatusLabel(r.status)}</span></td>
 									<td>
 										<div style={{ display: 'flex', gap: 6 }}>
 											<button className="btn" disabled={pending === r.id || r.status === 'sent'} onClick={() => void setStatusFor(r.id, 'sent')}>Sent</button>

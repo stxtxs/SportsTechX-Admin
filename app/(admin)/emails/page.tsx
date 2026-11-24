@@ -12,6 +12,7 @@ import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { useConfirm } from '@/components/confirm';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { emailDeliveryLabel, emailProviderLabel, emailStatusLabel, tidy } from '@/lib/labels';
 
 interface Field { key: string; label: string; multiline?: boolean }
 interface BuiltIn { id: string; label: string; subject: string; fields: Field[] }
@@ -219,9 +220,9 @@ function Compose({ onSent }: { onSent: (batchId: string) => void }) {
 
 const PAGE = 50;
 
-const EMAIL_STATUS: Record<string, string> = { pending: 'Waiting to send', sending: 'Sending', sent: 'Sent', failed: 'Failed', stuck: 'Stuck' };
-const EMAIL_DELIVERY: Record<string, string> = { delivered: 'Delivered', bounced: 'Bounced', complained: 'Marked as spam', delayed: 'Delayed', rejected: 'Rejected' };
-const EMAIL_PROVIDER: Record<string, string> = { ses: 'Amazon SES', resend: 'Resend' };
+const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed', 'stuck'];
+const EMAIL_DELIVERIES = ['delivered', 'bounced', 'complained', 'delayed', 'rejected'];
+const EMAIL_PROVIDERS = ['ses', 'resend'];
 
 function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () => void }) {
 	const cols = useTableColumns('emails');
@@ -262,9 +263,9 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 			<div className="card" ref={cols.ref} style={{ padding: 'var(--space-4)' }}>
 				<FilterBar>
 					<input className="search-input" placeholder="Search recipient, subject or template" style={{ width: 260, height: 32 }} value={q} onChange={(e) => reset(setQ)(e.target.value)} aria-label="Search emails" />
-					<FilterSelect ariaLabel="Status" value={status} onChange={reset(setStatus)} allLabel="Any status" options={Object.entries(EMAIL_STATUS).map(([value, label]) => ({ value, label }))} />
-					<FilterSelect ariaLabel="Sent via" value={provider} onChange={reset(setProvider)} allLabel="Any provider" options={Object.entries(EMAIL_PROVIDER).map(([value, label]) => ({ value, label }))} />
-					<FilterSelect ariaLabel="Delivery" value={delivery} onChange={reset(setDelivery)} allLabel="Any delivery" options={[...Object.entries(EMAIL_DELIVERY).map(([value, label]) => ({ value, label })), { value: 'none', label: 'No report yet' }]} />
+					<FilterSelect ariaLabel="Status" value={status} onChange={reset(setStatus)} allLabel="Any status" options={EMAIL_STATUSES.map((value) => ({ value, label: emailStatusLabel(value) }))} />
+					<FilterSelect ariaLabel="Sent via" value={provider} onChange={reset(setProvider)} allLabel="Any provider" options={EMAIL_PROVIDERS.map((value) => ({ value, label: emailProviderLabel(value) }))} />
+					<FilterSelect ariaLabel="Delivery" value={delivery} onChange={reset(setDelivery)} allLabel="Any delivery" options={[...EMAIL_DELIVERIES.map((value) => ({ value, label: emailDeliveryLabel(value) })), { value: 'none', label: 'No report yet' }]} />
 					<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Queued</span>
 					{dateInput('Queued from', from, setFrom)}<span style={{ color: 'var(--fg-muted)' }}>–</span>{dateInput('Queued to', to, setTo)}
 					{batch && <button className="chip on" onClick={() => { clearBatch(); setPage(1); }} title="Show all emails">This send only ✕</button>}
@@ -293,10 +294,10 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 								<tr key={r.id}>
 									<td style={{ whiteSpace: 'nowrap', fontSize: 12, color: 'var(--fg-muted)' }}>{new Date(r.enqueued_at).toLocaleString()}</td>
 									<td style={{ fontSize: 12 }}>{r.to_email}</td>
-									<td style={{ fontSize: 12.5 }}>{r.subject}<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.template}{r.source === 'admin_email' ? ' · sent by admin' : r.source === 'admin_bulk' ? ' · bulk send by admin' : ''}</div></td>
-									<td><Tag variant={r.status === 'sent' ? 'pos' : r.status === 'failed' ? 'neg' : 'warn'}>{EMAIL_STATUS[r.status] ?? r.status}</Tag></td>
-									<td style={{ fontSize: 12 }}>{r.provider ? EMAIL_PROVIDER[r.provider] ?? r.provider : '—'}</td>
-									<td>{r.delivery_status ? <Tag variant={r.delivery_status === 'delivered' ? 'pos' : r.delivery_status === 'delayed' ? 'warn' : 'neg'}>{EMAIL_DELIVERY[r.delivery_status] ?? r.delivery_status}</Tag> : <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>}</td>
+									<td style={{ fontSize: 12.5 }}>{r.subject}<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{tidy(r.template)}{r.source === 'admin_email' ? ' · sent by admin' : r.source === 'admin_bulk' ? ' · bulk send by admin' : ''}</div></td>
+									<td><Tag variant={r.status === 'sent' ? 'pos' : r.status === 'failed' ? 'neg' : 'warn'}>{emailStatusLabel(r.status)}</Tag></td>
+									<td style={{ fontSize: 12 }}>{emailProviderLabel(r.provider)}</td>
+									<td>{r.delivery_status ? <Tag variant={r.delivery_status === 'delivered' ? 'pos' : r.delivery_status === 'delayed' ? 'warn' : 'neg'}>{emailDeliveryLabel(r.delivery_status)}</Tag> : <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>}</td>
 									<td style={{ fontSize: 11.5, color: 'var(--fg-muted)', maxWidth: 320 }}>{r.delivery_detail ?? r.last_error ?? ''}</td>
 								</tr>
 							))}

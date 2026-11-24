@@ -12,6 +12,7 @@ import { PageHeader, AsyncState, Tag, Loading } from '@/components/atoms';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { YearSelect } from '@/components/year-select';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { tidy } from '@/lib/labels';
 
 const ENTITY_TYPES = ['companies', 'investors', 'deals', 'acquisitions', 'programs', 'events'] as const;
 type EntityType = (typeof ENTITY_TYPES)[number];
@@ -37,7 +38,7 @@ async function searchEntity(type: EntityType, q: string): Promise<Array<{ key: s
 	}
 	if (type === 'deals') {
 		const r = await api<{ data: Array<{ id: string; company_name: string | null }> }>('GET', `/api/deals?q=${enc}&limit=8`);
-		return r.data.map((d) => ({ key: d.id, label: d.company_name ?? d.id }));
+		return r.data.map((d) => ({ key: d.id, label: d.company_name ?? 'Unnamed company' }));
 	}
 	if (type === 'acquisitions') {
 		const r = await api<{ data: Array<{ id: string; acquiree_name: string | null }> }>('GET', `/api/acquisitions?q=${enc}&limit=8`);
@@ -87,12 +88,12 @@ export default function FeaturedListsPage() {
 							{lists.map((l) => (
 								<tr key={l.id}>
 									<td><div style={{ maxWidth: 420 }}><div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>{l.description && <div title={l.description} style={{ fontSize: 11, color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.description}</div>}</div></td>
-									<td style={{ textTransform: 'capitalize' }}>{l.entity_type}</td>
-									<td>{l.filters ? <Tag>filter</Tag> : <Tag variant="pos">manual</Tag>}</td>
+									<td>{tidy(l.entity_type)}</td>
+									<td>{l.filters ? <Tag>Filter-based</Tag> : <Tag variant="pos">Hand-picked</Tag>}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{l.item_count ?? 0}</td>
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{l.year ? `${l.month ? l.month.slice(0, 3) + ' ' : ''}${l.year}` : '—'}</td>
-									<td>{l.show_in_lists ? <Tag variant="pos">in lists</Tag> : <Tag>hidden</Tag>}</td>
-									<td>{l.is_premium ? <Tag variant="warn">premium</Tag> : '—'}</td>
+									<td>{l.show_in_lists ? <Tag variant="pos">In lists</Tag> : <Tag>Hidden</Tag>}</td>
+									<td>{l.is_premium ? <Tag variant="warn">Premium</Tag> : '—'}</td>
 									<td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
 										<button className="btn ghost" onClick={() => setEditingId(l.id)}>Edit</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)', marginLeft: 6 }} onClick={() => void remove(l.id, l.name)}><Trash2 size={12} /></button>
@@ -183,7 +184,7 @@ function ListForm({ id, initial, onClose, onSaved }: { id: string | null; initia
 							<Field label="Name"><input className="search-input" value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
 							<Field label="Description"><textarea className="search-input" style={{ minHeight: 60, resize: 'vertical' }} value={form.description} onChange={(e) => set('description', e.target.value)} /></Field>
 							<Field label="Entity type" hint={isEdit ? 'fixed after creation' : undefined}>
-								<Select value={form.entity_type} onChange={(v) => set('entity_type', v as EntityType)} disabled={isEdit} width="100%" style={{ display: 'block', width: '100%' }} options={ENTITY_TYPES.map((t) => ({ value: t, label: t }))} />
+								<Select value={form.entity_type} onChange={(v) => set('entity_type', v as EntityType)} disabled={isEdit} width="100%" style={{ display: 'block', width: '100%' }} options={ENTITY_TYPES.map((t) => ({ value: t, label: tidy(t) }))} />
 							</Field>
 							<div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>
 								<Field label="Month (optional)">

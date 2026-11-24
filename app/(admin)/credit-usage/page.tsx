@@ -8,7 +8,7 @@ import { PageHeader, Section, StatCard, StatsPanel, AsyncState, Tag, SortableTh 
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { useUrlState } from '@/hooks/use-url-state';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { tierLabel } from '@/lib/labels';
+import { creditPoolLabel as poolLabel, creditTxnLabel, tidy, tierLabel } from '@/lib/labels';
 
 /**
  * Admin-wide credit usage — everyone's spend rolled up over the last 30 days
@@ -31,25 +31,20 @@ interface RecentRow {
 }
 interface RecentPage { data: RecentRow[]; nextCursor: string | null }
 
-const TXN_LABEL: Record<string, string> = {
-	monthly_grant: 'Monthly grant', topup_purchase: 'Top-up', refund: 'Refund',
-	expiry: 'Expired', adjustment: 'Adjustment', spend: 'Usage',
-};
+const TXN_KINDS = ['monthly_grant', 'topup_purchase', 'refund', 'expiry', 'adjustment', 'spend'];
 function activityLabel(r: { description: string | null; display_name: string | null; operation_key: string | null; transaction_type: string }): string {
 	const d = r.description?.trim();
 	if (d && /\s/.test(d)) return d;
 	if (r.display_name) return r.display_name;
 	if (d) return d.replace(/^ai\./, '').replace(/[._]/g, ' ');
-	return TXN_LABEL[r.transaction_type] ?? r.transaction_type;
+	return creditTxnLabel(r.transaction_type);
 }
-/** Spend category of a ledger row. 'stx' rows are wallet movements with no category (grants, monthly grants, expiries). */
-const poolLabel = (t: string): string => (t === 'ai' ? 'AI' : t === 'integration' ? 'Export' : 'Wallet');
 function fmtWhen(iso: string): string {
 	const dt = new Date(iso);
 	return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
-const POOL_OPTIONS = [{ value: 'ai', label: 'AI' }, { value: 'integration', label: 'Export' }, { value: 'stx', label: 'Wallet' }];
-const TXN_OPTIONS = Object.entries(TXN_LABEL).map(([value, label]) => ({ value, label }));
+const POOL_OPTIONS = ['ai', 'integration', 'stx'].map((value) => ({ value, label: poolLabel(value) }));
+const TXN_OPTIONS = TXN_KINDS.map((value) => ({ value, label: creditTxnLabel(value) }));
 
 /** Client-side sort for the rollup tables (top 50 / top 25, all loaded). "-key" = descending. */
 function sortRows<T>(rows: T[], sort: string, get: Record<string, (r: T) => string | number>): T[] {
@@ -177,7 +172,7 @@ export default function CreditUsagePage() {
 							<tbody>
 								{byOperation.map((o) => (
 									<tr key={`${o.operation_key}-${o.credit_type}`}>
-										<td>{o.display_name || o.operation_key || '—'}</td>
+										<td>{o.display_name || (o.operation_key ? tidy(o.operation_key) : '—')}</td>
 										<td>{poolLabel(o.credit_type)}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{o.spent.toLocaleString()}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: 'var(--fg-muted)' }}>{o.txns.toLocaleString()}</td>
@@ -221,7 +216,7 @@ export default function CreditUsagePage() {
 												</Link>
 											</td>
 											<td>{poolLabel(r.credit_type)}</td>
-											<td>{activityLabel(r)}{r.transaction_type !== 'spend' ? ` (${TXN_LABEL[r.transaction_type] ?? r.transaction_type})` : ''}</td>
+											<td>{activityLabel(r)}{r.transaction_type !== 'spend' ? ` (${creditTxnLabel(r.transaction_type)})` : ''}</td>
 											<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: spend ? 'var(--neg)' : 'var(--pos)' }}>{spend ? '' : '+'}{r.amount.toLocaleString()}</td>
 										</tr>
 									);

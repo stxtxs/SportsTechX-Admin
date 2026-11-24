@@ -24,6 +24,7 @@ interface QueueStats { claims: { pending: number; picked_up: number; verified: n
 
 interface Claim {
 	id: string;
+	ecosystem_type?: string | null;
 	claim_type: string;
 	profile_id: string | null;
 	entity_type?: string | null;
@@ -55,12 +56,15 @@ interface Claim {
 const ATLAS_BASE = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 
 /** The claimed record's admin page (company edit form, investor edit form, ecosystem entry). */
+const ECO_TAB: Record<string, string> = { program: 'programs', event: 'events', initiative: 'initiatives', organization: 'organizations' };
+/** An ecosystem entry's admin page, on its own tab. */
+const ecoHref = (id: string, type?: string | null) => `/ecosystem?tab=${ECO_TAB[type ?? ''] ?? 'programs'}&open=${id}`;
 const entityHref = (cl: Claim): string | null => {
 	if (!cl.entity_id) return null;
 	if (cl.claim_type === 'company') return `/companies?edit=${cl.entity_id}`;
 	if (cl.claim_type === 'investor') return `/ecosystem?tab=investors&edit=${cl.entity_id}`;
 	// The claims list doesn't return the ecosystem entry's type (program/event/…); its detail opens by id.
-	return `/ecosystem?open=${cl.entity_id}`;
+	return ecoHref(cl.entity_id, cl.ecosystem_type);
 };
 const linkStyle = { color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 2 } as const;
 

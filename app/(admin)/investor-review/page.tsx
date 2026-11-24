@@ -27,7 +27,7 @@ import { useTableColumns } from '@/hooks/use-table-columns';
 type EnrichStatus = 'pending' | 'enriching' | 'enriched' | 'failed';
 interface QueueRow {
 	id: string; name: string; website: string | null; category: string | null; country: string | null;
-	status: string; skip_reason: string | null; assigned_to: string | null; created_at: string;
+	status: string; skip_reason: string | null; assigned_to: string | null; assigned_to_name?: string | null; created_at: string;
 	investor_id: string | null;
 	enrichment_status: EnrichStatus; enrichment_error: string | null; enriched_at: string | null;
 }
@@ -144,13 +144,18 @@ export default function InvestorReviewPage() {
 			const { rows: all, capped } = await fetchAllPages<QueueRow>('/api/admin/investor-review', params);
 			downloadCsv('investors-to-add.csv',
 				['Added', 'Name', 'Website', 'Category', 'Country', 'Status', 'Skip reason', 'Enrichment', 'Assigned to'],
-				all.map((r) => [r.created_at.slice(0, 10), r.name, r.website ?? '', r.category ? investorCategoryLabel(r.category) : '', r.country ?? '', tidy(r.status), r.skip_reason ?? '', enrichmentStatusLabel(r.enrichment_status), r.assigned_to ? adminName(r.assigned_to) : '']));
+				all.map((r) => [r.created_at.slice(0, 10), r.name, r.website ?? '', r.category ? investorCategoryLabel(r.category) : '', r.country ?? '', tidy(r.status), r.skip_reason ?? '', enrichmentStatusLabel(r.enrichment_status), r.assigned_to ? (r.assigned_to_name ?? adminName(r.assigned_to)) : '']));
 			toast.success(`Exported ${all.length.toLocaleString()} row${all.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
 		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
 	};
 	const remove = (id: string) => { void (async () => { if (await ask('Delete this candidate?')) void act(() => api('DELETE', `/api/admin/investor-review/${id}`), 'Deleted'); })(); };
 	const unskip = (id: string) => act(() => api('PATCH', `/api/admin/investor-review/${id}`, { status: 'pending', skip_reason: '' }), 'Moved back to pending');
 	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/investor-review/${id}/re-enrich`), 'Enrichment queued');
+	const bulkEnrich = () => act(async () => {
+		const r = await api<{ queued: number; no_website: number }>('POST', '/api/admin/investor-review/bulk-enrich', { ids: [...selected] });
+		if (r.no_website) toast.message(`${r.no_website} without a website were skipped — add one with Edit to enrich them.`);
+		return r;
+	}, 'Enrichment queued — results fill in over the next minutes');
 	const saveEdit = async (id: string, body: { name?: string; website?: string | null }) => {
 		await api('PATCH', `/api/admin/investor-review/${id}`, body);
 		toast.success(body.website ? 'Saved — enrichment queued for the new website' : 'Saved');
@@ -222,6 +227,7 @@ export default function InvestorReviewPage() {
 					<button className="btn ghost" onClick={() => void bulkComplete()}><Check size={12} /> Completed</button>
 					<button className="btn ghost" onClick={() => void bulkSkip()}><SkipForward size={12} /> Skip</button>
 					<button className="btn ghost" onClick={() => void bulkPending()} title="Undo a Completed / Skip"><Undo2 size={12} /> Back to pending</button>
+					<button className="btn ghost" onClick={() => void bulkEnrich()} title="Look the selected investors up in Apollo (Attio for gaps). Needs a website."><RefreshCw size={12} /> Enrich</button>
 					<div style={{ flex: 1 }} />
 					<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void bulkDelete()}><Trash2 size={12} /> Delete</button>
 				</div>
@@ -268,7 +274,7 @@ export default function InvestorReviewPage() {
 											? <Tag>no website</Tag>
 											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(r.enrichment_status)}</Tag>}
 									</td>
-									<td>{adminName(r.assigned_to)}</td>
+									<td>{r.assigned_to_name ?? adminName(r.assigned_to)}</td>
 									<td>
 										<Tag variant={r.status === 'completed' ? 'pos' : r.status === 'skipped' ? 'warn' : ''}>{tidy(r.status)}</Tag>
 										{r.status === 'skipped' && r.skip_reason && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.skip_reason}</div>}

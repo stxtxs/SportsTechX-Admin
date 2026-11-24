@@ -214,7 +214,7 @@ function ListField({ name, value, like, onChange, depth }: { name: string; value
 /** Names for each report's page blocks (ids as the Atlas page renders them, = content.partOrder). */
 const ORDER_LABELS: Record<string, Record<string, string>> = {
 	gster26: { trends: 'Trends', peak: 'PEAK 2026', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem map', ngsc: 'NGSC', data: 'Data in Full' },
-	ftabr26: { trends: 'Insights & FIFA WC26 Recap', featured: 'Featured company', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem', soccerment: 'Soccerment feature', partners: 'Partner spotlights', data: 'Data in Full' },
+	ftabr26: { trends: 'Insights & FIFA WC26 Recap', featured: 'Featured company', innovators: 'Innovators', startups: 'Startups to Watch', ecomap: 'Ecosystem', soccerment: 'Soccerment feature', partners: 'Partner spotlights', data: 'Data in Full', methodology: 'Methodology note', credits: 'Credits (imprint)' },
 	benchmark26: { 'why-now': 'Why now', 'deal-sourcing-reality': 'Deal sources', 'sourcing-process': 'Process', 'outbound-and-tools': 'Outbound', closing: 'Implications', method: 'Method' },
 };
 const ORDER_NOTE: Record<string, string> = {
@@ -231,8 +231,10 @@ const BLOCK_OF: Record<string, Record<string, string>> = {
 	benchmark26: { meta: '', intro: 'why-now', sections: '*', closing: 'closing', method: 'method', ui: '', personal: '' },
 	methodology: { note: '' },
 };
-/** The Benchmark's intro, closing and method always stay open (only its numbered sections lock). */
-const lockable = (template: string, block: string) => template !== 'benchmark26' || !['why-now', 'closing', 'method'].includes(block);
+/** Blocks that move but never lock (the server has no lock rule for them): the Benchmark's intro,
+ *  closing and method; FTABR26's methodology note and credits. */
+const NEVER_LOCKED: Record<string, string[]> = { benchmark26: ['why-now', 'closing', 'method'], ftabr26: ['methodology', 'credits'] };
+const lockable = (template: string, block: string) => !(NEVER_LOCKED[template] ?? []).includes(block);
 
 type Part = (typeof GSTER26_PARTS)[number];
 

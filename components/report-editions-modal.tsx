@@ -93,7 +93,7 @@ export function ReportEditionsModal({ id, onClose }: { id: string; onClose: () =
 
 				<div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, display: 'grid', gap: 10, background: 'var(--bg-2)' }}>
 					<div style={{ fontWeight: 600, fontSize: 13 }}>{editing ? 'Edit PDF' : 'Add a PDF'}</div>
-					<div style={{ display: 'grid', gridTemplateColumns: '120px 140px 1fr', gap: 8 }}>
+					<div style={{ display: 'grid', gridTemplateColumns: '90px 190px 1fr', gap: 8 }}>
 						{/* Lang + tier are the edition's identity (the upsert key); lock them when
 						    editing so a change can't silently fork a new edition. */}
 						<input className="search-input" placeholder="Lang (en, fr…)" value={draft.language_code} disabled={!!editing} title={editing ? 'Delete and re-add to change the language' : undefined} onChange={(e) => set('language_code', e.target.value)} />

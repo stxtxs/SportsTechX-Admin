@@ -1,10 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import useSWRInfinite from 'swr/infinite';
-import { PageHeader, Section, StatCard, StatsPanel, AsyncState, Tag } from '@/components/atoms';
+import { PageHeader, Section, StatCard, StatsPanel, AsyncState, Tag, SortableTh } from '@/components/atoms';
+import { FilterBar, FilterSelect } from '@/components/filters';
+import { useUrlState } from '@/hooks/use-url-state';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { tierLabel } from '@/lib/labels';
 
 /**
  * Admin-wide credit usage — everyone's spend rolled up over the last 30 days
@@ -44,23 +48,59 @@ function fmtWhen(iso: string): string {
 	const dt = new Date(iso);
 	return Number.isNaN(dt.getTime()) ? '' : dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
-const RECENT_FILTERS: Array<{ k: 'all' | 'ai' | 'integration'; label: string }> = [
-	{ k: 'all', label: 'All' }, { k: 'ai', label: 'AI' }, { k: 'integration', label: 'Export' },
-];
+const POOL_OPTIONS = [{ value: 'ai', label: 'AI' }, { value: 'integration', label: 'Export' }, { value: 'stx', label: 'Wallet' }];
+const TXN_OPTIONS = Object.entries(TXN_LABEL).map(([value, label]) => ({ value, label }));
+
+/** Client-side sort for the rollup tables (top 50 / top 25, all loaded). "-key" = descending. */
+function sortRows<T>(rows: T[], sort: string, get: Record<string, (r: T) => string | number>): T[] {
+	const fn = get[sort.replace(/^-/, '')];
+	if (!fn) return rows;
+	const dir = sort.startsWith('-') ? -1 : 1;
+	return [...rows].sort((a, b) => {
+		const x = fn(a), y = fn(b);
+		return dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y)));
+	});
+}
+const userName = (u: { name: string | null; email: string | null; profile_id: string }) => u.name || u.email || u.profile_id.slice(0, 8);
 
 export default function CreditUsagePage() {
 	const { data: usage, isLoading, error } = useSWR<UsageResp>(['/api/admin/credits/usage'], { dedupingInterval: 30_000 });
 	const ai = usage?.byType.find((t) => t.credit_type === 'ai');
 	const integ = usage?.byType.find((t) => t.credit_type === 'integration');
 
-	const [type, setType] = useState<'all' | 'ai' | 'integration'>('all');
+	// Rollup tables: sorted and searched in the browser (the endpoint returns the top rows only).
+	const [userSort, setUserSort] = useUrlState('cu', 'usort', '-total');
+	const [userQ, setUserQ] = useUrlState('cu', 'uq');
+	const [opSort, setOpSort] = useUrlState('cu', 'osort', '-credits');
+	const uq = userQ.trim().toLowerCase();
+	const topUsers = sortRows(
+		(usage?.topUsers ?? []).filter((u) => !uq || `${u.name ?? ''} ${u.email ?? ''} ${u.company_name ?? ''}`.toLowerCase().includes(uq)),
+		userSort,
+		{
+			user: (u) => userName(u).toLowerCase(), tier: (u) => tierLabel(u.tier), ai: (u) => u.ai_spent,
+			export: (u) => u.integration_spent, total: (u) => u.total_spent, txns: (u) => u.txns,
+		},
+	);
+	const byOperation = sortRows(usage?.byOperation ?? [], opSort, {
+		activity: (o) => (o.display_name || o.operation_key || '').toLowerCase(), pool: (o) => poolLabel(o.credit_type),
+		credits: (o) => o.spent, txns: (o) => o.txns,
+	});
+
+	// Activity feed: filtered and sorted on the server, cursor-paged ("Load more").
+	const [type, setType] = useUrlState('cu', 'pool');
+	const [txn, setTxn] = useUrlState('cu', 'txn');
+	const [q, setQ] = useUrlState('cu', 'q');
+	const [sort, setSort] = useUrlState('cu', 'sort', '-when');
+	const dq = useDebouncedValue(q.trim());
+	const active = [type, txn, q].filter(Boolean).length;
+	const clear = () => { setType(''); setTxn(''); setQ(''); };
 	const getKey = (index: number, prev: RecentPage | null) => {
 		if (prev && !prev.nextCursor) return null;
 		const cursor = index === 0 ? undefined : (prev?.nextCursor ?? undefined);
-		return ['/api/admin/credits/recent', { type, cursor, limit: 40 }];
+		return ['/api/admin/credits/recent', { type: type || 'all', txn, q: dq, sort, cursor, limit: 40 }];
 	};
-	const { data: recentPages, size, setSize, isValidating } = useSWRInfinite<RecentPage>(getKey, { revalidateFirstPage: false });
-	useEffect(() => { setSize(1); }, [type, setSize]);
+	const { data: recentPages, error: recentError, size, setSize, isValidating } = useSWRInfinite<RecentPage>(getKey, { revalidateFirstPage: false });
+	useEffect(() => { setSize(1); }, [type, txn, dq, sort, setSize]);
 	const recent = recentPages ? recentPages.flatMap((p) => p.data) : [];
 	const hasMore = Boolean(recentPages?.[recentPages.length - 1]?.nextCursor);
 	const loadingMore = isValidating && size > (recentPages?.length ?? 0);
@@ -82,25 +122,33 @@ export default function CreditUsagePage() {
 				</div>
 			</StatsPanel>
 
-			<Section title="Top spenders" meta="last 30 days · by total credits">
-				<AsyncState loading={isLoading} error={error} empty={!usage?.topUsers.length} emptyMsg="No spend in the last 30 days.">
+			<Section title="Top spenders" meta="last 30 days · top 50 by total credits">
+				<FilterBar>
+					<input className="search-input" style={{ height: 32, width: 260, maxWidth: '100%' }} placeholder="Search name, email or company (top 50)…"
+						value={userQ} onChange={(e) => setUserQ(e.target.value)} aria-label="Search top spenders" />
+				</FilterBar>
+				<AsyncState loading={isLoading} error={error} empty={!topUsers.length} emptyMsg={uq ? 'No top spender matches.' : 'No spend in the last 30 days.'}>
 					<div className="table-scroll">
 						<table className="data-table">
 							<thead>
 								<tr>
-									<th>User</th><th>Tier</th>
-									<th style={{ textAlign: 'right' }}>AI</th><th style={{ textAlign: 'right' }}>Export</th>
-									<th style={{ textAlign: 'right' }}>Total</th><th style={{ textAlign: 'right' }}>Txns</th><th></th>
+									<SortableTh label="User" field="user" sort={userSort} onSort={setUserSort} />
+									<SortableTh label="Plan" field="tier" sort={userSort} onSort={setUserSort} />
+									<SortableTh label="AI" field="ai" sort={userSort} onSort={setUserSort} align="right" />
+									<SortableTh label="Export" field="export" sort={userSort} onSort={setUserSort} align="right" />
+									<SortableTh label="Total" field="total" sort={userSort} onSort={setUserSort} align="right" />
+									<SortableTh label="Txns" field="txns" sort={userSort} onSort={setUserSort} align="right" />
+									<th></th>
 								</tr>
 							</thead>
 							<tbody>
-								{usage?.topUsers.map((u) => (
+								{topUsers.map((u) => (
 									<tr key={u.profile_id}>
 										<td>
-											<div style={{ fontWeight: 600 }}>{u.name || u.email || u.profile_id.slice(0, 8)}</div>
+											<div style={{ fontWeight: 600 }}>{userName(u)}</div>
 											{u.email && u.name && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{u.email}</div>}
 										</td>
-										<td><Tag>{u.tier || '—'}</Tag></td>
+										<td><Tag>{tierLabel(u.tier)}</Tag></td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{u.ai_spent.toLocaleString()}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{u.integration_spent.toLocaleString()}</td>
 										<td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{u.total_spent.toLocaleString()}</td>
@@ -119,10 +167,15 @@ export default function CreditUsagePage() {
 					<div className="table-scroll">
 						<table className="data-table">
 							<thead>
-								<tr><th>Activity</th><th>Pool</th><th style={{ textAlign: 'right' }}>Credits</th><th style={{ textAlign: 'right' }}>Txns</th></tr>
+								<tr>
+									<SortableTh label="Activity" field="activity" sort={opSort} onSort={setOpSort} />
+									<SortableTh label="Pool" field="pool" sort={opSort} onSort={setOpSort} />
+									<SortableTh label="Credits" field="credits" sort={opSort} onSort={setOpSort} align="right" />
+									<SortableTh label="Txns" field="txns" sort={opSort} onSort={setOpSort} align="right" />
+								</tr>
 							</thead>
 							<tbody>
-								{usage?.byOperation.map((o) => (
+								{byOperation.map((o) => (
 									<tr key={`${o.operation_key}-${o.credit_type}`}>
 										<td>{o.display_name || o.operation_key || '—'}</td>
 										<td>{poolLabel(o.credit_type)}</td>
@@ -136,31 +189,25 @@ export default function CreditUsagePage() {
 				</AsyncState>
 			</Section>
 
-			<Section
-				title="Recent activity"
-				meta="all users"
-				action={
-					<div style={{ display: 'flex', gap: 4 }}>
-						{RECENT_FILTERS.map((f) => (
-							<button
-								key={f.k}
-								className="btn ghost"
-								style={{ height: 26, padding: '0 10px', fontSize: 12, borderBottom: type === f.k ? '2px solid var(--accent)' : '2px solid transparent', color: type === f.k ? 'var(--fg)' : 'var(--fg-muted)' }}
-								onClick={() => setType(f.k)}
-							>
-								{f.label}
-							</button>
-						))}
-					</div>
-				}
-			>
+			<Section title="Recent activity" meta={`all users · all time${recentPages ? ` · ${recent.length.toLocaleString()}${hasMore ? '+' : ''} shown` : ''}`}>
+				<FilterBar>
+					<input className="search-input" style={{ height: 32, width: 260, maxWidth: '100%' }} placeholder="Search user, email or activity…"
+						value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search credit activity" />
+					<FilterSelect ariaLabel="Pool" value={type} onChange={setType} options={POOL_OPTIONS} allLabel="All pools" />
+					<FilterSelect ariaLabel="Kind" value={txn} onChange={setTxn} options={TXN_OPTIONS} allLabel="All kinds" />
+					{active > 0 && <button className="btn ghost" onClick={clear}>Clear {active} filter{active === 1 ? '' : 's'}</button>}
+				</FilterBar>
 				{recent.length === 0 ? (
-					<div style={{ padding: 16, color: 'var(--fg-muted)', fontSize: 13 }}>No activity.</div>
+					<div style={{ padding: 16, color: 'var(--fg-muted)', fontSize: 13 }}>{recentError ? 'Could not load activity.' : !recentPages ? 'Loading…' : active ? 'No activity matches these filters.' : 'No activity.'}</div>
 				) : (
 					<div className="table-scroll">
 						<table className="data-table">
 							<thead>
-								<tr><th>When</th><th>User</th><th>Pool</th><th>Activity</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
+								<tr>
+									<SortableTh label="When" field="when" sort={sort} onSort={setSort} />
+									<th>User</th><th>Pool</th><th>Activity</th>
+									<SortableTh label="Amount" field="size" sort={sort} onSort={setSort} align="right" />
+								</tr>
 							</thead>
 							<tbody>
 								{recent.map((r) => {

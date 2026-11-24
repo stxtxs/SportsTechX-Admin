@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Loading, ErrorState, StatCard, RichStatCard, StatsPanel, PillTabs, Section, Pager } from '@/components/atoms';
+import { PageHeader, AsyncState, Loading, ErrorState, StatCard, RichStatCard, StatsPanel, PillTabs, Section, Pager, SortableTh } from '@/components/atoms';
 import { PieDonut, PieLegend, toSegments, type Bucket } from '@/components/charts';
 import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter } from '@/components/filters';
 import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components/csv-import';
@@ -19,11 +19,13 @@ import { useConfirm } from '@/components/confirm';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { SportsPicker, LocationFields, SocialLinks, CompanySelectOne, EMPTY_SOCIAL, EMPTY_LOCATION, type SocialValue, type LocationValue } from '@/components/entity-pickers';
 import { InvestorsView, useEditParam } from '@/components/admin-views/investors';
+import { GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Entity {
 	id: string;
@@ -33,6 +35,9 @@ interface Entity {
 	category?: string | null;
 	status?: string | null;
 	hq_country?: string | null;
+	founded_year?: number | null;
+	start_date?: string | null;
+	created_at?: string | null;
 }
 interface Response { data: Entity[]; total: number; totalPages: number }
 interface EcoStats {
@@ -57,6 +62,7 @@ const EVENT_MODES = ['in_person', 'virtual', 'hybrid'] as const;
 
 type EcoType = 'program' | 'event' | 'initiative' | 'organization';
 export function EcosystemView({ embedded = false, entityType }: { embedded?: boolean; entityType?: EcoType }) {
+	const cols = useTableColumns(`ecosystem-${entityType ?? 'all'}`);
 	// Programs / Events / Initiatives tabs reuse this view: each keeps its own filters in the URL.
 	const ns = `eco-${entityType ?? 'all'}`;
 	const { mutate } = useSWRConfig();
@@ -75,8 +81,16 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const [featured, setFeatured] = useUrlState(ns, 'featured', '');
 	const [upcoming, setUpcoming] = useUrlState(ns, 'upcoming', '');
 	const [entriesOpen, setEntriesOpen] = useUrlState(ns, 'entriesOpen', '');
+	const [continent, setContinent] = useUrlState(ns, 'continent', '');
+	const [region, setRegion] = useUrlState(ns, 'region', '');
+	const [activeMin, setActiveMin] = useUrlState(ns, 'activeMin', '');
+	const [activeMax, setActiveMax] = useUrlState(ns, 'activeMax', '');
+	const [startFrom, setStartFrom] = useUrlState(ns, 'startFrom', '');
+	const [startTo, setStartTo] = useUrlState(ns, 'startTo', '');
+	const [sort, setSort] = useUrlState(ns, 'sort', '-created_at');
 	const [page, setPage] = useUrlNumber(ns, 'page', 1);
 	const reset1 = () => setPage(1);
+	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const [creating, setCreating] = useState(false);
 	// `?edit=<id>` opens that entity's edit form (the Data changes "Open record" link).
 	const [editingId, setEditingId] = useEditParam();
@@ -85,25 +99,42 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	// `?open=<id>` shows an entry's detail directly (global search, shared links).
 	const [viewingId, setViewingId] = useEditParam('open');
 
-	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
-	const dCountry = useDebouncedValue(country);
+	// Typed filters (category, min/max) wait for typing to pause, like search, instead of one request per key.
 	const dCategory = useDebouncedValue(category);
 	const dFoundedMin = useDebouncedValue(foundedMin);
 	const dFoundedMax = useDebouncedValue(foundedMax);
+	const dActiveMin = useDebouncedValue(activeMin);
+	const dActiveMax = useDebouncedValue(activeMax);
+	// Start date only exists on events; another type sorted by it would just come back unordered.
+	const effSort = type !== 'event' && sort.endsWith('start_date') ? '-created_at' : sort;
 	const { data, error, isLoading } = useSWR<Response>(
 		['/api/ecosystem-entities', {
 			entity_type: type, q: debouncedSearch || undefined, status: status || undefined,
-			country: dCountry.trim() || undefined, category: dCategory.trim() || undefined, sport_slug: sport || undefined,
+			country: country || undefined, category: dCategory.trim() || undefined, sport_slug: sport || undefined,
 			founded_year_min: dFoundedMin || undefined, founded_year_max: dFoundedMax || undefined,
+			continent: continent || undefined, region: region || undefined,
+			latest_activity_year_min: dActiveMin || undefined, latest_activity_year_max: dActiveMax || undefined,
 			...(type === 'event'
-				? { mode: mode || undefined, is_featured: featured || undefined, upcoming_only: upcoming || undefined }
+				? { mode: mode || undefined, is_featured: featured || undefined, upcoming_only: upcoming || undefined,
+					start_date_min: startFrom || undefined, start_date_max: startTo || undefined }
 				: type === 'program'
 					? { entries_open: entriesOpen || undefined }
 					: {}),
-			page, limit: 30,
+			page, limit: 30, sort: effSort,
 		}],
 		{ dedupingInterval: 30_000 },
 	);
+	const filterState: Array<[string, (v: string) => void]> = [
+		[search, setSearch], [status, setStatus], [country, setCountry], [category, setCategory], [sport, setSport],
+		[foundedMin, setFoundedMin], [foundedMax, setFoundedMax], [continent, setContinent], [region, setRegion],
+		[activeMin, setActiveMin], [activeMax, setActiveMax],
+		...(type === 'event' ? [[mode, setMode], [featured, setFeatured], [upcoming, setUpcoming], [startFrom, setStartFrom], [startTo, setStartTo]] as Array<[string, (v: string) => void]> : []),
+		...(type === 'program' ? [[entriesOpen, setEntriesOpen]] as Array<[string, (v: string) => void]> : []),
+	];
+	const activeFilters = filterState.filter(([v]) => v).length;
+	const clearFilters = () => { filterState.forEach(([, set]) => set('')); setPage(1); };
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<EcoStats>(['/api/admin/stats/ecosystem'], { dedupingInterval: 60_000 });
 	const typeSegments = toSegments(stats.data?.by_type ?? []);
 	const statusSegments = toSegments(stats.data?.by_status ?? []);
@@ -192,7 +223,6 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={[...STATUSES]} allLabel="All statuses" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="All sports" />
 				<input className="search-input" style={{ height: 32, width: 120 }} placeholder="Category" value={category} onChange={(e) => { setCategory(e.target.value); reset1(); }} />
-				<input className="search-input" style={{ height: 32, width: 120 }} placeholder="Country" value={country} onChange={(e) => { setCountry(e.target.value); reset1(); }} />
 				<FilterRange label="Founded" min={foundedMin} max={foundedMax} onMin={(v) => { setFoundedMin(v); reset1(); }} onMax={(v) => { setFoundedMax(v); reset1(); }} width={64} />
 				{type === 'event' && (
 					<>
@@ -210,18 +240,37 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 				<CsvCheckButton entity="ecosystem" />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add {type}</button>
 			</FilterBar>
+			<FilterBar>
+				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
+				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
+				<FilterRange label="Last active" min={activeMin} max={activeMax} onMin={f(setActiveMin)} onMax={f(setActiveMax)} width={64} />
+				{type === 'event' && <DateRangeFilter label="Starts" from={startFrom} to={startTo} onFrom={f(setStartFrom)} onTo={f(setStartTo)} />}
+			</FilterBar>
 			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={entities.length === 0} emptyMsg={`No ${type}s yet.`} onRetry={() => void refresh()}>
+				<ListCount total={data?.total} noun={[type, `${type}s`]} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={entities.length === 0} emptyMsg={activeFilters ? `No ${type}s match these filters.` : `No ${type}s yet.`} onRetry={() => void refresh()}>
+					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
-						<thead><tr><th>Name</th><th>Slug</th><th>Category</th><th>Status</th><th>HQ</th><th style={{ textAlign: 'right' }} /></tr></thead>
+						<thead><tr>
+							<SortableTh label="Name" field="name" sort={effSort} onSort={onSort} />
+							<th className="hide-md">Slug</th><th>Category</th><th>Status</th><th>HQ</th>
+							<SortableTh label="Founded" field="founded_year" sort={effSort} onSort={onSort} />
+							{type === 'event' && <SortableTh label="Starts" field="start_date" sort={effSort} onSort={onSort} />}
+							<SortableTh label="Added" field="created_at" sort={effSort} onSort={onSort} />
+							<th style={{ textAlign: 'right' }} />
+						</tr></thead>
 						<tbody>
 							{entities.map((e) => (
 								<tr key={e.id}>
 									<td><button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600, textAlign: 'left' }} onClick={() => setViewingId(e.id)}>{e.name}</button></td>
-									<td className="num">{e.slug ?? '—'}</td>
+									<td className="num hide-md">{e.slug ?? '—'}</td>
 									<td>{e.category ?? '—'}</td>
 									<td>{e.status ?? '—'}</td>
 									<td>{e.hq_country ?? '—'}</td>
+									<td className="num">{e.founded_year ?? '—'}</td>
+									{type === 'event' && <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(e.start_date)}</td>}
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(e.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(e.id)}>Edit</button>
 										<button className="btn ghost" title="Merge this duplicate into another organisation" onClick={() => setMerging({ id: e.id, name: e.name })}>Merge</button>
@@ -233,6 +282,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 						))}
 					</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />

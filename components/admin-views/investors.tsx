@@ -24,6 +24,8 @@ import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { GeoFacetFilter, ListCount, fmtListDate } from '@/components/filters';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Investor {
 	id: string;
@@ -34,6 +36,10 @@ interface Investor {
 	year_launched?: number | null;
 	status?: string | null;
 	is_verified?: boolean | null;
+	hq_country?: string | null;
+	deals_count?: number | string | null;
+	total_aum_usd?: number | string | null;
+	created_at?: string | null;
 }
 
 interface InvestorsResponse { data: Investor[]; total: number; totalPages: number }
@@ -51,7 +57,8 @@ const STATUSES = ['active', 'inactive', 'paused'] as const;
  */
 export { useEditParam } from '@/hooks/use-edit-param';
 
-export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
+export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('investors');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [search, setSearch] = useUrlState('inv', 'search', '');
@@ -65,6 +72,12 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const [investing, setInvesting] = useUrlState('inv', 'investing', '');
 	const [launchedMin, setLaunchedMin] = useUrlState('inv', 'launchedMin', '');
 	const [launchedMax, setLaunchedMax] = useUrlState('inv', 'launchedMax', '');
+	const [continent, setContinent] = useUrlState('inv', 'continent', '');
+	const [region, setRegion] = useUrlState('inv', 'region', '');
+	const [tech, setTech] = useUrlState('inv', 'tech', '');
+	const [round, setRound] = useUrlState('inv', 'round', '');
+	const [dealsMin, setDealsMin] = useUrlState('inv', 'dealsMin', '');
+	const [dealsMax, setDealsMax] = useUrlState('inv', 'dealsMax', '');
 	const [page, setPage] = useUrlNumber('inv', 'page', 1);
 	const [sort, setSort] = useUrlState('inv', 'sort', '-created_at');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
@@ -73,20 +86,32 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const [editingId, setEditingId] = useEditParam();
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
-	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
-	const dCountry = useDebouncedValue(country);
+	// Typed filters (min/max) wait for typing to pause, like search, instead of one request per key.
 	const dLaunchedMin = useDebouncedValue(launchedMin);
 	const dLaunchedMax = useDebouncedValue(launchedMax);
+	const dDealsMin = useDebouncedValue(dealsMin);
+	const dDealsMax = useDebouncedValue(dealsMax);
 	const { data, error, isLoading } = useSWR<InvestorsResponse>(
 		['/api/investors', {
 			q: debouncedSearch || undefined, category: category || undefined, status: status || undefined,
 			is_verified: verified || undefined, sector_slug: sector || undefined, sport_slug: sport || undefined,
-			country: dCountry.trim() || undefined, actively_investing: investing || undefined,
+			country: country || undefined, actively_investing: investing || undefined,
 			year_launched_min: dLaunchedMin || undefined, year_launched_max: dLaunchedMax || undefined,
+			continent: continent || undefined, region: region || undefined, tech_tag_slug: tech || undefined,
+			round_type_slug: round || undefined, deals_min: dDealsMin || undefined, deals_max: dDealsMax || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },
 	);
+	const filterState: Array<[string, (v: string) => void]> = [
+		[search, setSearch], [category, setCategory], [status, setStatus], [verified, setVerified], [sector, setSector],
+		[sport, setSport], [country, setCountry], [investing, setInvesting], [launchedMin, setLaunchedMin], [launchedMax, setLaunchedMax],
+		[continent, setContinent], [region, setRegion], [tech, setTech], [round, setRound], [dealsMin, setDealsMin], [dealsMax, setDealsMax],
+	];
+	const activeFilters = filterState.filter(([v]) => v).length;
+	const clearFilters = () => { filterState.forEach(([, set]) => set('')); setPage(1); };
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<InvestorStats>(['/api/admin/stats/investors'], { dedupingInterval: 60_000 });
 	const categorySegments = toSegments(stats.data?.by_category ?? []);
 	const statusSegments = toSegments(stats.data?.by_status ?? []);
@@ -98,8 +123,10 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 		const params: Record<string, string> = { sort };
 		const add = (k: string, v: string) => { if (v) params[k] = v; };
 		add('q', search); add('category', category); add('status', status); add('is_verified', verified);
-		add('sector_slug', sector); add('sport_slug', sport); add('country', country.trim());
+		add('sector_slug', sector); add('sport_slug', sport); add('country', country);
 		add('actively_investing', investing); add('year_launched_min', launchedMin); add('year_launched_max', launchedMax);
+		add('continent', continent); add('region', region); add('tech_tag_slug', tech); add('round_type_slug', round);
+		add('deals_min', dealsMin); add('deals_max', dealsMax);
 		try {
 			const { rows, capped } = await fetchAllPages<InvestorsResponse['data'][number]>('/api/investors', params);
 			const out = rows.map((i) => [i.name ?? '', i.website ?? '', i.category ?? '', i.year_launched ? String(i.year_launched) : '', i.status ?? '']);
@@ -169,12 +196,19 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 				<FilterSelect ariaLabel="Verified" value={verified} onChange={(v) => { setVerified(v); reset1(); }} options={[{ value: 'true', label: 'Verified' }, { value: 'false', label: 'Unverified' }]} allLabel="Any verification" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="Any sector" />
 				<RefSlugFilter kind="sports" ariaLabel="Thesis sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="Any sport" />
-				<input className="search-input" style={{ height: 32, width: 130 }} placeholder="Country" value={country} onChange={(e) => { setCountry(e.target.value); reset1(); }} />
 				<BoolFilter ariaLabel="Actively investing" value={investing} onChange={(v) => { setInvesting(v); reset1(); }} yesLabel="Investing" noLabel="Not investing" allLabel="Any activity" />
 				<FilterRange label="Launched" min={launchedMin} max={launchedMax} onMin={(v) => { setLaunchedMin(v); reset1(); }} onMax={(v) => { setLaunchedMax(v); reset1(); }} width={64} />
 				<div style={{ flex: 1 }} />
 				<button className="btn ghost" onClick={() => void exportCsv()}>Export CSV</button>
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add investor</button>
+			</FilterBar>
+			<FilterBar>
+				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
+				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
+				<RefSlugFilter kind="tech-tags" ariaLabel="Thesis tech tag" value={tech} onChange={f(setTech)} allLabel="Any tech tag" />
+				<RefSlugFilter kind="round-types" ariaLabel="Thesis round" value={round} onChange={f(setRound)} allLabel="Any round" />
+				<FilterRange label="Deals" min={dealsMin} max={dealsMax} onMin={f(setDealsMin)} onMax={f(setDealsMax)} width={64} />
 			</FilterBar>
 
 			{(creating || editingId) && (
@@ -187,10 +221,22 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 			{merging && <MergeModal kind="investor" id={merging.id} name={merging.name} onClose={() => setMerging(null)} onMerged={() => { setMerging(null); void refresh(); }} />}
 
 			<div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No investors match.' : 'No investors yet.'} onRetry={() => void refresh()}>
+				<ListCount total={data?.total} noun={['investor', 'investors']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No investors match these filters.' : 'No investors yet.'} onRetry={() => void refresh()}>
+					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table" style={{ width: '100%' }}>
 						<thead>
-							<tr><SortableTh label="Name" field="name" sort={sort} onSort={onSort} /><SortableTh label="Category" field="category" sort={sort} onSort={onSort} /><SortableTh label="Launched" field="year_launched" sort={sort} onSort={onSort} /><th>Status</th><th>Verified</th><th /></tr>
+							<tr>
+								<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
+								<SortableTh label="Category" field="category" sort={sort} onSort={onSort} />
+								<SortableTh label="Launched" field="year_launched" sort={sort} onSort={onSort} />
+								<SortableTh label="HQ" field="hq_country" sort={sort} onSort={onSort} />
+								<SortableTh label="Deals" field="deals" sort={sort} onSort={onSort} align="right" />
+								<SortableTh label="AUM" field="aum" sort={sort} onSort={onSort} align="right" />
+								<th>Status</th><th>Verified</th>
+								<SortableTh label="Added" field="created_at" sort={sort} onSort={onSort} />
+								<th />
+							</tr>
 						</thead>
 						<tbody>
 							{rows.map((r) => (
@@ -198,8 +244,12 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 									<td><div style={{ fontWeight: 600 }}>{r.name}</div>{r.website && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.website}</div>}</td>
 									<td>{r.category ?? '—'}</td>
 									<td>{r.year_launched ?? '—'}</td>
+									<td>{r.hq_country ?? '—'}</td>
+									<td className="num" style={{ textAlign: 'right' }}>{Number(r.deals_count ?? 0).toLocaleString()}</td>
+									<td className="num" style={{ textAlign: 'right' }}>{fmtAum(r.total_aum_usd)}</td>
 									<td>{r.status ?? '—'}</td>
 									<td>{r.is_verified ? '✓' : '—'}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(r.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(r.id)}>Edit</button>
 										<button className="btn ghost" title="Merge this duplicate into another investor" onClick={() => setMerging({ id: r.id, name: r.name })}>Merge</button>
@@ -209,11 +259,19 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 							))}
 						</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 		</div>
 	);
+}
+
+/** AUM (investors.total_funding, USD) for the list column. */
+function fmtAum(v?: number | string | null): string {
+	const n = Number(v);
+	if (!v || !Number.isFinite(n) || n <= 0) return '—';
+	return n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${n.toLocaleString()}`;
 }
 
 interface FundDraft { fund_name: string; announced_date: string; fund_value: string; currency_code: string; source_url: string }

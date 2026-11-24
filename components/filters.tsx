@@ -139,6 +139,7 @@ export function SectorTierFilter({
 export function StatStrip({ children, cols }: { children: React.ReactNode; cols?: number }) {
 	return (
 		<div
+			className="stat-strip"
 			style={{
 				display: 'grid',
 				gridTemplateColumns: `repeat(${cols ?? 4}, minmax(0, 1fr))`,
@@ -150,3 +151,41 @@ export function StatStrip({ children, cols }: { children: React.ReactNode; cols?
 		</div>
 	);
 }
+
+// ── Catalog list helpers, shared by the companies / deals / M&A / investors / ecosystem lists.
+
+type GeoKind = 'countries' | 'continents' | 'regions';
+/** Country / continent / region filter fed by the location facets; emits the name the list endpoints match on. */
+export function GeoFacetFilter({ kind, value, onChange, allLabel }: { kind: GeoKind; value: string; onChange: (v: string) => void; allLabel: string }) {
+	const { data } = useSWR<Record<GeoKind, string[]>>(qk.reference.locationFacets(), { dedupingInterval: 60 * 60_000 });
+	const opts = (data?.[kind] ?? []).map((v) => ({ value: v, label: v }));
+	return <Select value={value} onChange={onChange} searchable ariaLabel={allLabel} placeholder={allLabel} options={[{ value: '', label: allLabel }, ...opts]} />;
+}
+
+/** From–to date pair (YYYY-MM-DD strings). */
+export function DateRangeFilter({ label, from, to, onFrom, onTo }: { label: string; from: string; to: string; onFrom: (v: string) => void; onTo: (v: string) => void }) {
+	return (
+		<span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--fg-muted)' }}>
+			{label}
+			<input className="search-input" type="date" style={{ height: 32, width: 140 }} value={from} onChange={(e) => onFrom(e.target.value)} aria-label={`${label} from`} title={`${label} from`} />
+			<span>–</span>
+			<input className="search-input" type="date" style={{ height: 32, width: 140 }} value={to} onChange={(e) => onTo(e.target.value)} aria-label={`${label} to`} title={`${label} to`} />
+		</span>
+	);
+}
+
+/** Count line at the top of a list card, with a "Clear N filters" button when filters are on. */
+export function ListCount({ total, noun, filters, onClear, right }: { total?: number; noun: [string, string]; filters: number; onClear: () => void; right?: React.ReactNode }) {
+	return (
+		<div style={{ padding: '8px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)', display: 'flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+			<span>{total === undefined ? 'Loading…' : `${total.toLocaleString()} ${total === 1 ? noun[0] : noun[1]}${filters ? ' match these filters' : ''}`} · click a column header to sort</span>
+			<span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+				{filters > 0 && <button className="btn ghost" onClick={onClear}>Clear {filters} filter{filters === 1 ? '' : 's'}</button>}
+				{right}
+			</span>
+		</div>
+	);
+}
+
+/** Short date for list cells. */
+export const fmtListDate = (s?: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' }) : '—');

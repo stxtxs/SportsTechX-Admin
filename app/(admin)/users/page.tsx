@@ -15,6 +15,7 @@ import { accessSourceLabel, roleLabel, tierLabel } from '@/lib/labels';
 import { Select } from '@/components/select';
 import { CreateAccountModal } from './account-access';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface UserStats { total: number; admins: number; by_tier: Bucket[]; by_role: Bucket[]; signups_by_month: Bucket[] }
 interface AuthRow { email: string | null; created_at?: string | null; last_sign_in_at?: string | null; provider?: string | null }
@@ -163,6 +164,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
 	const users = data?.data ?? [];
 	const onSort = (s: string) => { setSort(s); setPage(1); };
+	const cols = useTableColumns('users');
 	const dateInput = (label: string, value: string, set: (v: string) => void) => (
 		<input className="search-input" type="date" style={{ height: 32, width: 140 }} value={value} onChange={(e) => f(set)(e.target.value)} aria-label={label} title={label} />
 	);
@@ -327,6 +329,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 				<FilterSelect ariaLabel="Role" value={role} onChange={f(setRole)} options={ROLES.map((r) => ({ value: r, label: roleLabel(r) }))} allLabel="All roles" />
 				<FilterSelect ariaLabel="Playmakers" value={pm} onChange={f(setPm)} options={[{ value: 'yes', label: 'Playmakers members' }, { value: 'no', label: 'Not Playmakers' }]} allLabel="Playmakers: any" />
 				<div style={{ flex: 1 }} />
+				{cols.menu}
 				<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
 				<button className="btn" onClick={() => setCreating(true)}>Create account</button>
 			</FilterBar>
@@ -350,7 +353,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 					{data ? `${data.total.toLocaleString()} user${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
 				</div>
 				<AsyncState loading={isLoading} error={error} empty={users.length === 0} emptyMsg={activeFilters ? 'No users match these filters.' : 'No users yet.'} onRetry={() => void refresh()}>
-				<div className="table-scroll">
+				<div className="table-scroll" ref={cols.ref}>
 				<table className="data-table">
 					<thead>
 						<tr>

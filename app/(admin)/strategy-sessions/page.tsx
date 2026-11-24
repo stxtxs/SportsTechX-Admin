@@ -5,8 +5,11 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, AsyncState, Pager } from '@/components/atoms';
-import { useUrlNumber } from '@/hooks/use-url-state';
+import { PageHeader, AsyncState, Pager, SortableTh } from '@/components/atoms';
+import { FilterBar, FilterSelect } from '@/components/filters';
+import { useUrlNumber, useUrlState } from '@/hooks/use-url-state';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 const LIMIT = 50;
 
@@ -23,18 +26,26 @@ interface StrategySession {
 }
 interface Resp { data: StrategySession[]; total: number; totalPages?: number }
 
-export default function StrategySessionsPage() {
+export default function StrategySessionsPage() {
+	const cols = useTableColumns('strategy-sessions');
 	const [when, setWhen] = useState<Record<string, string>>({});
 	const [link, setLink] = useState<Record<string, string>>({});
 	const [pending, setPending] = useState<string | null>(null);
 	const [page, setPage] = useUrlNumber('ss', 'page', 1);
+	const [state, setState] = useUrlState('ss', 'state', '');
+	const [search, setSearch] = useUrlState('ss', 'q', '');
+	const debouncedSearch = useDebouncedValue(search);
+	const [sort, setSort] = useUrlState('ss', 'sort', '-requested');
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
+	const activeFilters = [state, search].filter(Boolean).length;
+	const clearFilters = () => { setState(''); setSearch(''); setPage(1); };
 
 	// Only 'booked' rows exist (bookStrategy always inserts 'booked'; locked/
-	// available are states the home service derives, never persisted), so there's
-	// nothing to filter — the "requested"/"confirmed" chip carries the distinction.
-	// Paged (was the first 100 only, newest first).
+	// available are states the home service derives, never persisted). The real
+	// distinction is requested vs confirmed (a time set) — that's the `state` filter.
 	const { data, error, isLoading, mutate } = useSWR<Resp>(
-		['/api/admin/strategy-sessions', { status: 'booked', limit: LIMIT, offset: (page - 1) * LIMIT }],
+		['/api/admin/strategy-sessions', { status: 'booked', state: state || undefined, q: debouncedSearch.trim() || undefined, sort, limit: LIMIT, offset: (page - 1) * LIMIT }],
 		{ dedupingInterval: 15_000 },
 	);
 	const rows = data?.data ?? [];
@@ -64,11 +75,35 @@ export default function StrategySessionsPage() {
 				action={<button className="btn ghost" onClick={() => void mutate()}><RefreshCw size={12} /> Refresh</button>}
 			/>
 
-			<div className="card" style={{ padding: 'var(--space-4)' }}>
-				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No strategy sessions in this view." onRetry={() => void mutate()}>
+			<FilterBar>
+				<input
+					className="search-input" style={{ flex: '0 0 240px', height: 32 }}
+					placeholder="Search company or founder email…" aria-label="Search strategy sessions"
+					value={search} onChange={(e) => f(setSearch)(e.target.value)}
+				/>
+				<FilterSelect
+					ariaLabel="Status" value={state} onChange={f(setState)} allLabel="All statuses"
+					options={[{ value: 'requested', label: 'Requested (no time yet)' }, { value: 'confirmed', label: 'Confirmed' }]}
+				/>
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
+			</FilterBar>
+
+			<div className="card" ref={cols.ref} style={{ padding: 'var(--space-4)' }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} session${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
+				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No sessions match these filters.' : 'No strategy sessions in this view.'} onRetry={() => void mutate()}>
 					<table className="data-table">
 						<thead>
-							<tr><th>Requested</th><th>Company</th><th>Founder</th><th>Status</th><th>Schedule</th><th>Confirm</th></tr>
+							<tr>
+								<SortableTh label="Requested" field="requested" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Company" field="company" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Founder" field="founder" sort={sort} onSort={f(setSort)} />
+								<th>Status</th>
+								<SortableTh label="Schedule" field="scheduled" sort={sort} onSort={f(setSort)} />
+								<th>Confirm</th>
+							</tr>
 						</thead>
 						<tbody>
 							{rows.map((r) => (

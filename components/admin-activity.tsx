@@ -1,13 +1,13 @@
 'use client';
 
 import useSWRInfinite from 'swr/infinite';
-import { AsyncState } from '@/components/atoms';
+import { AsyncState, SortableTh } from '@/components/atoms';
 
 /**
  * Admin activity (admin_action_log): who changed what through the admin panel. Used by the Admin activity page
  * (all actions) and the user Manage panel's History tab (actions on one user).
  *
- *   GET /api/admin/activity?target=&actor=&q=&before=&limit=
+ *   GET /api/admin/activity?target=&actor=&q=&from=&to=&sort=&before=&limit=
  */
 export interface AdminAction {
 	id: number; occurred_at: string; actor_email: string | null; actor_name: string | null;
@@ -33,7 +33,10 @@ function bodySummary(body: unknown): string {
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-export function AdminActivityTable({ filter }: { filter: { target?: string; actor?: string; q?: string } }) {
+export interface AdminActivityFilter { target?: string; actor?: string; q?: string; from?: string; to?: string; sort?: string }
+
+/** `onSort` makes the When column sortable (newest/oldest first); without it the table is newest first, as on a user's History tab. */
+export function AdminActivityTable({ filter, onSort, emptyMsg = 'No admin actions recorded yet.' }: { filter: AdminActivityFilter; onSort?: (s: string) => void; emptyMsg?: string }) {
 	const qs = (before: number | null) => {
 		const p = new URLSearchParams({ limit: '50' });
 		for (const [k, v] of Object.entries(filter)) if (v) p.set(k, v);
@@ -47,10 +50,10 @@ export function AdminActivityTable({ filter }: { filter: { target?: string; acto
 	const rows = (data ?? []).flatMap((p) => p.data);
 	const more = !!data?.[data.length - 1]?.next;
 	return (
-		<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No admin actions recorded yet." onRetry={() => void mutate()}>
+		<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={emptyMsg} onRetry={() => void mutate()}>
 			<div className="table-scroll">
 				<table className="data-table">
-					<thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Target</th><th>Details</th><th>Result</th></tr></thead>
+					<thead><tr>{onSort ? <SortableTh label="When" field="when" sort={filter.sort || '-when'} onSort={onSort} /> : <th>When</th>}<th>Admin</th><th>Action</th><th>Target</th><th>Details</th><th>Result</th></tr></thead>
 					<tbody>
 						{rows.map((a) => (
 							<tr key={a.id}>

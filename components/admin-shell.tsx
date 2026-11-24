@@ -112,6 +112,25 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 	// Re-applied once the shell is ready: set while loading, Next's own <title> writes over it.
 	const shellReady = !authLoading && !adminLoading && !!session && isAdmin;
 	useEffect(() => { document.title = pageLabel ? `${pageLabel} | SportsTechX Admin` : 'SportsTechX Admin'; }, [pageLabel, shellReady]);
+	// Anything clipped with "…" (table cells, pills, labels) shows its full text on hover.
+	// Checked on hover, from the hovered element up to its cell, so it covers every page.
+	useEffect(() => {
+		const onOver = (e: MouseEvent) => {
+			let el = e.target as HTMLElement | null;
+			for (let i = 0; el && i < 4 && el !== document.body; i++, el = el.parentElement) {
+				if (el.title && !el.dataset.autoTitle) return; // a real tooltip wins
+				if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).textOverflow === 'ellipsis') {
+					const full = el.innerText.trim();
+					if (full) { el.title = full; el.dataset.autoTitle = '1'; }
+					return;
+				}
+				if (el.dataset.autoTitle) { el.removeAttribute('title'); delete el.dataset.autoTitle; } // no longer clipped
+				if (el.tagName === 'TD' || el.tagName === 'TH') return;
+			}
+		};
+		document.addEventListener('mouseover', onOver);
+		return () => document.removeEventListener('mouseover', onOver);
+	}, []);
 
 	// What waits in each review queue (sidebar counts); refreshed every minute and after writes.
 	const { data: counts } = useSWR<NavCounts>(shellReady ? ['/api/admin/stats/nav'] : null, { refreshInterval: 60_000, dedupingInterval: 30_000 });
@@ -142,28 +161,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
 			<aside className={`admin-rail ${navOpen ? 'open' : ''}`}>
 				<div className="admin-rail-brandrow">
-					<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-						{/* The brand mark on its own, not the lockup: the wordmark is
-						    already spelled out beside it, and at this size it would
-						    be illegible anyway. Pink reads on both themes, so it
-						    needs no dark/light variant. */}
+					{/* One line, topbar height: the mark (pink reads on both themes) + "Admin". */}
+					<Link href="/dashboard" className="admin-brand" onClick={() => setNavOpen(false)}>
 						{/* eslint-disable-next-line @next/next/no-img-element */}
-						<img
-							src="/stx-mark.png"
-							alt="SportsTechX"
-							width={28}
-							height={28}
-							style={{ width: 28, height: 28, objectFit: 'contain', flex: 'none' }}
-						/>
-						<div>
-							<div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--sidebar-muted)', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4 }}>
-								SportsTechX
-							</div>
-							<div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>
-								Admin
-							</div>
-						</div>
-					</div>
+						<img src="/stx-mark.png" alt="SportsTechX" width={24} height={24} />
+						<span>Admin</span>
+					</Link>
 				</div>
 				<nav>
 					{NAV_GROUPS.map((group) => (

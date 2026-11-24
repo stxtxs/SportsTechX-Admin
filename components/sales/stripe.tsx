@@ -3,8 +3,12 @@
 import { useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { StatCard, StatsPanel, AsyncState, Section, Tag } from '@/components/atoms';
-import { ComboBarLine, PieDonut, PieLegend, Funnel, toSegments, type PieSegment } from '@/components/charts';
+import { StatCard, StatsPanel, AsyncState, Section, Tag, SortableTh, Pager } from '@/components/atoms';
+import { FilterSelect } from '@/components/filters';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { stripeStatusLabel, tierLabel } from '@/lib/labels';
+import { ComboBarLine, PieDonut, PieLegend, Funnel, toSegments, type PieSegment } from '@/components/charts';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 /**
  * Stripe — live revenue dashboard (MRR/ARR, volume, churn, trial conversion),
@@ -21,7 +25,8 @@ interface Sale {
 	status: string | null;
 	created_at: string;
 }
-interface SalesResponse { data: Sale[]; total: number }
+interface SalesResponse { data: Sale[]; total: number; totalPages: number }
+const PLANS = ['explore', 'raise', 'scout'] as const;
 
 interface RevenueByProduct { name: string; mrr: number; activeCount: number }
 interface DailyVolume { date: string; gross: number; net: number; count: number }
@@ -206,36 +211,58 @@ export function SalesStripe() {
 	);
 }
 
-function BillingLog() {
-	const [search, setSearch] = useState('');
+function BillingLog() {
+	const cols = useTableColumns('sales');
+	const [search, setSearch] = useUrlState('sale', 'q');
+	const [plan, setPlan] = useUrlState('sale', 'plan');
+	const [since, setSince] = useUrlState('sale', 'since');
+	const [sort, setSort] = useUrlState('sale', 'sort', '-started');
+	const [page, setPage] = useUrlNumber('sale', 'page', 1);
 	const debouncedSearch = useDebouncedValue(search);
+	const activeFilters = (search ? 1 : 0) + (plan ? 1 : 0) + (since ? 1 : 0);
+	/** Change a filter or the sort and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
+	const clearFilters = () => { for (const set of [setSearch, setPlan, setSince]) set(''); setPage(1); };
 	const { data, error, isLoading, mutate } = useSWR<SalesResponse>(
-		['/api/admin/sales', { q: debouncedSearch || undefined, limit: 50 }],
+		['/api/admin/sales', { q: debouncedSearch || undefined, plan: plan || undefined, since: since || undefined, sort, page, limit: 50 }],
 		{ dedupingInterval: 30_000 },
 	);
 	const rows = data?.data ?? [];
 	return (
-		<div className="card">
-			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px var(--space-4)', borderBottom: '1px solid var(--border)', gap: 12 }}>
-				<div style={{ fontWeight: 700 }}>Subscriptions <span style={{ fontWeight: 400, color: 'var(--fg-muted)', fontSize: 12 }}>· {(data?.total ?? 0).toLocaleString()} total · newest first</span></div>
-				<input className="search-input" style={{ flex: '0 0 280px', height: 30 }} placeholder="Search by email or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+		<div className="card" ref={cols.ref}>
+			<div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', padding: '12px var(--space-4)', borderBottom: '1px solid var(--border)', gap: 8 }}>
+				<div style={{ fontWeight: 700 }}>Subscriptions <span style={{ fontWeight: 400, color: 'var(--fg-muted)', fontSize: 12 }}>· {(data?.total ?? 0).toLocaleString()}{activeFilters ? ' match these filters' : ' total'} · click a column header to sort</span></div>
+				<div style={{ flex: 1 }} />
+				<input className="search-input" style={{ flex: '0 0 240px', height: 30 }} placeholder="Search by email or name…" aria-label="Search subscriptions" value={search} onChange={(e) => f(setSearch)(e.target.value)} />
+				<FilterSelect ariaLabel="Plan" value={plan} onChange={f(setPlan)} allLabel="All plans" options={PLANS.map((p) => ({ value: p, label: tierLabel(p) }))} />
+				<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Started since</span>
+				<input className="search-input" type="date" style={{ height: 30, width: 140 }} value={since} onChange={(e) => f(setSince)(e.target.value)} aria-label="Started since" title="Started since" />
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
+				{cols.menu}
 			</div>
-			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No matching subscriptions' : 'No subscriptions yet'} onRetry={() => void mutate()}>
+			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No matching subscriptions' : 'No subscriptions yet'} onRetry={() => void mutate()}>
 				<table className="data-table">
-					<thead><tr><th>Started</th><th>Customer</th><th>Plan</th><th>Amount</th><th>Status</th></tr></thead>
+					<thead><tr>
+						<SortableTh label="Started" field="started" sort={sort} onSort={f(setSort)} />
+						<SortableTh label="Customer" field="customer" sort={sort} onSort={f(setSort)} />
+						<SortableTh label="Plan" field="plan" sort={sort} onSort={f(setSort)} />
+						<SortableTh label="Amount" field="amount" sort={sort} onSort={f(setSort)} />
+						<SortableTh label="Status" field="status" sort={sort} onSort={f(setSort)} />
+					</tr></thead>
 					<tbody>
 						{rows.map((r) => (
 							<tr key={r.id}>
 								<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
 								<td>{r.email ?? r.display_name ?? (r.profile_id ? `${r.profile_id.slice(0, 8)}…` : '—')}</td>
-								<td>{r.plan ?? '—'}</td>
+								<td>{r.plan ? tierLabel(r.plan) : '—'}</td>
 								<td className="num">{r.amount_cents != null ? fmtMoney(r.amount_cents / 100, r.currency ?? 'eur', 2) : '—'}</td>
-								<td><Tag variant={r.status === 'active' || r.status === 'trialing' ? 'pos' : r.status === 'canceled' || r.status === 'unpaid' || r.status === 'past_due' ? 'neg' : ''}>{r.status ?? '—'}</Tag></td>
+								<td><Tag variant={r.status === 'active' || r.status === 'trialing' ? 'pos' : r.status === 'canceled' || r.status === 'unpaid' || r.status === 'past_due' ? 'neg' : ''}>{stripeStatusLabel(r.status)}</Tag></td>
 							</tr>
 						))}
 					</tbody>
 				</table>
 			</AsyncState>
+			<div style={{ padding: '0 var(--space-4) var(--space-3)' }}><Pager page={page} totalPages={data?.totalPages} onPage={setPage} /></div>
 		</div>
 	);
 }

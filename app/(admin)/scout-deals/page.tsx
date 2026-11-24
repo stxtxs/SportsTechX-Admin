@@ -9,9 +9,11 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { Modal } from '@/components/modal';
 import { useConfirm } from '@/components/confirm';
-import { PageHeader, AsyncState, StatCard, StatsPanel, Tag, Pager } from '@/components/atoms';
+import { PageHeader, AsyncState, StatCard, StatsPanel, Tag, Pager, SortableTh } from '@/components/atoms';
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 /**
  * Deal Flow — the eligibility queue.
@@ -105,6 +107,7 @@ interface Stats {
 	interest_total: number; disclosed: number;
 }
 interface ListResp { data: DealRow[]; total: number; totalPages?: number }
+interface AdminUser { id: string; full_name?: string | null; display_name?: string | null; email: string; user_role: string }
 
 const LIMIT = 25;
 const money = (amount: string | null, ccy: string | null) => {
@@ -116,17 +119,33 @@ const money = (amount: string | null, ccy: string | null) => {
 	}).format(n);
 };
 
-export default function ScoutDealsPage() {
+export default function ScoutDealsPage() {
+	const cols = useTableColumns('scout-deals');
 	const ask = useConfirm();
 	const [status, setStatus] = useUrlState('sd', 'status', 'pending');
 	const [source, setSource] = useUrlState('sd', 'source', '');
+	const [assigned, setAssigned] = useUrlState('sd', 'reviewer', '');
+	const [search, setSearch] = useUrlState('sd', 'q', '');
+	const debouncedSearch = useDebouncedValue(search);
+	const [sort, setSort] = useUrlState('sd', 'sort', '-submitted');
 	const [page, setPage] = useUrlNumber('sd', 'page', 1);
 	const [openId, setOpenId] = useState<string | null>(null);
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
+	// Status defaults to the pending queue (like a tab); these are the filters "Clear" resets.
+	const activeFilters = [source, assigned, search].filter(Boolean).length;
+	const clearFilters = () => { for (const set of [setSource, setAssigned, setSearch]) set(''); setPage(1); };
+
+	const { data: usersResp } = useSWR<{ data: AdminUser[] }>(['/api/admin/users', { role: 'admin', limit: 100 }], { dedupingInterval: 300_000 });
+	const admins = (usersResp?.data ?? []).filter((u) => u.user_role === 'admin');
 
 	const list = useSWR<ListResp>(
 		['/api/admin/scout-deals', {
 			status: status || undefined,
 			source: source || undefined,
+			reviewed_by: assigned || undefined,
+			q: debouncedSearch.trim() || undefined,
+			sort,
 			limit: LIMIT,
 			offset: (page - 1) * LIMIT,
 		}],
@@ -162,27 +181,47 @@ export default function ScoutDealsPage() {
 			</StatsPanel>
 
 			<FilterBar>
+				<input
+					className="search-input" style={{ flex: '0 0 240px', height: 32 }}
+					placeholder="Search company, fund, email…" aria-label="Search deals"
+					value={search} onChange={(e) => f(setSearch)(e.target.value)}
+				/>
 				<FilterSelect
-					value={status} onChange={(v) => { setStatus(v); setPage(1); }}
+					ariaLabel="Status" value={status} onChange={f(setStatus)}
 					allLabel="All statuses" options={DEAL_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
 				/>
 				<FilterSelect
-					value={source} onChange={(v) => { setSource(v); setPage(1); }}
+					ariaLabel="Source" value={source} onChange={f(setSource)}
 					allLabel="Any source" options={SOURCES.map((s) => ({ value: s, label: s === 'circle' ? 'From the Circle' : 'Verified raise' }))}
 				/>
+				<FilterSelect
+					ariaLabel="Reviewed by" value={assigned} onChange={f(setAssigned)} allLabel="Reviewed by: anyone"
+					options={[{ value: 'none', label: 'Not reviewed yet' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]}
+				/>
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
-			<div className="card" style={{ padding: 'var(--space-4)' }}>
+			<div className="card" ref={cols.ref} style={{ padding: 'var(--space-4)' }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 10, marginBottom: 10, borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{list.data ? `${list.data.total.toLocaleString()} deal${list.data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
 				<AsyncState
 					loading={list.isLoading} error={list.error} empty={rows.length === 0}
-					emptyMsg={status === 'pending' ? 'Nothing waiting for review.' : 'No deals match these filters.'}
+					emptyMsg={status === 'pending' && !activeFilters ? 'Nothing waiting for review.' : 'No deals match these filters.'}
 					onRetry={() => void list.mutate()}
 				>
 					<table className="data-table">
 						<thead>
 							<tr>
-								<th>Submitted</th><th>Company</th><th>Source</th><th>Submitter</th>
-								<th>Round</th><th>Interest</th><th>Status</th><th>Actions</th>
+								<SortableTh label="Submitted" field="submitted" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Company" field="company" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Source" field="source" sort={sort} onSort={f(setSort)} />
+								<th>Submitter</th>
+								<SortableTh label="Round · target" field="target" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Interest" field="interest" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Status" field="status" sort={sort} onSort={f(setSort)} />
+								<th>Actions</th>
 							</tr>
 						</thead>
 						<tbody>

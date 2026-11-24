@@ -5,9 +5,12 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { InvestorSelectOne } from '@/components/entity-pickers';
-import { PageHeader, Section, StatCard, AsyncState, Tag, Pager } from '@/components/atoms';
-import { StatStrip } from '@/components/filters';
+import { PageHeader, Section, StatCard, AsyncState, Tag, Pager, SortableTh } from '@/components/atoms';
+import { FilterSelect, StatStrip } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { tidy } from '@/lib/labels';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface JobRow {
 	id: string; queue_name: string; job_name: string | null; status: string;
@@ -32,6 +35,8 @@ interface HistoryResp {
 const STATUS_TONE: Record<string, '' | 'pos' | 'neg' | 'warn'> = {
 	completed: 'pos', failed: 'neg', stuck: 'neg', pending: 'warn', running: '',
 };
+const JOB_STATUS_LABEL: Record<string, string> = { pending: 'Waiting', running: 'Running', completed: 'Done', failed: 'Failed', stuck: 'Stuck' };
+const statusLabel = (s: string) => JOB_STATUS_LABEL[s] ?? tidy(s);
 const secs = (n: number | null): string => {
 	if (n == null) return '—';
 	if (n < 60) return `${n}s`;
@@ -104,16 +109,23 @@ const ENDPOINTS: Array<{ key: EndpointKey; label: string; desc: string; path: st
 	},
 ];
 
-export default function JobsPage() {
+export default function JobsPage() {
+	const cols = useTableColumns('jobs');
 	const [enrichId, setEnrichId] = useState('');
 	const [runningKey, setRunningKey] = useState<EndpointKey | null>(null);
-	const [status, setStatus] = useState<string>('');
-	const [q, setQ] = useState('');
-	const [page, setPage] = useState(1);
+	const [status, setStatus] = useUrlState('job', 'status');
+	const [queue, setQueue] = useUrlState('job', 'queue');
+	const [q, setQ] = useUrlState('job', 'q');
+	const [sort, setSort] = useUrlState('job', 'sort', '-queued');
+	const [page, setPage] = useUrlNumber('job', 'page', 1);
 	const dq = useDebouncedValue(q);
+	const activeFilters = (status ? 1 : 0) + (queue ? 1 : 0) + (q ? 1 : 0);
+	/** Change a filter or the sort and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
+	const clearFilters = () => { for (const set of [setStatus, setQueue, setQ]) set(''); setPage(1); };
 
 	const history = useSWR<HistoryResp>(
-		['/api/admin/jobs/history', { status: status || undefined, q: dq || undefined, page, limit: 50 }],
+		['/api/admin/jobs/history', { status: status || undefined, queue: queue || undefined, q: dq || undefined, sort, page, limit: 50 }],
 		{ dedupingInterval: 15_000, refreshInterval: 60_000 },
 	);
 	const rows = history.data?.rows ?? [];
@@ -219,25 +231,32 @@ export default function JobsPage() {
 				</Section>
 			</div>
 
-			<Section title="Recent runs" meta={`${history.data?.total ?? 0} runs · refreshes every 60s`} padded={false}>
+			<Section title="Recent runs" meta={`${(history.data?.total ?? 0).toLocaleString()} runs${activeFilters ? ' match these filters' : ''} · refreshes every 60s · click a column header to sort`} padded={false}>
 				<div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-					<input className="search-input" style={{ flex: '0 0 220px', height: 30 }} placeholder="Search queue, job or entity id…"
-						value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+					<input className="search-input" style={{ flex: '0 0 220px', height: 30 }} placeholder="Search queue, job or entity id…" aria-label="Search job runs"
+						value={q} onChange={(e) => f(setQ)(e.target.value)} />
+					<FilterSelect ariaLabel="Queue" value={queue} onChange={f(setQueue)} allLabel="All queues" options={byQueue.map((b) => ({ value: b.queue_name, label: b.queue_name }))} />
 					<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Status</span>
-					<button className={`chip ${status === '' ? 'on' : ''}`} onClick={() => { setStatus(''); setPage(1); }}>All</button>
+					<button className={`chip ${status === '' ? 'on' : ''}`} onClick={() => f(setStatus)('')}>All</button>
 					{byStatus.map((b) => (
-						<button key={b.status} className={`chip ${status === b.status ? 'on' : ''}`} onClick={() => { setStatus(b.status); setPage(1); }}>
-							{b.status}: {b.count}
+						<button key={b.status} className={`chip ${status === b.status ? 'on' : ''}`} onClick={() => f(setStatus)(b.status)}>
+							{statusLabel(b.status)}: {b.count}
 						</button>
 					))}
+					{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
 				</div>
 				<AsyncState loading={history.isLoading} error={history.error} empty={rows.length === 0}
-					emptyMsg={status ? `No ${status} jobs.` : 'No job runs recorded yet.'} onRetry={() => void history.mutate()}>
-					<div className="table-scroll">
+					emptyMsg={activeFilters ? 'No job runs match these filters.' : 'No job runs recorded yet.'} onRetry={() => void history.mutate()}>
+					<div className="table-scroll" ref={cols.ref}>
 						<table className="data-table">
 							<thead><tr>
-								<th>Queue</th><th>Status</th><th style={{ textAlign: 'right' }}>Attempt</th>
-								<th style={{ textAlign: 'right' }}>Duration</th><th>Queued</th><th>Error</th>
+								<SortableTh label="Queue" field="queue" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Status" field="status" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Attempt" field="attempt" sort={sort} onSort={f(setSort)} align="right" />
+								<SortableTh label="Duration" field="duration" sort={sort} onSort={f(setSort)} align="right" />
+								<SortableTh label="Queued" field="queued" sort={sort} onSort={f(setSort)} />
+								<th>Error</th>
 							</tr></thead>
 							<tbody>
 								{rows.map((r) => (
@@ -250,7 +269,7 @@ export default function JobsPage() {
 												</div>
 											)}
 										</td>
-										<td><Tag variant={STATUS_TONE[r.status] ?? ''}>{r.status}</Tag></td>
+										<td><Tag variant={STATUS_TONE[r.status] ?? ''}>{statusLabel(r.status)}</Tag></td>
 										<td className="num" style={{ textAlign: 'right', color: r.attempt > 1 ? 'var(--warn)' : 'var(--fg-muted)' }}>
 											{r.attempt}/{r.max_attempts}
 										</td>

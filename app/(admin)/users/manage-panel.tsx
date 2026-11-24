@@ -7,7 +7,8 @@ import useSWRInfinite from 'swr/infinite';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
-import { Section, PillTabs } from '@/components/atoms';
+import { Section } from '@/components/atoms';
+import { stripeStatusLabel, tierLabel } from '@/lib/labels';
 import { SignInLinkSection } from './account-access';
 import { AdminActivityTable } from '@/components/admin-activity';
 
@@ -24,55 +25,65 @@ interface GrantRow {
 }
 interface FeatureCatalogRow { id: string; slug: string; name: string; is_active?: boolean }
 
-const MANAGE_TABS = ['Access', 'Billing & credits', 'Personalization', 'History'] as const;
-type ManageTab = (typeof MANAGE_TABS)[number];
+const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 'var(--space-4)' };
+const hint = (text: string) => <div style={{ fontSize: 12, color: 'var(--fg-muted)', margin: '0 0 10px', lineHeight: 1.5 }}>{text}</div>;
 
-/**
- * Per-user management panel — used both inline-expanded in the list and on the
- * standalone /users/[id] details page. Grouped into focused tabs.
- */
-export function ManagePanel({ user }: { user: ManageUser }) {
-	const [tab, setTab] = useState<ManageTab>('Access');
+/** Access tab: plan changes first, then feature grants and account tools; destructive actions last, apart. */
+export function AccessPanel({ user }: { user: ManageUser }) {
+	return (
+		<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+			<Section title="Change plan" meta="pick one">
+				<div style={grid2}>
+					<div>
+						{hint('Permanent plan: no end date and no payment. Stays until an admin changes it.')}
+						<TierChangeSection user={user} />
+					</div>
+					<div>
+						{hint('Time-limited access: gives the plan and its monthly credits now; when the days run out they move back to Explore unless they subscribe.')}
+						<GrantAccessSection profileId={user.id} />
+					</div>
+				</div>
+			</Section>
+			<Section title="Feature grants" meta="one feature without changing the plan">
+				<FeatureGrantsSection profileId={user.id} />
+			</Section>
+			<Section title="Account" meta="sign-in help · labels · notes">
+				<div style={grid2}>
+					<SignInLinkSection profileId={user.id} email={user.email ?? null} />
+					<PlaymakersSection profileId={user.id} />
+				</div>
+				<div style={{ marginTop: 'var(--space-4)' }}><AdminNoteSection profileId={user.id} /></div>
+			</Section>
+			<AccessControlSection profileId={user.id} />
+		</div>
+	);
+}
+
+/** Billing & credits tab: the common action (grant credits) on top, then balance, subscription and ledger. */
+export function BillingPanel({ profileId }: { profileId: string }) {
 	// Bumped after a credit grant so the ledger (an infinite list, which a
 	// filter-based SWR mutate does not reach) reloads too.
 	const [ledgerRev, setLedgerRev] = useState(0);
 	return (
 		<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-			<PillTabs tabs={MANAGE_TABS} value={tab} onChange={setTab} />
-
-			{tab === 'Access' && (
-				<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-					<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
-						<TierChangeSection user={user} />
-						<GrantAccessSection profileId={user.id} />
-						<FeatureGrantsSection profileId={user.id} />
-					</div>
-					<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr', gap: 'var(--space-4)' }}>
-						<SignInLinkSection profileId={user.id} email={user.email ?? null} />
-						<PlaymakersSection profileId={user.id} />
-						<AccessControlSection profileId={user.id} />
-					</div>
-					<AdminNoteSection profileId={user.id} />
-				</div>
-			)}
-
-			{tab === 'Billing & credits' && (
-				<div style={{ display: 'grid', gap: 'var(--space-4)' }}>
-					<CreditBalancesSection profileId={user.id} />
-					<CreditLedgerSection profileId={user.id} rev={ledgerRev} />
-					<BillingSection profileId={user.id} />
-					<CreditGrantSection profileId={user.id} onGranted={() => setLedgerRev((r) => r + 1)} />
-				</div>
-			)}
-
-			{tab === 'Personalization' && <PersonalizationSection profileId={user.id} />}
-
-			{tab === 'History' && (
-				<Section title="Admin actions on this user" meta="since 18 Nov 2026">
-					<AdminActivityTable filter={{ target: user.id }} />
-				</Section>
-			)}
+			<div style={grid2}>
+				<CreditGrantSection profileId={profileId} onGranted={() => setLedgerRev((r) => r + 1)} />
+				<CreditBalancesSection profileId={profileId} />
+			</div>
+			<BillingSection profileId={profileId} />
+			<CreditLedgerSection profileId={profileId} rev={ledgerRev} />
 		</div>
+	);
+}
+
+export { PersonalizationSection };
+
+/** Admin actions taken on this user (Activity tab). */
+export function AdminActionsSection({ profileId }: { profileId: string }) {
+	return (
+		<Section title="Admin actions on this user" meta="recorded since 18 Nov 2026">
+			<AdminActivityTable filter={{ target: profileId }} />
+		</Section>
 	);
 }
 
@@ -309,28 +320,29 @@ function BillingSection({ profileId }: { profileId: string }) {
 	const cell = (label: string, value: ReactNode) => (
 		<div><div className="co-stat-label">{label}</div><div style={{ fontSize: 13 }}>{value}</div></div>
 	);
-	const pending = s?.cancel_at_period_end ? 'Cancels at period end' : s?.has_scheduled_change ? 'Plan change scheduled' : '—';
+	const pending = s?.cancel_at_period_end ? 'Cancels at the end of this period' : s?.has_scheduled_change ? 'Plan change scheduled' : 'None';
+	const [showIds, setShowIds] = useState(false);
 	return (
-		<div className="card" style={{ padding: 'var(--space-4)' }}>
-			<div className="co-stat-label" style={{ marginBottom: 10 }}>Billing</div>
+		<Section title="Subscription" meta={l?.stripe_subscription_id ? 'live from Stripe' : 'no Stripe subscription'}
+			action={l?.stripe_customer_id || l?.stripe_subscription_id ? <button className="btn ghost" style={{ height: 26, fontSize: 12 }} onClick={() => setShowIds((v) => !v)}>{showIds ? 'Hide IDs' : 'Show Stripe IDs'}</button> : undefined}>
 			{isLoading ? (
 				<div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Loading…</div>
 			) : !l ? (
-				<div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>No subscription record.</div>
+				<div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>Never subscribed and never had a trial or admin grant.</div>
 			) : (
-				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-					{cell('Plan status', l.active_subscription ? (l.is_trial ? 'Trial' : 'Active') : 'Inactive')}
-					{cell('Renews / expires', fmt(s?.current_period_end ?? l.expires_at))}
-					{cell('Trial ends', fmt(l.trial_ends_at))}
-					{cell('Pending change', <span style={{ color: pending === '—' ? 'var(--fg)' : 'var(--accent)', fontWeight: pending === '—' ? 400 : 600 }}>{pending}</span>)}
-					{cell('Stripe plan', s?.price_nickname ?? (s?.amount != null ? `${s.amount} ${(s.currency ?? '').toUpperCase()}/${s.interval ?? ''}` : '—'))}
-					{cell('Stripe status', s?.status ?? '—')}
-					{cell('Customer ID', <code style={{ fontSize: 11 }}>{l.stripe_customer_id ?? '—'}</code>)}
-					{cell('Subscription ID', <code style={{ fontSize: 11 }}>{l.stripe_subscription_id ?? '—'}</code>)}
+				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+					{cell('Status', l.active_subscription ? (l.is_trial ? 'On a trial' : 'Active') : 'Not active')}
+					{cell(s?.cancel_at_period_end ? 'Ends on' : 'Renews / ends on', fmt(s?.current_period_end ?? l.expires_at))}
+					{l.trial_ends_at && cell('Trial ends', fmt(l.trial_ends_at))}
+					{cell('Upcoming change', <span style={{ color: pending === 'None' ? 'var(--fg-muted)' : 'var(--accent)', fontWeight: pending === 'None' ? 400 : 600 }}>{pending}</span>)}
+					{s && !s.error && cell('Stripe plan', s.price_nickname ?? (s.amount != null ? `${s.amount} ${(s.currency ?? '').toUpperCase()} / ${s.interval ?? ''}` : '—'))}
+					{s && !s.error && cell('Stripe says', stripeStatusLabel(s.status))}
+					{showIds && cell('Customer ID', <code style={{ fontSize: 11 }}>{l.stripe_customer_id ?? '—'}</code>)}
+					{showIds && cell('Subscription ID', <code style={{ fontSize: 11 }}>{l.stripe_subscription_id ?? '—'}</code>)}
 				</div>
 			)}
-			{s?.error && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 8 }}>Stripe lookup: {s.error}</div>}
-		</div>
+			{s?.error && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 8 }}>Couldn’t reach Stripe: {s.error}</div>}
+		</Section>
 	);
 }
 
@@ -431,7 +443,7 @@ function AccessControlSection({ profileId }: { profileId: string }) {
 
 	return (
 		<div className="card" style={{ padding: 'var(--space-4)', borderColor: 'color-mix(in oklch, var(--neg), transparent 55%)' }}>
-			<div className="co-stat-label" style={{ marginBottom: 10, color: 'var(--neg)' }}>Access control</div>
+			<div className="co-stat-label" style={{ marginBottom: 10, color: 'var(--neg)' }}>Danger zone</div>
 			{blocked && (
 				<div style={{ fontSize: 12, color: 'var(--neg)', marginBottom: 10 }}>
 					⛔ Blocked{u?.blocked_reason ? ` — ${u.blocked_reason}` : ''}. All access is rejected until unblocked.
@@ -471,10 +483,9 @@ function TierChangeSection({ user }: { user: ManageUser }) {
 	};
 	return (
 		<div>
-			<div className="co-stat-label" style={{ marginBottom: 8 }}>Permanent tier</div>
-			<Select value={tier} onChange={setTier} width="100%" style={{ display: 'block', width: '100%', marginBottom: 8 }} options={['explore', 'raise', 'scout'].map((t) => ({ value: t, label: t }))} />
+						<Select value={tier} onChange={setTier} width="100%" style={{ display: 'block', width: '100%', marginBottom: 8 }} options={['explore', 'raise', 'scout'].map((t) => ({ value: t, label: tierLabel(t) }))} />
 			<button className="btn" disabled={pending || tier === user.user_type} onClick={() => void update()}>
-				{pending ? 'Saving…' : 'Save tier'}
+				{pending ? 'Saving…' : 'Set permanent plan'}
 			</button>
 		</div>
 	);
@@ -490,7 +501,7 @@ function GrantAccessSection({ profileId }: { profileId: string }) {
 		setPending(true);
 		try {
 			await api('POST', '/api/admin/billing/grant-access', { profile_id: profileId, tier, days, reason: reason.trim() || undefined });
-			toast.success(`Granted ${tier} for ${days} day${days === 1 ? '' : 's'}`);
+			toast.success(`Gave ${tierLabel(tier)} for ${days} day${days === 1 ? '' : 's'}`);
 			setReason('');
 			void mutate((key) => Array.isArray(key) && String(key[0]).startsWith('/api/admin/users'));
 		} catch (e) { toast.error((e as Error).message); }
@@ -498,14 +509,13 @@ function GrantAccessSection({ profileId }: { profileId: string }) {
 	};
 	return (
 		<div>
-			<div className="co-stat-label" style={{ marginBottom: 8 }}>Grant time-bounded access</div>
-			<div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 6, marginBottom: 6 }}>
+						<div style={{ display: 'grid', gridTemplateColumns: '1fr 100px', gap: 6, marginBottom: 6 }}>
 				<Select value={tier} onChange={(v) => setTier(v as 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'raise', label: 'Raise' }, { value: 'scout', label: 'Scout' }]} />
 				<input className="search-input" type="number" min={1} max={3650} value={days} onChange={(e) => setDays(Math.max(1, Number(e.target.value) || 1))} />
 			</div>
 			<input className="search-input" placeholder="Reason (optional)" style={{ width: '100%', marginBottom: 8 }} value={reason} onChange={(e) => setReason(e.target.value)} />
 			<button className="btn" disabled={pending} onClick={() => void grant()}>
-				{pending ? 'Granting…' : `Grant ${tier} · ${days}d`}
+				{pending ? 'Granting…' : `Give ${tierLabel(tier)} for ${days} day${days === 1 ? '' : 's'}`}
 			</button>
 		</div>
 	);
@@ -555,16 +565,18 @@ function FeatureGrantsSection({ profileId }: { profileId: string }) {
 	};
 
 	return (
-		<div>
-			<div className="co-stat-label" style={{ marginBottom: 8 }}>Per-feature grants</div>
+		<div style={{ maxWidth: 560 }}>
 			{activeGrants.length === 0 ? (
-				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 10 }}>None active.</div>
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 10 }}>No feature grants right now.</div>
 			) : (
 				<div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
 					{activeGrants.map((g) => (
 						<div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, background: 'var(--bg-1)', padding: '4px 8px', border: '1px solid var(--border)' }}>
-							<span style={{ fontFamily: 'var(--font-mono)', flex: 1 }}>{g.feature_slug}</span>
-							<span style={{ color: 'var(--fg-muted)' }}>{g.expires_at ? `expires ${new Date(g.expires_at).toLocaleDateString()}` : 'permanent'}</span>
+							<span style={{ flex: 1 }}>
+								<strong>{featureOptions.find((f) => f.slug === g.feature_slug)?.name ?? g.feature_slug}</strong>
+								{g.reason && <span style={{ color: 'var(--fg-muted)' }}> — {g.reason}</span>}
+							</span>
+							<span style={{ color: 'var(--fg-muted)' }}>{g.expires_at ? `until ${new Date(g.expires_at).toLocaleDateString()}` : 'no end date'}</span>
 							<button className="btn ghost" style={{ padding: '2px 8px', fontSize: 11 }} disabled={revokePending} onClick={() => void revoke(g.feature_slug)}>Revoke</button>
 						</div>
 					))}
@@ -580,7 +592,7 @@ function FeatureGrantsSection({ profileId }: { profileId: string }) {
 			</div>
 			<input className="search-input" placeholder="Reason (optional)" style={{ width: '100%', marginBottom: 8 }} value={reason} onChange={(e) => setReason(e.target.value)} />
 			<button className="btn" disabled={addPending || !slug} onClick={() => void add()}>
-				{addPending ? 'Granting…' : slug ? `Grant ${slug}${days === '' ? ' (permanent)' : ` · ${days}d`}` : 'Grant feature'}
+				{addPending ? 'Granting…' : slug ? `Grant ${featureOptions.find((f) => f.slug === slug)?.name ?? slug}${days === '' ? ' (no end date)' : ` · ${days} days`}` : 'Grant feature'}
 			</button>
 		</div>
 	);

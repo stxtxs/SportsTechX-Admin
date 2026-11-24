@@ -23,7 +23,7 @@ import { GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/compo
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
-import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useUrlState, useUrlNumber, forgetListQuery } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
 
@@ -838,7 +838,7 @@ export default function EcosystemAdminPage() {
 	const router = useRouter();
 	const raw = searchParams.get('tab');
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
-	useEffect(() => { if (raw && MOVED_TABS[raw]) router.replace(MOVED_TABS[raw]); }, [raw, router]);
+	useEffect(() => { if (raw && MOVED_TABS[raw]) { forgetListQuery(pathname); router.replace(MOVED_TABS[raw]); } }, [raw, router, pathname]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
 	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 

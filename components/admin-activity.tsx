@@ -157,7 +157,7 @@ export function AdminActivityTable({ filter, onSort, emptyMsg = 'No admin action
 								<td style={{ verticalAlign: 'top' }}>
 									{!a.target ? <span style={{ color: 'var(--fg-muted)' }}>—</span>
 										: a.target.href && !a.target.deleted ? <Link href={a.target.href}>{a.target.name || 'Open'}</Link>
-										: <>{a.target.name || 'Unknown'} <span className="tag">deleted</span></>}
+										: a.target.name ? <>{a.target.name} <span className="tag">deleted</span></> : <span style={{ color: 'var(--fg-muted)' }}>Deleted record</span>}
 								</td>
 								<td className="wrap" style={{ verticalAlign: 'top', fontSize: 12.5, maxWidth: 520 }}><Details a={a} /></td>
 								<td style={{ verticalAlign: 'top' }}>{a.status && a.status < 400 ? <span className="tag pos">Done</span> : <span className="tag neg" title={`HTTP ${a.status ?? '?'}`}>Failed</span>}</td>

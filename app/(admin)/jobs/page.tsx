@@ -9,14 +9,14 @@ import { PageHeader, Section, StatCard, AsyncState, Tag, Pager, SortableTh } fro
 import { FilterSelect, StatStrip } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
-import { jobStatusLabel as statusLabel, tidy } from '@/lib/labels';
+import { jobStatusLabel as statusLabel, tidy } from '@/lib/labels';
 import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface JobRow {
 	id: string; queue_name: string; job_name: string | null; status: string;
 	attempt: number; max_attempts: number;
 	enqueued_at: string | null; started_at: string | null; completed_at: string | null;
-	entity_type: string | null; entity_id: string | null;
+	entity_type: string | null; entity_id: string | null; entity_name?: string | null;
 	last_error: string | null; created_at: string; duration_s: number | null;
 }
 interface QueueRow {
@@ -107,7 +107,7 @@ const ENDPOINTS: Array<{ key: EndpointKey; label: string; desc: string; path: st
 	},
 ];
 
-export default function JobsPage() {
+export default function JobsPage() {
 	const cols = useTableColumns('jobs');
 	const [enrichId, setEnrichId] = useState('');
 	const [runningKey, setRunningKey] = useState<EndpointKey | null>(null);
@@ -263,7 +263,7 @@ export default function JobsPage() {
 											<div style={{ fontSize: 12 }} title={r.queue_name}>{tidy(r.queue_name)}</div>
 											{r.entity_type && (
 												<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-													{tidy(r.entity_type)}{r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
+													{tidy(r.entity_type)}{r.entity_name ? ` · ${r.entity_name}` : r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}
 												</div>
 											)}
 										</td>

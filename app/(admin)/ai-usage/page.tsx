@@ -99,7 +99,7 @@ function sortRows<T>(rows: T[], sort: string, get: Record<string, (r: T) => stri
 	});
 }
 const userName = (u: { profile_id: string | null; profile_name: string | null; profile_email: string | null }) =>
-	u.profile_id ? (u.profile_name || u.profile_email || u.profile_id.slice(0, 8)) : 'system / background';
+	u.profile_id ? (u.profile_name || u.profile_email || 'Deleted user') : 'system / background';
 
 export default function AiUsagePage() {
 	const router = useRouter();
@@ -372,7 +372,7 @@ export default function AiUsagePage() {
 function UserCell({ row, router }: { row: LedgerRow; router: ReturnType<typeof useRouter> }) {
 	if (!row.profile_id) return <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>system</span>;
 
-	const name = row.profile_name || row.profile_email || `${row.profile_id.slice(0, 8)}…`;
+	const name = row.profile_name || row.profile_email || 'Deleted user';
 	const isAdmin = !!row.profile_is_admin;
 	const tier = (row.profile_tier ?? 'explore').toLowerCase();
 	const badge = isAdmin ? 'Admin' : tier === 'explore' ? 'Explore · top-up/granted' : tierLabel(tier);

@@ -27,6 +27,7 @@ interface Dcr {
 	target_investor_id?: string | null;
 	target_ecosystem_entity_id?: string | null;
 	target_deal_id?: string | null;
+	ecosystem_type?: string | null;
 	profile_id?: string | null;
 	target_name_snapshot: string | null;
 	field_change: string | null;
@@ -172,9 +173,13 @@ function liveTarget(r: Dcr): { id: string; editPath: string; openHref: string | 
 	const api = { company: 'companies', investor: 'investors', ecosystem: 'ecosystem-entities' }[kind];
 	return { id, editPath: `/api/admin/${api}/${id}/edit`, openHref: recordHref(r) };
 }
-/** The admin page of the record a request is about (a deal / fund / portfolio row → its company / investor). */
+const ECO_TAB: Record<string, string> = { program: 'programs', event: 'events', initiative: 'initiatives', organization: 'organizations' };
+/** An ecosystem entry's admin page, on its own tab. */
+const ecoHref = (id: string, type?: string | null) => `/ecosystem?tab=${ECO_TAB[type ?? ''] ?? 'programs'}&open=${id}`;
+/** The admin page of the record a request is about (a deal opens the deal; a fund / portfolio row → its investor). */
 function recordHref(r: Dcr): string | null {
-	if (r.entity_type === 'ecosystem') return r.target_ecosystem_entity_id ? `/ecosystem?open=${r.target_ecosystem_entity_id}` : null;
+	if (r.entity_type === 'ecosystem') return r.target_ecosystem_entity_id ? ecoHref(r.target_ecosystem_entity_id, r.ecosystem_type) : null;
+	if (r.entity_type === 'deal' && r.target_deal_id) return `/companies?tab=deals&edit=${r.target_deal_id}`;
 	if (r.entity_type?.startsWith('investor')) return r.target_investor_id ? `/ecosystem?tab=investors&edit=${r.target_investor_id}` : null;
 	return r.target_company_id ? `/companies?edit=${r.target_company_id}` : null;
 }

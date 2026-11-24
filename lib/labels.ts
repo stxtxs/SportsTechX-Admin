@@ -63,7 +63,7 @@ export const requestEntityLabel = lookup({
 
 /** Review queues (startups to add, investor review) and their Apollo/Attio enrichment. */
 export const pipelineStatusLabel = lookup({ new: 'New', reviewing: 'Reviewing', added: 'Added', rejected: 'Rejected' });
-export const enrichmentStatusLabel = lookup({ pending: 'Waiting', enriching: 'Enriching…', enriched: 'Enriched', failed: 'Failed' });
+export const enrichmentStatusLabel = lookup({ pending: 'Not enriched yet', enriching: 'Enriching…', enriched: 'Enriched', failed: 'Failed' });
 
 /** Deal Flow (scout_deals) and the interest requests on it. */
 export const scoutDealStatusLabel = lookup({

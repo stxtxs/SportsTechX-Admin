@@ -41,7 +41,7 @@ interface Suggestions { primary_sector?: string | null; sectors?: string[]; tech
 interface Entry {
 	id: string; name: string; website: string | null; source: string | null; notes: string | null;
 	status: Status; hq_country: string | null; hq_city: string | null;
-	assigned_to: string | null; company_id: string | null; created_at: string;
+	assigned_to: string | null; assigned_to_name?: string | null; company_id: string | null; created_at: string;
 	enrichment_status: EnrichStatus; enrichment_error: string | null; enriched_at: string | null;
 }
 // Full row (incl. apollo_raw + suggestions) fetched on demand for the view modal.
@@ -149,7 +149,7 @@ export default function StartupsPipelinePage() {
 			const { rows, capped } = await fetchAllPages<Entry>('/api/admin/startups-pipeline', params);
 			downloadCsv('startups-to-add.csv',
 				['Added', 'Name', 'Website', 'HQ city', 'HQ country', 'Source', 'Status', 'Enrichment', 'Assigned to'],
-				rows.map((e) => [e.created_at.slice(0, 10), e.name, e.website ?? '', e.hq_city ?? '', e.hq_country ?? '', e.source ?? '', pipelineStatusLabel(e.status), enrichmentStatusLabel(e.enrichment_status), e.assigned_to ? adminName(e.assigned_to) : '']));
+				rows.map((e) => [e.created_at.slice(0, 10), e.name, e.website ?? '', e.hq_city ?? '', e.hq_country ?? '', e.source ?? '', pipelineStatusLabel(e.status), enrichmentStatusLabel(e.enrichment_status), e.assigned_to ? (e.assigned_to_name ?? adminName(e.assigned_to)) : '']));
 			toast.success(`Exported ${rows.length.toLocaleString()} row${rows.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
 		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
 	};
@@ -263,7 +263,7 @@ export default function StartupsPipelinePage() {
 											? <Tag>no website</Tag>
 											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(e.enrichment_status)}</Tag>}
 									</td>
-									<td>{adminName(e.assigned_to)}</td>
+									<td>{e.assigned_to_name ?? adminName(e.assigned_to)}</td>
 									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{pipelineStatusLabel(e.status)}</Tag></td>
 									<td style={{ textAlign: 'right' }}>
 										<div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>

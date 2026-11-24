@@ -16,6 +16,9 @@ const KINDS: Array<[string, string]> = [
 	['ecosystem', 'Ecosystem'], ['deals', 'Deal'], ['reports', 'Report'], ['claims', 'Claim'],
 ];
 
+/** Group headings in the results list. */
+const GROUP_TITLE: Record<string, string> = { Page: 'Pages', User: 'Users', Company: 'Companies', Investor: 'Investors', Ecosystem: 'Ecosystem', Deal: 'Deals', Report: 'Reports', Claim: 'Open claims' };
+
 /**
  * Global admin search: pages, users, companies, investors, ecosystem entries, deals, reports and
  * open claims. Opens with ⌘K / Ctrl+K, "/" (outside a text field) or the topbar box; arrow keys
@@ -104,6 +107,7 @@ export function CommandPalette() {
 					<Search size={15} aria-hidden />
 					<input
 						ref={input}
+						autoFocus
 						value={q}
 						onChange={(e) => setQ(e.target.value)}
 						onKeyDown={onKeyDown}
@@ -126,7 +130,7 @@ export function CommandPalette() {
 				<div className="adm-search-pop" id="adm-search-results" role="listbox" ref={list}>
 					{groups.map((g) => (
 						<div key={g.label} className="adm-search-group">
-							<div className="adm-search-group-label">{g.label === 'Ecosystem' ? 'Ecosystem' : `${g.label}s`}</div>
+							<div className="adm-search-group-label">{GROUP_TITLE[g.label] ?? g.label}</div>
 							{g.items.map(({ h, i }) => (
 								<div
 									key={`${h.kind}:${h.id}`}

@@ -4,13 +4,10 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { useRestoreListQuery } from '@/hooks/use-url-state';
-import {
-	LayoutDashboard, Briefcase, Users, FilePlus, FileText, Layers,
-	Activity, ShoppingCart, LogOut, CreditCard, ToggleLeft,
-	Banknote, Sparkles, Tag, BookOpen, Menu, BarChart3, Gauge,
-	Receipt, Package, Handshake, Download, Coins, ChevronDown, Sun, Moon, Newspaper, Undo2,
-	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail, Pin, Award, History,
-} from 'lucide-react';
+import useSWR from 'swr';
+import { ChevronDown, LogOut, Menu, Sun, Moon } from 'lucide-react';
+import { NAV_GROUPS, activeNavItem, type NavGroup, type NavItem } from '@/lib/admin-nav';
+import { CommandPalette } from '@/components/command-palette';
 import { useTheme } from 'next-themes';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import { useIsAdmin, useUserProfile } from '@/hooks/use-user-profile';
@@ -33,130 +30,48 @@ function ThemeToggle() {
 	);
 }
 
-type IconType = typeof LayoutDashboard;
-interface NavLeaf { href: string; label: string }
-// A nav item is either a direct link (href) or a parent that expands into child
-// pages (children). This mirrors the STX-WebApp admin, where each top tab that
-// had its own sub-tabs becomes an expandable group whose sub-tabs are pages.
-interface NavItem { href?: string; label: string; Icon: IconType; children?: NavLeaf[] }
-interface NavGroup { label: string; items: NavItem[] }
+type NavCounts = Partial<Record<NonNullable<NavItem['count']>[number], number>>;
+const countOf = (item: NavItem, counts?: NavCounts) => (item.count ?? []).reduce((n, k) => n + (counts?.[k] ?? 0), 0);
 
-// ── Sidebar grouped like the old admin: Data / Sales / Performance ───────────
-// The old admin bucketed its 12 tabs into three top groups. We keep the sidebar
-// + routed pages but mirror that grouping; nested tabs stay as expandable child
-// pages, and the new-build features slot into the closest group.
-const DATA_NAV: NavItem[] = [
-	{ label: 'Dashboard', href: '/dashboard', Icon: LayoutDashboard },
-	{ label: 'Claims & data changes', href: '/claims', Icon: ShieldCheck },
-	{ label: 'Companies & Deals', href: '/companies', Icon: Briefcase },
-	{ label: 'Ecosystem', href: '/ecosystem', Icon: Layers },
-	{ label: 'Startups to add', href: '/startups-pipeline', Icon: FilePlus },
-	{ label: 'Investors to add', href: '/investor-review', Icon: Banknote },
-	{ label: 'Reports', href: '/reports', Icon: FileText },
-	{ label: 'Benchmark contributors', href: '/benchmark-contributors', Icon: Award },
-	{ label: 'Home pins', href: '/home-pins', Icon: Pin },
-	{ label: 'Featured lists', href: '/featured-lists', Icon: Sparkles },
-	{ label: 'Reference data', href: '/reference', Icon: BookOpen },
-	{ label: 'Polls', href: '/polls', Icon: Sparkles },
-	{ label: 'Market roundup', href: '/market-roundup', Icon: Newspaper },
-	{ label: 'Site assets', href: '/site-assets', Icon: Images },
-	{ label: 'Intro requests', href: '/intro-requests', Icon: Handshake },
-	{ label: 'Strategy sessions', href: '/strategy-sessions', Icon: CalendarClock },
-	{ label: 'Fundraising Guide', href: '/raise-resources', Icon: BookOpen },
-	{ label: 'Deal Flow', href: '/scout-deals', Icon: Rocket },
-];
-
-const SALES_NAV: NavItem[] = [
-	// One Sales entry with in-page sub-tabs (Sales Tracker / Sales Entry /
-	// Touchpoints / Stripe) — mirrors the legacy STX-WebApp Sales tab.
-	{ label: 'Sales', href: '/sales', Icon: ShoppingCart },
-	{ label: 'Billing', href: '/billing', Icon: CreditCard },
-	{ label: 'Plans', href: '/subscription-plans', Icon: Tag },
-	{ label: 'Credit packs', href: '/credit-packs', Icon: Package },
-	// Pro-rata refunds owed after an in-app downgrade — a money-out queue, so
-	// it sits with the other billing surfaces rather than in the review group.
-	{ label: 'Refunds', href: '/refunds', Icon: Undo2 },
-];
-
-const PERFORMANCE_NAV: NavItem[] = [
-	// One entry with in-page sub-tabs (Directory / Signups / Engagement / Mixpanel).
-	{ label: 'User analytics', href: '/users', Icon: BarChart3 },
-	{ label: 'Performance', href: '/performance', Icon: Gauge },
-	{ label: 'Activity analytics', href: '/analytics', Icon: Activity },
-	{ label: 'Admin activity', href: '/activity', Icon: History },
-	{ label: 'AI usage & cost', href: '/ai-usage', Icon: Receipt },
-	{ label: 'Credit usage', href: '/credit-usage', Icon: Coins },
-	{ label: 'Feature flags', href: '/features', Icon: ToggleLeft },
-	{ label: 'Jobs & integrations', href: '/jobs', Icon: Activity },
-	{ label: 'Export columns', href: '/exports', Icon: Download },
-	{ label: 'Emails', href: '/emails', Icon: Mail },
-	{ label: 'System settings', href: '/system', Icon: SlidersHorizontal },
-	{ label: 'Data migration', href: '/data-migration', Icon: DatabaseZap },
-];
-
-const NAV_GROUPS: NavGroup[] = [
-	{ label: 'Data', items: DATA_NAV },
-	{ label: 'Sales', items: SALES_NAV },
-	{ label: 'Performance', items: PERFORMANCE_NAV },
-];
-
-// Flat list of every reachable page (parents + children) for the topbar title.
-const ALL_LEAVES: NavLeaf[] = NAV_GROUPS.flatMap((g) =>
-	g.items.flatMap((it) => (it.children ? it.children : it.href ? [{ href: it.href, label: it.label }] : [])),
-);
-
-const leafActive = (pathname: string | null, href: string): boolean =>
-	pathname === href || (!!pathname && pathname.startsWith(`${href}/`));
-
-// The active leaf is the longest href that prefixes the current path, so a child
-// page (/companies/claims) wins over its section root (/companies).
-function activeLeafHref(pathname: string | null): string | null {
-	const matches = ALL_LEAVES.filter((l) => leafActive(pathname, l.href));
-	if (!matches.length) return null;
-	return matches.sort((a, b) => b.href.length - a.href.length)[0].href;
+/** Groups the admin closed, remembered in this browser (a layout preference, nothing more). */
+const COLLAPSE_KEY = 'admin.nav.collapsed';
+function useCollapsedGroups(): [Set<string>, (id: string) => void] {
+	const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(NAV_GROUPS.filter((g) => g.collapsedByDefault).map((g) => g.id)));
+	useEffect(() => {
+		try { const v = localStorage.getItem(COLLAPSE_KEY); if (v) setCollapsed(new Set(JSON.parse(v) as string[])); } catch { /* defaults */ }
+	}, []);
+	const toggle = (id: string) => setCollapsed((cur) => {
+		const next = new Set(cur);
+		if (next.has(id)) next.delete(id); else next.add(id);
+		try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next])); } catch { /* not remembered */ }
+		return next;
+	});
+	return [collapsed, toggle];
 }
 
-/** One sidebar row — a direct link, or an expandable parent with child pages. */
-function NavRow({ item, activeHref, onNavigate }: { item: NavItem; activeHref: string | null; onNavigate: () => void }) {
-	const branchActive = !!item.children?.some((c) => c.href === activeHref);
-	const [open, setOpen] = useState(branchActive);
-	useEffect(() => { if (branchActive) setOpen(true); }, [branchActive]);
-
-	if (!item.children) {
-		return (
-			<Link href={item.href!} className={`nav-link ${item.href === activeHref ? 'active' : ''}`} onClick={onNavigate}>
-				<item.Icon size={15} /> {item.label}
-			</Link>
-		);
-	}
+/** One sidebar group: a header that folds it, its links, and how many things wait in it. */
+function NavSection({ group, activeHref, collapsed, onToggle, counts, onNavigate }: {
+	group: NavGroup; activeHref: string | null; collapsed: boolean; onToggle: () => void; counts?: NavCounts; onNavigate: () => void;
+}) {
+	// The group holding the current page is always open.
+	const open = !collapsed || group.items.some((i) => i.href === activeHref);
+	const waiting = group.items.reduce((n, i) => n + countOf(i, counts), 0);
 	return (
-		<div>
-			<button
-				type="button"
-				className={`nav-link nav-parent ${branchActive ? 'branch' : ''}`}
-				style={{ width: '100%', background: 'none', border: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
-				onClick={() => setOpen((o) => !o)}
-				aria-expanded={open}
-			>
-				<item.Icon size={15} />
-				<span style={{ flex: 1 }}>{item.label}</span>
-				<ChevronDown size={13} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s', opacity: 0.7 }} />
+		<div className="nav-group">
+			<button type="button" className="nav-group-label nav-group-toggle" onClick={onToggle} aria-expanded={open}>
+				<span style={{ flex: 1 }}>{group.label}</span>
+				{!open && waiting > 0 && <span className="nav-count">{waiting}</span>}
+				<ChevronDown size={12} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform .15s', opacity: 0.7 }} />
 			</button>
-			{open && (
-				<div style={{ margin: '2px 0 4px' }}>
-					{item.children.map((c) => (
-						<Link
-							key={c.href}
-							href={c.href}
-							className={`nav-link nav-child ${c.href === activeHref ? 'active' : ''}`}
-							style={{ paddingLeft: 34 }}
-							onClick={onNavigate}
-						>
-							{c.label}
-						</Link>
-					))}
-				</div>
-			)}
+			{open && group.items.map((item) => {
+				const n = countOf(item, counts);
+				return (
+					<Link key={item.href} href={item.href} className={`nav-link ${item.href === activeHref ? 'active' : ''}`} onClick={onNavigate}>
+						<item.Icon size={15} /> <span style={{ flex: 1 }}>{item.label}</span>
+						{n > 0 && <span className="nav-count" title={`${n} waiting`}>{n > 999 ? '999+' : n}</span>}
+					</Link>
+				);
+			})}
 		</div>
 	);
 }
@@ -178,6 +93,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 	const router = useRouter();
 	const pathname = usePathname();
 	const [navOpen, setNavOpen] = useState(false);
+	const [collapsed, toggleGroup] = useCollapsedGroups();
 	useAdminRealtime(); // live SSE → SWR invalidation (e.g. Attio pipeline sync)
 
 	useEffect(() => {
@@ -192,10 +108,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 	}, [authLoading, session, adminLoading, isAdmin, router]);
 
 	// The browser tab names the page ("Reports | SportsTechX Admin"), as the topbar does.
-	const pageLabel = ALL_LEAVES.find((n) => n.href === activeLeafHref(pathname))?.label;
+	const pageLabel = activeNavItem(pathname)?.label;
 	// Re-applied once the shell is ready: set while loading, Next's own <title> writes over it.
 	const shellReady = !authLoading && !adminLoading && !!session && isAdmin;
 	useEffect(() => { document.title = pageLabel ? `${pageLabel} | SportsTechX Admin` : 'SportsTechX Admin'; }, [pageLabel, shellReady]);
+
+	// What waits in each review queue (sidebar counts); refreshed every minute and after writes.
+	const { data: counts } = useSWR<NavCounts>(shellReady ? ['/api/admin/stats/nav'] : null, { refreshInterval: 60_000, dedupingInterval: 30_000 });
 
 	if (authLoading || adminLoading || !session || !isAdmin) {
 		return (
@@ -214,10 +133,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 		.join('')
 		.toUpperCase();
 
-	// Longest-prefix match so a child page (e.g. /companies/claims) wins over its
-	// parent section (/companies) in the topbar title.
-	const activeHref = activeLeafHref(pathname);
-	const current = ALL_LEAVES.find((n) => n.href === activeHref);
+	const current = activeNavItem(pathname);
+	const activeHref = current?.href ?? null;
 
 	return (
 		<div style={{ minHeight: '100vh' }}>
@@ -250,12 +167,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 				</div>
 				<nav>
 					{NAV_GROUPS.map((group) => (
-						<div className="nav-group" key={group.label}>
-							<div className="nav-group-label">{group.label}</div>
-							{group.items.map((item) => (
-								<NavRow key={item.label} item={item} activeHref={activeHref} onNavigate={() => setNavOpen(false)} />
-							))}
-						</div>
+						<NavSection key={group.id} group={group} activeHref={activeHref} counts={counts}
+							collapsed={collapsed.has(group.id)} onToggle={() => toggleGroup(group.id)} onNavigate={() => setNavOpen(false)} />
 					))}
 				</nav>
 			</aside>
@@ -268,6 +181,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 					</button>
 					<div className="admin-topbar-title">{current?.label ?? 'Admin'}</div>
 					<div style={{ flex: 1 }} />
+					<CommandPalette />
 					<AdminNotifications />
 					<ThemeToggle />
 					<div className="admin-avatar" title={profile?.email ?? undefined}>{initials}</div>

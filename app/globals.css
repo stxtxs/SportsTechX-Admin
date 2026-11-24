@@ -396,6 +396,27 @@ textarea.search-input { border-radius: var(--radius-md); }
 }
 .nav-link svg { flex-shrink: 0; color: currentColor; opacity: 0.9; }
 .nav-link.active svg { color: var(--accent-fg); opacity: 1; }
+/* Group headers fold their group; counts show what waits in a review queue. */
+.nav-group-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit;
+  padding: 4px var(--space-4) 6px;
+}
+.nav-group-toggle:hover { color: var(--sidebar-fg); }
+.nav-group-toggle:focus-visible, .nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nav-count {
+  min-width: 20px; padding: 1px 6px; border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 22%, transparent); color: var(--sidebar-fg);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-align: center; letter-spacing: 0;
+}
+.nav-link.active .nav-count { background: color-mix(in oklab, var(--accent-fg) 25%, transparent); color: var(--accent-fg); }
+/* Topbar global search: a full box on desktop, an icon on narrow screens. */
+.admin-search-trigger { flex: 0 1 380px; min-width: 0; }
+.admin-search-trigger > span:not(.kbd) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) {
+  .admin-search-trigger { flex: 0 0 auto; width: 34px; padding: 0; justify-content: center; }
+  .admin-search-trigger > span { display: none; }
+}
 
 .admin-main { display: flex; flex-direction: column; min-height: 100vh; margin-left: var(--rail-w-expanded); min-width: 0; }
 .admin-topbar {

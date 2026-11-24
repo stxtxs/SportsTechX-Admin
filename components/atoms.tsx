@@ -36,7 +36,7 @@ export function PageHeader({ kicker, title, subtitle, action }: PageHeaderProps)
 				gap: 16,
 			}}
 		>
-			<div>
+			<div style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
 				{kicker && (
 					<div
 						style={{

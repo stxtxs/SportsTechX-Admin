@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
-import { useSearchParams, usePathname } from 'next/navigation';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Building2, BadgeCheck, Rocket, Coins, Layers, CircleDollarSign, GitMerge } from 'lucide-react';
@@ -26,8 +26,6 @@ import {
 } from '@/components/entity-pickers';
 import { DealModal, DealsView, type StagedDeal } from '@/components/admin-views/deals';
 import { AcquisitionModal, AcquisitionsView, type StagedAcq } from '@/components/admin-views/acquisitions';
-import { ClaimsView } from '@/components/admin-views/claims';
-import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
@@ -1155,19 +1153,24 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 // tabs for the differentiable entities. The active tab lives in the URL (?tab=)
 // so it survives a refresh.
 interface EntityYoyStats { total: number; this_year?: number | null; last_year?: number | null; yoy_change?: number | null }
-type CdTab = 'companies' | 'deals' | 'acquisitions' | 'claims' | 'changes';
+type CdTab = 'companies' | 'deals' | 'acquisitions';
 const CD_TABS: ReadonlyArray<{ key: CdTab; label: string }> = [
 	{ key: 'companies', label: 'Companies' },
 	{ key: 'deals', label: 'Deals' },
 	{ key: 'acquisitions', label: 'M&A' },
-	{ key: 'claims', label: 'Ownership claims' },
-	{ key: 'changes', label: 'Data changes' },
 ];
+/** Claims and data changes moved to the one Review page; old links land on it, filtered. */
+const MOVED_TABS: Record<string, string> = {
+	claims: '/claims?claim.type=company',
+	changes: '/claims?tab=changes&dcr.entity=company%2Cdeal',
+};
 export default function CompaniesAdminPage() {
 	const searchParams = useSearchParams();
 	const pathname = usePathname();
+	const router = useRouter();
 	const raw = searchParams.get('tab');
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
+	useEffect(() => { if (raw && MOVED_TABS[raw]) router.replace(MOVED_TABS[raw]); }, [raw, router]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
 	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
@@ -1210,8 +1213,6 @@ export default function CompaniesAdminPage() {
 			{tab === 'companies' && <CompaniesView embedded />}
 			{tab === 'deals' && <DealsView embedded />}
 			{tab === 'acquisitions' && <AcquisitionsView embedded />}
-			{tab === 'claims' && <ClaimsView embedded lockType="company" />}
-			{tab === 'changes' && <DataRequestsView embedded lockEntity="company,deal" />}
 		</div>
 	);
 }

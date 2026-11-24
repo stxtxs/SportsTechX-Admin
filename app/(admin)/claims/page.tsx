@@ -9,9 +9,8 @@ import { DataRequestsView } from '@/components/admin-views/data-requests';
 
 /**
  * One queue for every ownership claim and data-change request — companies,
- * investors and ecosystem entities together. The per-section tabs (Companies →
- * Claims, Ecosystem → Investor claims, …) stay as scoped views; this page is the
- * place to work the whole queue without guessing which section a request is in.
+ * investors and ecosystem entities together — the only place they're worked. The old
+ * Companies/Ecosystem claim tabs redirect here with the type filter set.
  */
 type Tab = 'claims' | 'changes';
 

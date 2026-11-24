@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useSearchParams, usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Layers, CalendarClock, Package, GraduationCap, Lightbulb, Banknote, Building2 } from 'lucide-react';
@@ -19,8 +19,6 @@ import { useConfirm } from '@/components/confirm';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { SportsPicker, LocationFields, SocialLinks, CompanySelectOne, EMPTY_SOCIAL, EMPTY_LOCATION, type SocialValue, type LocationValue } from '@/components/entity-pickers';
 import { InvestorsView, useEditParam } from '@/components/admin-views/investors';
-import { ClaimsView } from '@/components/admin-views/claims';
-import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
@@ -769,23 +767,28 @@ function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () =
 // Like Companies & Deals: one destination for the four ecosystem entities, with
 // a combined Statistics panel (date-range filter) and in-page tabs. Active tab
 // persists in the URL (?tab=).
-type EcoTab = 'programs' | 'events' | 'investors' | 'initiatives' | 'organizations' | 'investor-claims' | 'entity-claims' | 'changes';
+type EcoTab = 'programs' | 'events' | 'investors' | 'initiatives' | 'organizations';
 const ECO_TABS: ReadonlyArray<{ key: EcoTab; label: string }> = [
 	{ key: 'programs', label: 'Programs' },
 	{ key: 'events', label: 'Events' },
 	{ key: 'investors', label: 'Investors' },
 	{ key: 'initiatives', label: 'Initiatives' },
 	{ key: 'organizations', label: 'Organizations' },
-	{ key: 'investor-claims', label: 'Investor claims' },
-	{ key: 'entity-claims', label: 'Entity claims' },
-	{ key: 'changes', label: 'Data changes' },
 ];
+/** Claims and data changes moved to the one Review page; old links land on it, filtered. */
+const MOVED_TABS: Record<string, string> = {
+	'investor-claims': '/claims?claim.type=investor',
+	'entity-claims': '/claims?claim.type=ecosystem_entity',
+	changes: '/claims?tab=changes',
+};
 
 export default function EcosystemAdminPage() {
 	const searchParams = useSearchParams();
 	const pathname = usePathname();
+	const router = useRouter();
 	const raw = searchParams.get('tab');
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
+	useEffect(() => { if (raw && MOVED_TABS[raw]) router.replace(MOVED_TABS[raw]); }, [raw, router]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
 	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
@@ -827,9 +830,6 @@ export default function EcosystemAdminPage() {
 			{tab === 'investors' && <InvestorsView embedded />}
 			{tab === 'initiatives' && <EcosystemView embedded entityType="initiative" />}
 			{tab === 'organizations' && <EcosystemView embedded entityType="organization" />}
-			{tab === 'investor-claims' && <ClaimsView embedded lockType="investor" />}
-			{tab === 'entity-claims' && <ClaimsView embedded lockType="ecosystem_entity" />}
-			{tab === 'changes' && <DataRequestsView embedded lockEntity="investor,ecosystem,investor_fund,investor_portfolio" />}
 		</div>
 	);
 }

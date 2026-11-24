@@ -44,7 +44,7 @@ const ACTIONS: Array<[RegExp, string]> = [
 	[/^POST claims\/:id\/pickup$/, 'Picked up claim'],
 	[/^POST claims\/:id\/create-entity$/, 'Created the record for a claim'],
 	[/^POST data-change-requests\/:id\/apply$/, 'Applied data change'],
-	[/^POST data-change-requests\/:id\/reject$/, 'Rejected data change'],
+	[/^POST data-change-requests\/:id\/status$/, 'Changed a data change’s status'],
 	[/^POST merge\//, 'Merged duplicate records'],
 	[/^POST ecosystem-entities\/:id\/participants$/, 'Added a participant'],
 	[/^POST ecosystem-entities\/:id\/relationships$/, 'Linked ecosystem entries'],

@@ -6,7 +6,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { StatCard, StatsPanel, AsyncState, Section, Tag, SortableTh, Pager } from '@/components/atoms';
 import { FilterSelect } from '@/components/filters';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
-import { stripeStatusLabel, tierLabel } from '@/lib/labels';
+import { stripePaymentLabel, stripeStatusLabel, tierLabel } from '@/lib/labels';
 import { ComboBarLine, PieDonut, PieLegend, Funnel, toSegments, type PieSegment } from '@/components/charts';
 import { useTableColumns } from '@/hooks/use-table-columns';
 
@@ -92,7 +92,7 @@ export function SalesStripe() {
 	];
 	const agingSegments = toSegments(agingRows.map(([label, key]) => ({ label, value: aging[key] ?? 0 })), { format: money });
 	const paymentSegments = a
-		? toSegments((['succeeded', 'refunded', 'failed', 'uncaptured', 'blocked'] as const).map((k) => ({ label: k, value: a.payments[k].count })))
+		? toSegments((['succeeded', 'refunded', 'failed', 'uncaptured', 'blocked'] as const).map((k) => ({ label: stripePaymentLabel(k), value: a.payments[k].count })))
 		: [];
 
 	return (

@@ -7,6 +7,7 @@ import { Plus, Archive } from 'lucide-react';
 import { api } from '@/lib/api';
 import { PageHeader, Section, AsyncState, Tag } from '@/components/atoms';
 import { useConfirm } from '@/components/confirm';
+import { creditPoolLabel } from '@/lib/labels';
 
 /**
  * Admin credit-pack management. Creating a pack mints a Stripe one-time Product +
@@ -147,7 +148,7 @@ export default function CreditPacksAdminPage() {
 												<div style={{ fontWeight: 600 }}>{p.name}</div>
 												<div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)' }}>{p.slug}</div>
 											</td>
-											<td><Tag variant={p.credit_type === 'ai' ? 'pos' : ''}>{p.credit_type}</Tag></td>
+											<td><Tag variant={p.credit_type === 'ai' ? 'pos' : ''}>{creditPoolLabel(p.credit_type)}</Tag></td>
 											<td className="num" style={{ textAlign: 'right' }}>{p.credit_amount.toLocaleString()}</td>
 											<td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>{money(p.price_amount, p.currency_code)}</td>
 											<td className="num" style={{ textAlign: 'right', color: 'var(--fg-muted)' }}>{perCredit(p)}</td>

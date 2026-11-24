@@ -14,6 +14,7 @@ import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { scoutDealStatusLabel, scoutInterestStatusLabel, tidy } from '@/lib/labels';
 
 /**
  * Deal Flow — the eligibility queue.
@@ -188,7 +189,7 @@ export default function ScoutDealsPage() {
 				/>
 				<FilterSelect
 					ariaLabel="Status" value={status} onChange={f(setStatus)}
-					allLabel="All statuses" options={DEAL_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
+					allLabel="All statuses" options={DEAL_STATUSES.map((s) => ({ value: s, label: scoutDealStatusLabel(s) }))}
 				/>
 				<FilterSelect
 					ariaLabel="Source" value={source} onChange={f(setSource)}
@@ -242,7 +243,7 @@ export default function ScoutDealsPage() {
 										</div>
 									</td>
 									<td style={{ fontSize: 12 }}>
-										{r.source === 'verified_raise' ? <Tag variant="pos">verified raise</Tag> : <Tag>circle</Tag>}
+										{r.source === 'verified_raise' ? <Tag variant="pos">Verified raise</Tag> : <Tag>From the Circle</Tag>}
 									</td>
 									<td>
 										<div style={{ fontSize: 12 }}>{r.submitter_fund ?? (r.source === 'verified_raise' ? 'Founder opt-in' : '—')}</div>
@@ -259,7 +260,7 @@ export default function ScoutDealsPage() {
 									</td>
 									<td style={{ fontSize: 12 }}>{r.interest_count || '—'}</td>
 									<td>
-										<span className={`chip ${statusChip[r.status] ?? ''}`}>{r.status.replace(/_/g, ' ')}</span>
+										<span className={`chip ${statusChip[r.status] ?? ''}`}>{scoutDealStatusLabel(r.status)}</span>
 										{!r.founder_consent && (
 											<div style={{ fontSize: 11, color: 'var(--danger, #c33)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
 												<ShieldAlert size={11} /> no consent
@@ -346,7 +347,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 				...(chosen !== current ? { status: chosen } : {}),
 				review_notes: notes.trim() || null,
 			});
-			toast.success(chosen !== current ? `Marked ${chosen.replace(/_/g, ' ')}` : 'Note saved');
+			toast.success(chosen !== current ? `Marked ${scoutDealStatusLabel(chosen).toLowerCase()}` : 'Note saved');
 			onSaved();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setBusy(false); }
@@ -380,7 +381,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 						ariaLabel="Status"
 						width={190}
 						// Admins can't move a deal TO draft (that's the submitter's state); a draft deal still shows it.
-						options={DEAL_STATUSES.filter((s) => s !== 'draft' || current === 'draft').map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
+						options={DEAL_STATUSES.filter((s) => s !== 'draft' || current === 'draft').map((s) => ({ value: s, label: scoutDealStatusLabel(s) }))}
 					/>
 					{/* A note with no transition is a legitimate triage action, so this
 					    stays enabled when only the note changed. */}
@@ -434,7 +435,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 							    project them from raise_profiles, so show that overlay or an admin
 							    reviews a row of NULLs. */}
 							<Row label="Type">{d.round_type ?? d.live_round_type}</Row>
-							<Row label="Instrument">{d.instrument}</Row>
+							<Row label="Instrument">{d.instrument && tidy(d.instrument)}</Row>
 							<Row label="Target">
 								{money(d.target_amount, d.currency_code)
 									?? money(d.live_target_amount, d.live_currency_code)}
@@ -445,7 +446,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 							</Row>
 							<Row label="Valuation">{d.valuation ?? d.live_valuation}</Row>
 							<Row label="Target close">{d.target_close_date ?? d.live_target_close_date}</Row>
-							<Row label="Lead">{d.lead_investor ?? d.lead_status}</Row>
+							<Row label="Lead">{d.lead_investor ?? (d.lead_status && tidy(d.lead_status))}</Row>
 							<Row label="Ticket">
 								{[money(d.ticket_min, d.currency_code), money(d.ticket_max, d.currency_code)].filter(Boolean).join(' – ') || null}
 							</Row>
@@ -455,7 +456,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 							<Section2 title="Submitting member">
 								<Row label="Fund">{d.submitter_fund}</Row>
 								<Row label="Account">{d.submitter_email}</Row>
-								<Row label="Relationship">{d.member_relationship}</Row>
+								<Row label="Relationship">{d.member_relationship && tidy(d.member_relationship)}</Row>
 								<Row label="Their commitment">{money(d.member_commitment, d.currency_code)}</Row>
 								<Row label="Their view">{d.member_perspective}</Row>
 							</Section2>
@@ -472,11 +473,11 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 						<Section2 title="What investors see">
 							<Row label="Company name">{d.company_anonymous ? 'Hidden' : 'Shown'}</Row>
 							<Row label="Submitter">{d.submitter_anonymous ? 'Hidden' : 'Shown'}</Row>
-							<Row label="Materials">{d.materials_access}</Row>
+							<Row label="Materials">{d.materials_access && tidy(d.materials_access)}</Row>
 							<Row label="Documents">
 								{[d.deck_path && 'deck', d.one_pager_path && 'one-pager'].filter(Boolean).join(', ') || 'none uploaded'}
 							</Row>
-							{d.source === 'verified_raise' && <Row label="Founder's own status">{d.raise_dealflow_status}</Row>}
+							{d.source === 'verified_raise' && <Row label="Founder's own status">{d.raise_dealflow_status && tidy(d.raise_dealflow_status)}</Row>}
 						</Section2>
 
 						<Section2 title="Featured">
@@ -581,7 +582,7 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 		setPending(r.id);
 		try {
 			await api('PATCH', `/api/admin/scout-deals/interest/${r.id}`, { status, ...(disclose ? { disclose: true } : {}) });
-			toast.success(disclose ? `Disclosed to ${who}` : `Marked ${status.replace(/_/g, ' ')}`);
+			toast.success(disclose ? `Disclosed to ${who}` : `Marked ${scoutInterestStatusLabel(status).toLowerCase()}`);
 			setDraft((p) => { const { [r.id]: _drop, ...rest } = p; return rest; });
 			void mutate(); onChanged();   // interest count + Disclosed stat behind the modal
 		} catch (e) { toast.error((e as Error).message); }
@@ -596,8 +597,8 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 						<div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
 							<strong>{r.fund_name ?? '—'}</strong>
 							<span style={{ color: 'var(--fg-muted)' }}>{r.scout_email ?? ''}</span>
-							<span className={`chip ${interestChip[r.status] ?? ''}`}>{r.status.replace(/_/g, ' ')}</span>
-							<Tag variant="pill">{r.kind}</Tag>
+							<span className={`chip ${interestChip[r.status] ?? ''}`}>{scoutInterestStatusLabel(r.status)}</span>
+							<Tag variant="pill">{tidy(r.kind)}</Tag>
 							{r.disclosed_at
 								? <Tag variant="pos">disclosed {new Date(r.disclosed_at).toLocaleDateString()}</Tag>
 								: <Tag>not disclosed</Tag>}
@@ -612,7 +613,7 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 								value={draft[r.id] ?? r.status}
 								onChange={(v) => setDraft((p) => ({ ...p, [r.id]: v }))}
 								ariaLabel="Interest status" width={180} disabled={pending === r.id}
-								options={INTEREST_STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))}
+								options={INTEREST_STATUSES.map((s) => ({ value: s, label: scoutInterestStatusLabel(s) }))}
 							/>
 							<button
 								className="btn" disabled={pending === r.id || (draft[r.id] ?? r.status) === r.status}

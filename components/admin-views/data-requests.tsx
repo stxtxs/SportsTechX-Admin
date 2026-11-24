@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager, SortableTh } from '@/components/atoms';
-import { requestStatusLabel, tidy } from '@/lib/labels';
+import { businessModelLabel, entityTypeLabel, investorCategoryLabel, requestEntityLabel, requestStatusLabel, tidy } from '@/lib/labels';
 import { Funnel } from '@/components/charts';
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { Modal } from '@/components/modal';
@@ -25,6 +26,8 @@ interface Dcr {
 	target_company_id: string | null;
 	target_investor_id?: string | null;
 	target_ecosystem_entity_id?: string | null;
+	target_deal_id?: string | null;
+	profile_id?: string | null;
 	target_name_snapshot: string | null;
 	field_change: string | null;
 	old_value: string | null;
@@ -117,6 +120,9 @@ function fmtDetail(key: string, val: unknown, sectorMap: Map<string, string>, ro
 	if (key === 'sector_id') return sectorMap.get(String(val)) ?? null;
 	if (key === 'round_type_id') return roundMap.get(String(val)) ?? null;
 	if (key === 'pitch_deck_url') return 'Attached';
+	if (key === 'business_model') return businessModelLabel(String(val));
+	if (key === 'category') return investorCategoryLabel(String(val));
+	if (key === 'entity_type') return entityTypeLabel(String(val));
 	if (typeof val === 'boolean') return val ? 'Yes' : 'No';
 	if (MONEY_KEYS.has(key) && typeof val === 'number') return fmtMoney(val);
 	if (Array.isArray(val)) return val.map(String).join(', ');
@@ -164,8 +170,13 @@ function liveTarget(r: Dcr): { id: string; editPath: string; openHref: string | 
 	const id = kind === 'company' ? r.target_company_id : kind === 'investor' ? r.target_investor_id : kind === 'ecosystem' ? r.target_ecosystem_entity_id : null;
 	if (!kind || !id) return null;
 	const api = { company: 'companies', investor: 'investors', ecosystem: 'ecosystem-entities' }[kind];
-	const openHref = kind === 'investor' ? `/ecosystem?tab=investors&edit=${id}` : kind === 'ecosystem' ? `/ecosystem?tab=programs&edit=${id}` : null;
-	return { id, editPath: `/api/admin/${api}/${id}/edit`, openHref };
+	return { id, editPath: `/api/admin/${api}/${id}/edit`, openHref: recordHref(r) };
+}
+/** The admin page of the record a request is about (a deal / fund / portfolio row → its company / investor). */
+function recordHref(r: Dcr): string | null {
+	if (r.entity_type === 'ecosystem') return r.target_ecosystem_entity_id ? `/ecosystem?open=${r.target_ecosystem_entity_id}` : null;
+	if (r.entity_type?.startsWith('investor')) return r.target_investor_id ? `/ecosystem?tab=investors&edit=${r.target_investor_id}` : null;
+	return r.target_company_id ? `/companies?edit=${r.target_company_id}` : null;
 }
 // Batch "apply as submitted" can only write one plain column; a profile-update bundle or a
 // fund / portfolio row always needs the edit form, so those are skipped instead of failing.
@@ -179,7 +190,7 @@ function companyCurrent(key: string, c: CompanyEditLite | null | undefined, sect
 	const yn = (v: unknown): string | null => (v == null ? null : v ? 'Yes' : 'No');
 	if (kind === 'investor') {
 		switch (key) {
-			case 'category': return str(c.category);
+			case 'category': return c.category ? investorCategoryLabel(c.category) : null;
 			case 'year_launched': return str(c.year_launched);
 			case 'actively_investing': return yn(c.actively_investing);
 			case 'thesis_amount_min_usd': return money(c.thesis_amount_min);
@@ -192,7 +203,7 @@ function companyCurrent(key: string, c: CompanyEditLite | null | undefined, sect
 	}
 	if (kind === 'ecosystem') {
 		switch (key) {
-			case 'entity_type': return str(c.entity_type);
+			case 'entity_type': return c.entity_type ? entityTypeLabel(c.entity_type) : null;
 			case 'op_type': return str(c.category);
 			case 'location': return str(c.hq_city);
 			case 'country': return str(c.hq_country);
@@ -202,7 +213,7 @@ function companyCurrent(key: string, c: CompanyEditLite | null | undefined, sect
 	switch (key) {
 		case 'description': return str(c.description);
 		case 'sector_id': return c.sector_id ? sectorMap.get(String(c.sector_id)) ?? null : null;
-		case 'business_model': return str(c.business_model);
+		case 'business_model': return c.business_model ? businessModelLabel(c.business_model) : null;
 		case 'founded_year': return str(c.founded_year);
 		case 'hq_city': return str(c.hq_city);
 		case 'hq_country': return str(c.hq_country);
@@ -300,7 +311,7 @@ function ClaimEditSummary({ r, sectorMap, roundMap, techMap, rounds, current, de
 	const tt = nameList(changes.thesis_tech_tags, techMap); if (tt) thesisRows.push(['Tech tags', tt]);
 	for (const [k, label] of THESIS_STR_FIELDS) {
 		const v = changes[k];
-		if (Array.isArray(v) && v.length) thesisRows.push([label, v.map(String).join(', ')]);
+		if (Array.isArray(v) && v.length) thesisRows.push([label, v.map((x) => tidy(String(x))).join(', ')]);
 	}
 	const mna = (Array.isArray(changes.mna) ? changes.mna : []) as Array<Record<string, unknown>>;
 	const funds = (Array.isArray(changes.funds) ? changes.funds : []) as Array<Record<string, unknown>>;
@@ -364,11 +375,6 @@ function ClaimEditSummary({ r, sectorMap, roundMap, techMap, rounds, current, de
 }
 
 const STATUSES: DcrStatus[] = ['open', 'picked_up', 'resolved', 'rejected'];
-const ENTITY_LABELS: Record<string, string> = {
-	company: 'Company', deal: 'Deal', investor: 'Investor', investor_fund: 'Investor fund',
-	investor_portfolio: 'Investor portfolio', ecosystem: 'Ecosystem',
-};
-const entityLabel = (v: string | null) => (v ? ENTITY_LABELS[v] ?? tidy(v) : '');
 
 export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 	const cols = useTableColumns('data-changes');
@@ -563,8 +569,10 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 								<td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSel(r.id)} aria-label="Select row" /></td>
 								<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
 								<td>
-									<span style={{ fontWeight: 600 }}>{r.target_name_snapshot ?? '—'}</span>
-									<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{entityLabel(r.entity_type)}</div>
+									{recordHref(r)
+										? <Link href={recordHref(r)!} title="Open the record" style={{ fontWeight: 600, color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 2 }}>{r.target_name_snapshot ?? 'Unnamed record'}</Link>
+										: <span style={{ fontWeight: 600 }}>{r.target_name_snapshot ?? '—'}</span>}
+									<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.entity_type ? requestEntityLabel(r.entity_type) : ''}</div>
 								</td>
 								<td style={{ maxWidth: 320 }}>
 									{asClaimEdit(r.context) ? (
@@ -574,7 +582,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 										</div>
 									) : r.field_change ? (
 										<div style={{ fontSize: 13 }}>
-											<span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{r.change_type ?? 'edit'} · {r.field_change}</span>
+											<span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{tidy(r.change_type ?? 'edit')} · {tidy(r.field_change)}</span>
 											<div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
 												<span style={{ color: 'var(--fg-muted)', textDecoration: 'line-through' }}>{r.old_value || '∅'}</span>
 												{' → '}
@@ -584,7 +592,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 									) : '—'}
 									{r.resolution_notes && <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>note: {r.resolution_notes}</div>}
 								</td>
-								<td style={{ fontSize: 12 }}>{r.user_email ?? '—'}</td>
+								<td style={{ fontSize: 12 }}>{r.profile_id ? <Link href={`/users/${r.profile_id}`} title="Open the user" style={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)', textUnderlineOffset: 2 }}>{r.user_email ?? 'Open user'}</Link> : (r.user_email ?? '—')}</td>
 								<td><span className="tag">{requestStatusLabel(r.status)}</span></td>
 								<td style={{ textAlign: 'right' }}>
 									<div style={{ display: 'inline-flex', gap: 6 }}>
@@ -616,7 +624,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 				const ce = asClaimEdit(r.context);
 				return (
 					<Modal
-						title={`${r.target_name_snapshot ?? 'Request'} — ${ce ? 'profile update' : (r.field_change ?? 'change request')}`}
+						title={`${r.target_name_snapshot ?? 'Request'} — ${ce ? 'profile update' : (r.field_change ? tidy(r.field_change) : 'change request')}`}
 						width={780}
 						onClose={closeModal}
 						footer={
@@ -638,14 +646,14 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 					>
 						<div style={{ display: 'grid', gap: 14 }}>
 							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 12 }}>
-								<div><div className="co-stat-label">Entity</div>{r.entity_type ?? '—'}</div>
-								<div><div className="co-stat-label">Status</div>{r.status}</div>
-								<div><div className="co-stat-label">Change type</div>{r.change_type ?? 'edit'}</div>
-								<div><div className="co-stat-label">Requested by</div>{r.user_email ?? '—'}</div>
+								<div><div className="co-stat-label">Entity</div>{requestEntityLabel(r.entity_type)}</div>
+								<div><div className="co-stat-label">Status</div>{requestStatusLabel(r.status)}</div>
+								<div><div className="co-stat-label">Change type</div>{tidy(r.change_type ?? 'edit')}</div>
+								<div><div className="co-stat-label">Requested by</div>{r.profile_id ? <Link href={`/users/${r.profile_id}`} style={{ color: 'var(--accent)' }}>{r.user_email ?? 'Open user'} ↗</Link> : (r.user_email ?? '—')}</div>
 								<div><div className="co-stat-label">Submitted</div>{new Date(r.created_at).toLocaleString()}</div>
 								{r.resolution_notes && <div><div className="co-stat-label">Note</div>{r.resolution_notes}</div>}
 								{modalTarget?.openHref && (
-									<div><div className="co-stat-label">Record</div><a href={modalTarget.openHref} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Open {r.entity_type}’s edit form ↗</a></div>
+									<div><div className="co-stat-label">Record</div><a href={modalTarget.openHref} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Open {r.target_name_snapshot ?? 'the record'} ↗</a></div>
 								)}
 							</div>
 							{ce ? (
@@ -666,7 +674,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 										{showRaw && <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-2)' }}>{JSON.stringify(r.context, null, 2)}</pre>}
 									</div>
 									<div style={{ fontSize: 12, color: 'var(--fg-muted)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-										Apply the changed fields from the {r.entity_type}’s edit form (use “Add as deal” for any funding rounds), then <strong>Resolve</strong>. The requester is notified on pick-up and on resolve.
+										Apply the changed fields from the {requestEntityLabel(r.entity_type).toLowerCase()}’s edit form (use “Add as deal” for any funding rounds), then <strong>Resolve</strong>. The requester is notified on pick-up and on resolve.
 									</div>
 								</>
 							) : (
@@ -687,7 +695,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 													{applyPending === r.id ? 'Applying…' : 'Apply to record'}
 												</button>
 											</div>
-											<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Writes <code>{r.field_change ?? '—'}</code> on the {r.entity_type} and marks this request resolved.</div>
+											<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Writes <strong>{tidy(r.field_change)}</strong> on the {requestEntityLabel(r.entity_type).toLowerCase()} and marks this request resolved.</div>
 										</div>
 									) : (
 										<div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>

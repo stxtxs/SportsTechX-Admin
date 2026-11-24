@@ -20,6 +20,7 @@ import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/components/filters';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { acquisitionTypeLabel, businessModelLabel } from '@/lib/labels';
 
 interface Acquisition {
 	id: string;
@@ -109,7 +110,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<AcqStats>(['/api/admin/stats/acquisitions'], { dedupingInterval: 60_000 });
 	const yearChart = (stats.data?.by_year ?? []).map((r) => ({ year: r.year, amt: Number(r.amt), deals: Number(r.deals) }));
-	const typeSegments = toSegments(stats.data?.by_type ?? []);
+	const typeSegments = toSegments((stats.data?.by_type ?? []).map((b) => ({ ...b, label: acquisitionTypeLabel(b.label) })));
 	const yearOpts = (stats.data?.by_year ?? []).map((r) => String(r.year)).reverse();
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/acquisitions');
 
@@ -158,7 +159,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 
 			<FilterBar>
 				<input className="search-input" style={{ flex: '0 0 280px', height: 32 }} placeholder="Search acquiree / acquirer…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-				<FilterSelect ariaLabel="Type" value={type} onChange={(v) => { setType(v); reset1(); }} options={[...TYPES]} allLabel="All types" />
+				<FilterSelect ariaLabel="Type" value={type} onChange={(v) => { setType(v); reset1(); }} options={TYPES.map((t) => ({ value: t, label: acquisitionTypeLabel(t) }))} allLabel="All types" />
 				<FilterSelect ariaLabel="Year" value={year} onChange={(v) => { setYear(v); reset1(); }} options={yearOpts} allLabel="All years" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="Any sector" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport (either side)" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="Any sport" />
@@ -173,12 +174,12 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 			</FilterBar>
 			<FilterBar>
 				<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Acquiree</span>
-				<FilterSelect ariaLabel="Acquiree business model" value={model} onChange={f(setModel)} options={[...BUSINESS_MODELS]} allLabel="Any model" />
+				<FilterSelect ariaLabel="Acquiree business model" value={model} onChange={f(setModel)} options={BUSINESS_MODELS.map((b) => ({ value: b, label: businessModelLabel(b) }))} allLabel="Any model" />
 				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
 				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
 				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
 				<span style={{ fontSize: 12, color: 'var(--fg-muted)', marginLeft: 8 }}>Acquirer</span>
-				<FilterSelect ariaLabel="Acquirer business model" value={buyerModel} onChange={f(setBuyerModel)} options={[...BUSINESS_MODELS]} allLabel="Any model" />
+				<FilterSelect ariaLabel="Acquirer business model" value={buyerModel} onChange={f(setBuyerModel)} options={BUSINESS_MODELS.map((b) => ({ value: b, label: businessModelLabel(b) }))} allLabel="Any model" />
 				<GeoFacetFilter kind="countries" value={buyerCountry} onChange={f(setBuyerCountry)} allLabel="Any country" />
 				<GeoFacetFilter kind="continents" value={buyerContinent} onChange={f(setBuyerContinent)} allLabel="Any continent" />
 				<FilterSelect ariaLabel="SportsTech acquirer" value={buyerStech} onChange={f(setBuyerStech)} options={[{ value: 'true', label: 'SportsTech acquirer' }, { value: 'false', label: 'Non-SportsTech acquirer' }]} allLabel="Any acquirer" />
@@ -212,7 +213,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 									<td>{a.acquirer_name ?? '—'}</td>
 									<td className="num">{a.acquisition_year ?? '—'}</td>
 									<td className="num">{fmtAmount(a.amount_usd)}</td>
-									<td>{a.acquisition_type ?? '—'}</td>
+									<td>{acquisitionTypeLabel(a.acquisition_type)}</td>
 									<td>{a.primary_sector ?? '—'}</td>
 									<td>{a.hq_country ?? '—'}</td>
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(a.created_at)}</td>
@@ -434,7 +435,7 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 						<Field label={`…or ${cpLabel.toLowerCase()} name (free text)`}><input className="search-input" value={form.counterparty_name} onChange={(e) => set('counterparty_name', e.target.value)} /></Field>
 						<Field label="Counterparty sector"><SectorCascade value={form.counterparty.sector_id} onChange={(v) => setParty('counterparty', { sector_id: v })} /></Field>
 						<Field label="Counterparty business model" hint="who they sell to — B2B, B2C or B2B2C">
-							<Select value={form.counterparty.business_model} onChange={(v) => setParty('counterparty', { business_model: v })} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '—' }, ...BUSINESS_MODELS.map((b) => ({ value: b, label: b.toUpperCase() }))]} />
+							<Select value={form.counterparty.business_model} onChange={(v) => setParty('counterparty', { business_model: v })} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '—' }, ...BUSINESS_MODELS.map((b) => ({ value: b, label: businessModelLabel(b) }))]} />
 						</Field>
 						<Field label="Counterparty location"><LocationFields value={form.counterparty.hq} onChange={(v) => setParty('counterparty', { hq: v })} /></Field>
 						<Field label="Counterparty sports"><SportsPicker value={form.counterparty.sport_ids} onChange={(v) => setParty('counterparty', { sport_ids: v })} /></Field>
@@ -450,7 +451,7 @@ function AcquisitionForm({ id, initial, onClose, onSaved, lockedSubject = false 
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<Field label="Acquisition date *" hint="sets the FX year used to convert the amount to USD"><input className="search-input" type="date" value={form.acquisition_date} onChange={(e) => set('acquisition_date', e.target.value)} /></Field>
 					<Field label="Type">
-						<Select value={form.acquisition_type} onChange={(v) => set('acquisition_type', v)} width="100%" style={{ display: 'block', width: '100%' }} options={TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }))} />
+						<Select value={form.acquisition_type} onChange={(v) => set('acquisition_type', v)} width="100%" style={{ display: 'block', width: '100%' }} options={TYPES.map((t) => ({ value: t, label: acquisitionTypeLabel(t) }))} />
 					</Field>
 				</div>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>

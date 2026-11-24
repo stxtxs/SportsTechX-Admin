@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
+import Link from 'next/link';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber, forgetListQuery } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { companyStatusLabel } from '@/lib/labels';
 
 interface Company {
 	id: string;
@@ -181,7 +183,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 					value={search}
 					onChange={(e) => { setSearch(e.target.value); setPage(1); }}
 				/>
-				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={[...STATUSES]} allLabel="All statuses" />
+				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={STATUSES.map((s) => ({ value: s, label: companyStatusLabel(s) }))} allLabel="All statuses" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="All sectors" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="All sports" />
 				<FilterSelect ariaLabel="Verified" value={verified} onChange={(v) => { setVerified(v); reset1(); }} options={[{ value: 'true', label: 'Verified' }, { value: 'false', label: 'Unverified' }]} allLabel="Any verification" />
@@ -237,7 +239,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 									<td>{c.hq_country ?? '—'}</td>
 									<td className="num">{c.founded_year ?? '—'}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{fmtFunding(c.total_funding_usd)}</td>
-									<td>{c.status ?? '—'}{c.is_hidden && <span className="tag" style={{ marginLeft: 6 }} title="Hidden from users">Hidden</span>}</td>
+									<td>{companyStatusLabel(c.status)}{c.is_hidden && <span className="tag" style={{ marginLeft: 6 }} title="Hidden from users">Hidden</span>}</td>
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(c.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(c.id)}>Edit</button>
@@ -317,6 +319,12 @@ interface CompanyEdit extends Company {
 	poc_personal_email?: string | null; poc_personal_linkedin?: string | null;
 	accelerator?: string | null; cohort?: string | null;
 	sport_ids?: string[]; tech_tag_ids?: string[];
+	logo_url?: string | null; updated_at?: string | null;
+	/** Read-only summary for the Overview tab (server-computed, never saved back). */
+	overview?: {
+		sector_name: string | null; deals_count: number; total_raised_usd: string | number | null; ma_count: number;
+		claims_count: number; verified_claims_count: number; verified_at: string | null; verified_by: string | null;
+	} | null;
 }
 
 function toCompanyForm(h: CompanyEdit): CompanyForm {
@@ -348,7 +356,73 @@ export function CompanyModal({ id, onClose, onSaved, seed, promotePipelineId, en
 	const isEdit = !!id;
 	const { data: hydrated } = useEditPayload<CompanyEdit>(isEdit ? `/api/admin/companies/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit company" onClose={onClose}><Loading msg="Loading company…" /></Modal>;
-	return <CompanyForm id={id} initial={hydrated ? toCompanyForm(hydrated) : { ...EMPTY_COMPANY, ...seed }} onClose={onClose} onSaved={onSaved} promotePipelineId={promotePipelineId} enrichedFields={enrichedFields} />;
+	return <CompanyForm id={id} record={hydrated} initial={hydrated ? toCompanyForm(hydrated) : { ...EMPTY_COMPANY, ...seed }} onClose={onClose} onSaved={onSaved} promotePipelineId={promotePipelineId} enrichedFields={enrichedFields} />;
+}
+
+const fmtDay = (s?: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—');
+
+/** Read-only label/value grid for the Overview tab. */
+function Facts({ items, cols = 4 }: { items: Array<[string, React.ReactNode]>; cols?: number }) {
+	return (
+		<div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 12 }}>
+			{items.map(([k, v]) => <div key={k}><div className="co-stat-label">{k}</div><div style={{ fontSize: 13 }}>{v || '—'}</div></div>)}
+		</div>
+	);
+}
+
+/** First tab of an existing company: what the record says today, before any editing. */
+function CompanyOverview({ c, onTab }: { c: CompanyEdit; onTab: (tab: string) => void }) {
+	const o = c.overview;
+	const logo = c.custom_logo_url || c.logo_url;
+	const site = c.website ? (c.website.startsWith('http') ? c.website : `https://${c.website}`) : null;
+	const raiseAmt = fmtFunding(c.actively_raising_amount);
+	const raise = [c.actively_raising_round, raiseAmt !== '—' ? raiseAmt : null].filter(Boolean).join(' · ');
+	const verified = c.is_verified
+		? <><span className="tag pos">Verified</span>{o?.verified_at && <span style={{ color: 'var(--fg-muted)', marginLeft: 6 }}>{o.verified_by ? `by ${o.verified_by} · ` : ''}{fmtDay(o.verified_at)}</span>}</>
+		: <span className="tag">Not verified</span>;
+	return (
+		<div style={{ display: 'grid', gap: 16 }}>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+				{logo && <img src={logo} alt="" width={44} height={44} style={{ borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border)', background: 'var(--bg-2)' }} />}
+				<div style={{ minWidth: 0 }}>
+					<div style={{ fontWeight: 700, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+						{c.name}
+						{c.is_hidden && <span className="tag" title="Hidden from users">Hidden</span>}
+						{c.is_unicorn && <span className="tag">Unicorn</span>}
+					</div>
+					{site && <a href={site} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: 13 }}>{c.website}</a>}
+				</div>
+			</div>
+			{c.description && <p style={{ fontSize: 13, color: 'var(--fg-2)', margin: 0 }}>{c.description}</p>}
+			<Facts items={[
+				['HQ', [c.hq_city, c.hq_country].filter(Boolean).join(', ')],
+				['Founded', c.founded_year ?? ''],
+				['Sector', o?.sector_name ?? ''],
+				['Business model', c.business_model?.toUpperCase() ?? ''],
+			]} />
+			<div style={{ display: 'grid', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-2)' }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+					<div className="co-stat-label" style={{ flex: 1 }}>Status &amp; claim</div>
+					<button className="btn ghost" onClick={() => onTab('status')}>Edit status &amp; claim</button>
+				</div>
+				<Facts cols={3} items={[
+					['Company status', companyStatusLabel(c.status)],
+					['Verified', verified],
+					['Actively raising', c.is_actively_raising ? <><span className="tag pos">Raising</span>{raise && <span style={{ marginLeft: 6 }}>{raise}</span>}</> : 'No'],
+				]} />
+				<div style={{ fontSize: 13 }}>
+					{o && `${o.claims_count} claim${o.claims_count === 1 ? '' : 's'} · ${o.verified_claims_count} verified · `}
+					<Link href={`/claims?claim.type=company&claim.q=${encodeURIComponent(c.name)}`} style={{ color: 'var(--accent)' }}>View claims on the Review page</Link>
+				</div>
+			</div>
+			<StatStrip cols={4}>
+				<StatCard label="Funding deals" value={(o?.deals_count ?? 0).toLocaleString()} />
+				<StatCard label="Total raised" value={fmtFunding(o?.total_raised_usd)} />
+				<StatCard label="M&A deals" value={(o?.ma_count ?? 0).toLocaleString()} />
+				<StatCard label="Last updated" value={fmtDay(c.updated_at)} />
+			</StatStrip>
+		</div>
+	);
 }
 
 // ── Funding tab: a company's deals, managed inline via the shared DealModal ──
@@ -462,9 +536,10 @@ interface CompanyClaimRow {
 	actively_raising_valuation: string | number | null;
 }
 
-/** onFlags keeps the parent CompanyForm in sync when Verified / Actively-raising
- *  are changed here, so saving the modal (whose Status tab holds the same flags)
- *  never clobbers a change made on this tab. */
+/** The people claiming the company, shown under the company flags on the
+ *  "Status & claim" tab. onFlags keeps the parent CompanyForm in sync when a
+ *  claim's verification changes here (or a claim is created verified/raising),
+ *  so saving the modal never clobbers that change. */
 function CompanyClaimTab({ companyId, onFlags }: { companyId: string; onFlags?: (f: { is_verified?: boolean; is_actively_raising?: boolean }) => void }) {
 	const { mutate } = useSWRConfig();
 	const { data, isLoading, error } = useSWR<{ claims: CompanyClaimRow[] }>(
@@ -487,20 +562,13 @@ function CompanyClaimTab({ companyId, onFlags }: { companyId: string; onFlags?: 
 		() => api('POST', `/api/admin/claims/${cid}/${on ? 'verify' : 'unverify'}`, on ? { send_email: false } : undefined),
 		on ? 'Claim verified' : 'Verification removed',
 		() => onFlags?.({ is_verified: on || claims.some((c) => c.id !== cid && c.is_verified) }));
-	// Actively raising is a COMPANY flag (same for every claimant); the endpoint just
-	// needs any claim on the company to find it.
-	const setRaising = (on: boolean) => claims[0] && act(
-		() => api('POST', `/api/admin/claims/${claims[0].id}/toggle-active`, { active: on }),
-		on ? 'Marked actively raising' : 'Marked not raising', () => onFlags?.({ is_actively_raising: on }));
 	const sendEmail = (cid: string) => act(() => api('POST', `/api/admin/claims/${cid}/send-email`), 'Verified-claim email sent to claimant');
 	const copyLink = (token: string) => { void navigator.clipboard.writeText(`${window.location.origin}/verified/${token}`); toast.success('Shareable link copied'); };
-	const money = (v: string | number | null) => { const n = Number(v); return v != null && Number.isFinite(n) && n > 0 ? `$${n.toLocaleString()}` : '—'; };
 
 	if (isLoading) return <Loading />;
 	if (error) return <ErrorState error={error} onRetry={() => void refresh()} />;
 	if (claims.length === 0) return <CreateClaimOnBehalf companyId={companyId} onDone={refresh} onFlags={onFlags} />;
 
-	const co = claims[0]; // entity-level raise detail is identical on every row
 	const verifiedCount = claims.filter((c) => c.is_verified).length;
 
 	return (
@@ -508,22 +576,6 @@ function CompanyClaimTab({ companyId, onFlags }: { companyId: string; onFlags?: 
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
 				<div style={{ fontWeight: 700, fontSize: 14 }}>People claiming this company</div>
 				<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{claims.length} · {verifiedCount} verified — several people from the same company can be verified</span>
-			</div>
-
-			<div style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-2)' }}>
-				<div className="co-stat-label">Company-level</div>
-				<div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-					<button className={`tg ${co.is_actively_raising ? 'on' : ''}`} disabled={busy} onClick={() => void setRaising(!co.is_actively_raising)} aria-label="Toggle actively raising"><span className="tg-knob" /></button>
-					<span><strong>Actively raising</strong> <span style={{ color: 'var(--fg-muted)' }}>— currently fundraising (applies to the company, not one person)</span></span>
-				</div>
-				{co.is_actively_raising && (
-					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 13 }}>
-						<div><div className="co-stat-label">Amount</div>{money(co.actively_raising_amount)}</div>
-						<div><div className="co-stat-label">Round</div>{co.actively_raising_round || '—'}</div>
-						<div><div className="co-stat-label">Valuation</div>{money(co.actively_raising_valuation)}</div>
-						<div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--fg-muted)' }}>Edit these on the Status tab.</div>
-					</div>
-				)}
 			</div>
 
 			{claims.map((claim) => (
@@ -902,9 +954,12 @@ function InlineMaEditor({ onStage, onCancel }: { onStage: (a: StagedAcq) => void
 	);
 }
 
-function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enrichedFields }: { id: string | null; initial: CompanyForm; onClose: () => void; onSaved: (createdId?: string) => void; promotePipelineId?: string; enrichedFields?: string[] }) {
+function CompanyForm({ id, record, initial, onClose, onSaved, promotePipelineId, enrichedFields }: { id: string | null; record?: CompanyEdit; initial: CompanyForm; onClose: () => void; onSaved: (createdId?: string) => void; promotePipelineId?: string; enrichedFields?: string[] }) {
 	const isEdit = !!id;
-	const [tab, setTab] = useTabs('profile');
+	const { mutate } = useSWRConfig();
+	const [tab, setTabState] = useTabs(isEdit ? 'overview' : 'profile');
+	// Back on the Overview, re-read the record so claim / funding / M&A changes made in other tabs show.
+	const setTab = (k: string) => { if (k === 'overview' && id) void mutate([`/api/admin/companies/${id}/edit`]); setTabState(k); };
 	const [form, setForm] = useState<CompanyForm>(initial);
 	const [stagedDeals, setStagedDeals] = useState<StagedDeal[]>([]);
 	const [stagedAcqs, setStagedAcqs] = useState<StagedAcq[]>([]);
@@ -1089,6 +1144,7 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 					active={tab}
 					onChange={setTab}
 					tabs={[
+						...(isEdit && record ? [{ key: 'overview', label: 'Overview', node: <CompanyOverview c={record} onTab={setTab} /> }] : []),
 						{
 							key: 'profile', label: 'Profile', node: (
 								<>
@@ -1150,17 +1206,17 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 							? [
 								{ key: 'funding', label: 'Funding', node: <CompanyFundingTab companyId={id} /> },
 								{ key: 'ma', label: 'M&A', node: <CompanyMaTab companyId={id} /> },
-								{ key: 'claim', label: 'Claim', node: <CompanyClaimTab companyId={id} onFlags={(f) => { if (f.is_verified !== undefined) set('is_verified', f.is_verified); if (f.is_actively_raising !== undefined) set('is_actively_raising', f.is_actively_raising); }} /> },
 							]
 							: [
 								{ key: 'funding', label: 'Funding', hint: stagedDeals.length || undefined, node: <StagedFundingTab drafts={stagedDeals} onChange={setStagedDeals} /> },
 								{ key: 'ma', label: 'M&A', hint: stagedAcqs.length || undefined, node: <StagedMaTab drafts={stagedAcqs} onChange={setStagedAcqs} /> },
 							]),
 						{
-							key: 'status', label: 'Status', node: (
+							key: 'status', label: isEdit ? 'Status & claim' : 'Status', node: (
 								<>
+									<div className="co-stat-label">Company flags <span style={{ textTransform: 'none', letterSpacing: 0 }}>— saved with the Save button</span></div>
 									<Field label="Status">
-										<Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))} />
+										<Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: companyStatusLabel(s) }))} />
 									</Field>
 									<label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
 										<input type="checkbox" checked={form.is_verified} onChange={(e) => set('is_verified', e.target.checked)} /> Verified <span style={{ color: 'var(--fg-muted)', fontWeight: 400 }}>— shows the verified badge on the public profile</span>
@@ -1184,6 +1240,11 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 												<Field label="Valuation ($)"><input className="search-input" type="number" value={form.raising_valuation} onChange={(e) => set('raising_valuation', e.target.value)} placeholder="pre/post" /></Field>
 												<Field label="Pitch deck URL"><input className="search-input" value={form.raising_pitch_deck_url} onChange={(e) => set('raising_pitch_deck_url', e.target.value)} placeholder="https://" /></Field>
 											</div>
+										</div>
+									)}
+									{isEdit && id && (
+										<div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginTop: 4 }}>
+											<CompanyClaimTab companyId={id} onFlags={(f) => { if (f.is_verified !== undefined) set('is_verified', f.is_verified); if (f.is_actively_raising !== undefined) set('is_actively_raising', f.is_actively_raising); }} />
 										</div>
 									)}
 								</>

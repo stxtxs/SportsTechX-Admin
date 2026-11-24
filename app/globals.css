@@ -788,3 +788,9 @@ textarea.search-input { border-radius: var(--radius-md); }
 .tg.on .tg-knob { background: #fff; }
 .tg:disabled { opacity: .45; cursor: not-allowed; }
 .tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --- Admin activity: changed fields as a compact list (components/admin-activity.tsx) --- */
+.act-changes { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.act-field { color: var(--fg-muted); }
+.act-old { color: var(--fg-muted); text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--neg) 60%, transparent); }
+.act-new { color: var(--fg); font-weight: 600; }

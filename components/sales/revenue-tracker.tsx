@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { Section, StatCard } from '@/components/atoms';
 import { PieDonut, PieLegend, type PieSegment } from '@/components/charts';
+import { tidy } from '@/lib/labels';
 
 /**
  * Revenue Tracker (Sales ▸ Sales Tracker) — port of the STX-WebApp
@@ -349,7 +350,7 @@ function Metric({ label, value, sub, tone }: { label: string; value: string; sub
 function RevenueMix({ data, products }: { data?: TrackerData; products: Product[] }) {
 	const audSegs: PieSegment[] = Object.entries(data?.realizedByAudience ?? {})
 		.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])
-		.map(([seg, v]) => ({ name: AUDIENCE.find((a) => a.value === seg)?.label ?? seg, v, color: AUDIENCE.find((a) => a.value === seg)?.color ?? 'var(--fg-muted)', label: fmtEur(v) }));
+		.map(([seg, v]) => ({ name: AUDIENCE.find((a) => a.value === seg)?.label ?? tidy(seg), v, color: AUDIENCE.find((a) => a.value === seg)?.color ?? 'var(--fg-muted)', label: fmtEur(v) }));
 	const prodSegs: PieSegment[] = products
 		.map((p) => ({ name: p.name, v: data?.realizedByProductId[p.id] ?? 0, color: PRODUCT_COLORS[p.slug] ?? 'var(--accent)', label: fmtEur(data?.realizedByProductId[p.id] ?? 0) }))
 		.filter((s) => s.v > 0);

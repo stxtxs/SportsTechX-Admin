@@ -245,12 +245,12 @@ export default function ReportsAdminPage() {
 					<tbody>
 						{reports.map((r) => (
 							<tr key={r.id}>
-								<td>{r.title}{r.show_on_dashboard && <span className="tag" style={{ marginLeft: 6 }}>featured</span>}</td>
-								<td>{r.has_sections ? <span className="tag pos">sections</span> : <span className="tag">pdf</span>}</td>
+								<td>{r.title}{r.show_on_dashboard && <span className="tag" style={{ marginLeft: 6 }}>Featured</span>}</td>
+								<td>{r.has_sections ? <span className="tag pos">Sections</span> : <span className="tag">PDF</span>}</td>
 								<td className="num">{r.report_year ? `${r.report_month ? MONTHS[r.report_month - 1] + ' ' : ''}${r.report_year}` : '—'}</td>
 								<td>
-									{r.is_published === false ? <span className="tag">draft</span> : <span className="tag pos">published</span>}
-									{r.is_listed === false && <span className="tag" style={{ marginLeft: 4 }} title="Opens by link but stays out of the reports library">unlisted</span>}
+									{r.is_published === false ? <span className="tag">Draft</span> : <span className="tag pos">Published</span>}
+									{r.is_listed === false && <span className="tag" style={{ marginLeft: 4 }} title="Opens by link but stays out of the reports library">Unlisted</span>}
 								</td>
 								<td className="num" style={{ textAlign: 'right' }}>{stats.data ? (statById.get(r.id)?.views ?? 0).toLocaleString() : '—'}</td>
 								<td className="num" style={{ textAlign: 'right' }}>{stats.data ? (statById.get(r.id)?.downloads ?? 0).toLocaleString() : '—'}</td>

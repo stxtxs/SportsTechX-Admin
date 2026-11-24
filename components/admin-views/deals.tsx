@@ -19,6 +19,7 @@ import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useEditParam } from '@/hooks/use-edit-param';
 import { qk } from '@/lib/query-keys';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { businessModelLabel, dealSizeLabel, dealStatusLabel } from '@/lib/labels';
 import {
 	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade, InvestorSelectOne,
 	type DealInvestor,
@@ -116,7 +117,7 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<DealStats>(['/api/admin/stats/deals'], { dedupingInterval: 60_000 });
 	const yearChart = (stats.data?.by_year ?? []).map((r) => ({ year: r.year, amt: Number(r.amt), deals: Number(r.deals) }));
-	const sizeSegments = toSegments(stats.data?.by_size_bucket ?? []);
+	const sizeSegments = toSegments((stats.data?.by_size_bucket ?? []).map((b) => ({ ...b, label: dealSizeLabel(b.label) })));
 	const yearOpts = (stats.data?.by_year ?? []).map((r) => String(r.year)).reverse();
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/deals');
 
@@ -165,9 +166,9 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 
 			<FilterBar>
 				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search by company…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={[...STATUSES]} allLabel="All statuses" />
-				<FilterSelect ariaLabel="Business model" value={businessModel} onChange={(v) => { setBusinessModel(v); setPage(1); }} options={[...BUSINESS_MODELS]} allLabel="All models" />
-				<FilterSelect ariaLabel="Deal size" value={sizeBucket} onChange={(v) => { setSizeBucket(v); setPage(1); }} options={SIZE_BUCKETS.map((s) => ({ value: s, label: s.replace(/_/g, ' ').replace('from ', '').replace('to', '–') }))} allLabel="Any size" />
+				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={STATUSES.map((s) => ({ value: s, label: dealStatusLabel(s) }))} allLabel="All statuses" />
+				<FilterSelect ariaLabel="Business model" value={businessModel} onChange={(v) => { setBusinessModel(v); setPage(1); }} options={BUSINESS_MODELS.map((b) => ({ value: b, label: businessModelLabel(b) }))} allLabel="All models" />
+				<FilterSelect ariaLabel="Deal size" value={sizeBucket} onChange={(v) => { setSizeBucket(v); setPage(1); }} options={SIZE_BUCKETS.map((s) => ({ value: s, label: dealSizeLabel(s) }))} allLabel="Any size" />
 				<FilterSelect ariaLabel="Year" value={year} onChange={(v) => { setYear(v); reset1(); }} options={yearOpts} allLabel="All years" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="All sectors" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="All sports" />
@@ -221,7 +222,7 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 									<td>{d.primary_sector ?? '—'}</td>
 									<td>{d.hq_country ?? '—'}</td>
 									<td>{d.lead_investor ?? '—'}</td>
-									<td>{d.status ?? '—'}</td>
+									<td>{dealStatusLabel(d.status)}</td>
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(d.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(d.id)}>Edit</button>
@@ -365,7 +366,7 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<Field label="Sector" hint="leave blank to use the company's"><SectorCascade value={form.sector_id} onChange={(v) => set('sector_id', v)} /></Field>
 					<Field label="Business model" hint="leave blank to use the company's">
-						<Select value={form.business_model} onChange={(v) => set('business_model', v)} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '— company\'s —' }, ...BUSINESS_MODELS.map((b) => ({ value: b, label: b.toUpperCase() }))]} />
+						<Select value={form.business_model} onChange={(v) => set('business_model', v)} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '— company\'s —' }, ...BUSINESS_MODELS.map((b) => ({ value: b, label: businessModelLabel(b) }))]} />
 					</Field>
 				</div>
 				<div style={{ display: 'grid', gridTemplateColumns: isEdit ? '1fr 120px 1fr' : '1fr 120px', gap: 12 }}>
@@ -373,7 +374,7 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 					<Field label="Currency" hint="of the amount"><CurrencySelect value={form.currency_code} onChange={(v) => set('currency_code', v)} /></Field>
 					{isEdit && (
 						<Field label="Size bucket" hint="leave blank — auto-derived from the USD amount">
-							<Select value={form.deal_size_bucket} onChange={(v) => set('deal_size_bucket', v)} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '—' }, ...SIZE_BUCKETS.map((b) => ({ value: b, label: b.replace(/_/g, ' ') }))]} />
+							<Select value={form.deal_size_bucket} onChange={(v) => set('deal_size_bucket', v)} placeholder="—" width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: '', label: '—' }, ...SIZE_BUCKETS.map((b) => ({ value: b, label: dealSizeLabel(b) }))]} />
 						</Field>
 					)}
 				</div>
@@ -384,7 +385,7 @@ function DealForm({ id, initial, onClose, onSaved, onStage }: { id: string | nul
 				{/* Status defaults to "active" for a new round; only exposed on edit. */}
 				{isEdit && (
 					<Field label="Status">
-						<Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }))} />
+						<Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: dealStatusLabel(s) }))} />
 					</Field>
 				)}
 				<Field label="Investors" hint="star marks the lead"><InvestorPicker value={form.investors} onChange={(v) => set('investors', v)} /></Field>

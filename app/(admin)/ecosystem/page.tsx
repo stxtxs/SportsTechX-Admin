@@ -26,6 +26,8 @@ import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber, forgetListQuery } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { entityTypeLabel, tidy } from '@/lib/labels';
+import Link from 'next/link';
 
 interface Entity {
 	id: string;
@@ -220,7 +222,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 					</>
 				)}
 				<input className="search-input" style={{ flex: '0 0 220px', height: 32 }} placeholder="Search…" value={search} onChange={(e) => { setSearch(e.target.value); reset1(); }} />
-				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={[...STATUSES]} allLabel="All statuses" />
+				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={STATUSES.map((s) => ({ value: s, label: tidy(s) }))} allLabel="All statuses" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="All sports" />
 				<input className="search-input" style={{ height: 32, width: 120 }} placeholder="Category" value={category} onChange={(e) => { setCategory(e.target.value); reset1(); }} />
 				<FilterRange label="Founded" min={foundedMin} max={foundedMax} onMin={(v) => { setFoundedMin(v); reset1(); }} onMax={(v) => { setFoundedMax(v); reset1(); }} width={64} />
@@ -266,7 +268,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 									<td><button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600, textAlign: 'left' }} onClick={() => setViewingId(e.id)}>{e.name}</button></td>
 									<td className="num hide-md">{e.slug ?? '—'}</td>
 									<td>{e.category ?? '—'}</td>
-									<td>{e.status ?? '—'}</td>
+									<td>{tidy(e.status)}</td>
 									<td>{e.hq_country ?? '—'}</td>
 									<td className="num">{e.founded_year ?? '—'}</td>
 									{type === 'event' && <td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(e.start_date)}</td>}
@@ -329,6 +331,7 @@ interface EntityEdit extends Entity {
 	twitter_url?: string | null; instagram_url?: string | null; facebook_url?: string | null;
 	linkedin_url?: string | null; youtube_url?: string | null; email?: string | null;
 	sport_ids?: string[];
+	updated_at?: string | null;
 	program?: Record<string, unknown> | null;
 	event?: Record<string, unknown> | null;
 }
@@ -559,7 +562,7 @@ function EntityForm({ id, initial, onClose, onSaved }: { id: string | null; init
 									</Field>
 									<Field label="Founded"><YearSelect value={form.founded_year} onChange={(v) => set('founded_year', v)} /></Field>
 								</div>
-								<Field label="Status"><Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: s }))} /></Field>
+								<Field label="Status"><Select value={form.status} onChange={(v) => set('status', v)} width="100%" style={{ display: 'block', width: '100%' }} options={STATUSES.map((s) => ({ value: s, label: tidy(s) }))} /></Field>
 							</>
 						) },
 						{ key: 'contact', label: 'Contact', node: (
@@ -688,7 +691,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 						{childId === '' && childQ.length >= 2 && (childSearch.data?.data?.length ?? 0) > 0 && (
 							<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: 'var(--bg-1)', border: '1px solid var(--border)', maxHeight: 180, overflow: 'auto' }}>
 								{(childSearch.data?.data ?? []).filter((h) => h.id !== entityId).map((h) => (
-									<button key={h.id} type="button" onClick={() => { setChildId(h.id); setChildQ(h.name); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'transparent', border: 0, cursor: 'pointer', color: 'var(--fg)', fontSize: 13 }}>{h.name} <span style={{ color: 'var(--fg-muted)' }}>· {h.entity_type}</span></button>
+									<button key={h.id} type="button" onClick={() => { setChildId(h.id); setChildQ(h.name); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'transparent', border: 0, cursor: 'pointer', color: 'var(--fg)', fontSize: 13 }}>{h.name} <span style={{ color: 'var(--fg-muted)' }}>· {entityTypeLabel(h.entity_type)}</span></button>
 								))}
 							</div>
 						)}
@@ -699,7 +702,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 				<AsyncState loading={rels.isLoading} error={rels.error} empty={(rels.data?.length ?? 0) === 0} emptyMsg="No linked entities." onRetry={() => void refreshRels()}>
 					<table className="data-table"><tbody>
 						{(rels.data ?? []).map((r) => (
-							<tr key={r.id}><td style={{ fontSize: 11, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>{r.direction === 'child' ? 'contains' : 'part of'}</td><td>{onView ? <button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600 }} onClick={() => onView(r.other_id)}>{r.other_name}</button> : r.other_name} <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>· {r.other_type}</span></td><td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{r.relationship_type.replace(/_/g, ' ')}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} aria-label="Remove link" onClick={() => void delRel(r)}><Trash2 size={12} /></button></td></tr>
+							<tr key={r.id}><td style={{ fontSize: 11, color: 'var(--fg-muted)', whiteSpace: 'nowrap' }}>{r.direction === 'child' ? 'contains' : 'part of'}</td><td>{onView ? <button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600 }} onClick={() => onView(r.other_id)}>{r.other_name}</button> : r.other_name} <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>· {entityTypeLabel(r.other_type)}</span></td><td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)' }}>{tidy(r.relationship_type)}</td><td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} aria-label="Remove link" onClick={() => void delRel(r)}><Trash2 size={12} /></button></td></tr>
 						))}
 					</tbody></table>
 				</AsyncState>
@@ -711,7 +714,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 					<div style={{ flex: '1 1 200px' }}><CompanySelectOne value={pCompanyId} onChange={setPCompanyId} /></div>
 					<input className="search-input" style={{ height: 32, flex: '0 0 110px' }} placeholder="Cohort" value={pCohort} onChange={(e) => setPCohort(e.target.value)} />
 					<div style={{ flex: '0 0 100px' }}><YearSelect value={pYear} onChange={setPYear} placeholder="Year" /></div>
-					<div style={{ flex: '0 0 130px' }}><Select value={pStatus} onChange={setPStatus} width="100%" style={{ display: 'block', width: '100%' }} options={PART_STATUS.map((s) => ({ value: s, label: s }))} /></div>
+					<div style={{ flex: '0 0 130px' }}><Select value={pStatus} onChange={setPStatus} width="100%" style={{ display: 'block', width: '100%' }} options={PART_STATUS.map((s) => ({ value: s, label: tidy(s) }))} /></div>
 					<button className="btn" style={{ height: 32 }} onClick={() => void addPart()}>Add</button>
 				</div>
 				{!pCompanyId && (
@@ -742,7 +745,7 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
 											) : (
 												<td>{pp.cohort_name ?? '—'} <button className="btn ghost" style={{ fontSize: 11, padding: '1px 6px' }} title="Edit cohort name / year" onClick={() => setEditPart({ id: pp.id, cohort: pp.cohort_name ?? '', year: pp.cohort_year != null ? String(pp.cohort_year) : '' })}>Edit</button></td>
 											)}
-											{editPart?.id !== pp.id && <td style={{ width: 130 }}><Select value={pp.participation_status} onChange={(v) => { if (v !== pp.participation_status) void patchPart(pp.id, { status: v }); }} width="100%" ariaLabel="Participation status" style={{ display: 'block', width: '100%' }} options={PART_STATUS.map((s) => ({ value: s, label: s }))} /></td>}
+											{editPart?.id !== pp.id && <td style={{ width: 130 }}><Select value={pp.participation_status} onChange={(v) => { if (v !== pp.participation_status) void patchPart(pp.id, { status: v }); }} width="100%" ariaLabel="Participation status" style={{ display: 'block', width: '100%' }} options={PART_STATUS.map((s) => ({ value: s, label: tidy(s) }))} /></td>}
 											<td style={{ textAlign: 'right' }}><button className="btn ghost" style={{ color: 'var(--accent)' }} aria-label="Remove participant" onClick={() => void delPart(pp)}><Trash2 size={12} /></button></td></tr>
 									))}
 								</tbody></table>
@@ -759,6 +762,9 @@ function LinksCohortPanel({ entityId, onView }: { entityId: string; onView?: (id
  *  cohorts. Linked entities are clickable to hop straight to their own detail. */
 function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () => void; onEdit: (id: string) => void; onView: (id: string) => void }) {
 	const { data: e, isLoading, error, mutate } = useEditPayload<EntityEdit>(`/api/admin/ecosystem-entities/${id}/edit`);
+	// Same keys as LinksCohortPanel below, so these are shared (deduped) requests.
+	const parts = useSWR<PartRow[]>([`/api/admin/ecosystem-entities/${id}/participants`], { dedupingInterval: 10_000 });
+	const rels = useSWR<RelRow[]>([`/api/admin/ecosystem-entities/${id}/relationships`], { dedupingInterval: 10_000 });
 	// Loading only when there is nothing to show: opening Edit refetches this record, and
 	// swapping to a spinner then unmounted the panels behind the modal (losing their state).
 	if (!e && (isLoading || !error)) return <div className="card" style={{ padding: 'var(--space-4)' }}><Loading msg="Loading entity…" /></div>;
@@ -769,29 +775,34 @@ function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () =
 	const isProgram = e.entity_type === 'program';
 	const yn = (v: unknown) => (v == null ? '—' : v ? 'Yes' : 'No');
 	const s = (v: unknown) => (v == null || v === '' ? '—' : String(v));
+	const day = (v: unknown) => (v == null || v === '' ? '—' : new Date(String(v).slice(0, 10)).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }));
 	const facts: Array<[string, string]> = isEvent
-		? [['Mode', s(ev.mode).replace(/_/g, ' ')], ['Start', s(ev.start_date).slice(0, 10)], ['End', s(ev.end_date).slice(0, 10)], ['Featured', yn(ev.is_featured)], ['Discount', s(ev.discount_code)]]
+		? [['Mode', tidy(ev.mode as string | null)], ['Starts', day(ev.start_date)], ['Ends', day(ev.end_date)], ['Featured', yn(ev.is_featured)], ['Discount', s(ev.discount_code)]]
 		: isProgram
-			? [['Duration', s(p.duration_label)], ['Interval', s(p.interval_label)], ['Investment', s(p.investment_label)], ['Equity', s(p.equity_label)], ['Stage', s(p.stage_label)], ['Cohort size', s(p.cohort_size)], ['Virtual', s(p.virtual_mode)], ['Office space', yn(p.has_office_space)], ['Profit', p.is_profitable == null ? '—' : (p.is_profitable ? 'For profit' : 'Non-profit')], ['Latest cohort', s(p.latest_cohort_year)], ['Entries open', yn(p.entries_open)]]
+			? [['Duration', s(p.duration_label)], ['Interval', s(p.interval_label)], ['Investment', s(p.investment_label)], ['Equity', s(p.equity_label)], ['Stage', s(p.stage_label)], ['Cohort size', s(p.cohort_size)], ['Virtual', tidy(p.virtual_mode as string | null)], ['Office space', yn(p.has_office_space)], ['Profit', p.is_profitable == null ? '—' : (p.is_profitable ? 'For profit' : 'Non-profit')], ['Latest cohort', s(p.latest_cohort_year)], ['Applications', p.entries_open ? `Open${p.entries_end_date ? ` until ${day(p.entries_end_date)}` : ''}` : 'Closed']]
 			: [];
+	const partCount = parts.data?.length;
 	const info: Array<[string, string]> = [
-		['Type', s(e.entity_type)], ['Status', s(e.status)], ['Category', s(e.category)],
+		['Type', entityTypeLabel(e.entity_type)], ['Status', tidy(e.status)], ['Category', s(e.category)],
 		['HQ', [e.hq_city, e.hq_country].filter(Boolean).join(', ') || '—'],
 		['Founded', s(e.founded_year)], ['Latest activity', s(e.latest_activity_year)],
+		['Participants', partCount == null ? '…' : partCount.toLocaleString()], ['Linked entries', rels.data == null ? '…' : rels.data.length.toLocaleString()],
 		['POC', s(e.poc_name)], ['POC email', s(e.poc_email)],
+		['Added', day(e.created_at)], ['Last updated', day(e.updated_at)],
 	];
 	return (
 		<div style={{ display: 'grid', gap: 16 }}>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
 				<button className="btn ghost" onClick={onBack}>← Back to list</button>
 				<div style={{ flex: 1 }} />
-				<button className="btn" onClick={() => onEdit(id)}>Edit</button>
+				<Link className="btn ghost" href={`/claims?claim.type=ecosystem_entity&claim.q=${encodeURIComponent(e.name)}`}>View claims</Link>
+				<button className="btn" onClick={() => onEdit(id)}>Edit {entityTypeLabel(e.entity_type).toLowerCase()}</button>
 			</div>
 			<div className="card" style={{ padding: 'var(--space-4)' }}>
 				<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
 					<h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, margin: 0 }}>{e.name}</h2>
-					<span className="tag">{e.entity_type}</span>
-					{e.status && <span className="tag">{e.status}</span>}
+					<span className="tag">{entityTypeLabel(e.entity_type)}</span>
+					{e.status && <span className={`tag ${e.status === 'active' ? 'pos' : ''}`}>{tidy(e.status)}</span>}
 				</div>
 				{e.website && <a href={e.website.startsWith('http') ? e.website : `https://${e.website}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: 13 }}>{e.website}</a>}
 				{e.description && <p style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 8, marginBottom: 0 }}>{e.description}</p>}
@@ -802,7 +813,7 @@ function EntityDetail({ id, onBack, onEdit, onView }: { id: string; onBack: () =
 			{facts.length > 0 && (
 				<Section title={isEvent ? 'Event details' : 'Program details'} meta={e.entity_type}>
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-						{facts.map(([k, v]) => <div key={k}><div className="co-stat-label">{k}</div><div style={{ fontSize: 13, textTransform: 'capitalize' }}>{v}</div></div>)}
+						{facts.map(([k, v]) => <div key={k}><div className="co-stat-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>)}
 					</div>
 				</Section>
 			)}

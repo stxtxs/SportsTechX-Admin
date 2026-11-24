@@ -3,24 +3,27 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Check, X, Trash2, Upload, Rocket, RefreshCw, Eye, Pencil, Undo2 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Plus, Check, X, Trash2, Upload, Rocket, RefreshCw, Eye, Pencil, Undo2, Download } from 'lucide-react';
+import { api, fetchAllPages } from '@/lib/api';
+import { tidy } from '@/lib/labels';
+import { downloadCsv } from '@/components/csv-import';
 import { qk } from '@/lib/query-keys';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Tag, Pager } from '@/components/atoms';
+import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Tag, Pager, SortableTh } from '@/components/atoms';
 import { Funnel } from '@/components/charts';
-import { StatStrip } from '@/components/filters';
+import { FilterBar, StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
 import { CandidateInput, EditCandidateModal, parseCandidates } from '@/components/candidate-import';
 import { EMPTY_LOCATION } from '@/components/entity-pickers';
 import { CompanyModal } from '../companies/page';
-import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 type Status = 'new' | 'reviewing' | 'added' | 'rejected';
 interface PerAdmin { assigned_to: string | null; full_name: string | null; pending: number; added: number; rejected: number; completion_rate: number }
@@ -59,7 +62,8 @@ const TABS: Array<{ label: string; key: Status | '' }> = [
 	{ label: 'Added', key: 'added' }, { label: 'Rejected', key: 'rejected' },
 ];
 
-export default function StartupsPipelinePage() {
+export default function StartupsPipelinePage() {
+	const cols = useTableColumns('startups');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [statusRaw, setStatusRaw] = useUrlState('sp', 'status', 'new');
@@ -70,8 +74,10 @@ export default function StartupsPipelinePage() {
 	const debouncedSearch = useDebouncedValue(search);
 	const [from, setFrom] = useUrlState('sp', 'from', '');
 	const [to, setTo] = useUrlState('sp', 'to', '');
+	const [sort, setSort] = useUrlState('sp', 'sort', '-added');
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [bulkAssignee, setBulkAssignee] = useState('');
+	const [exporting, setExporting] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [importing, setImporting] = useState(false);
 	const [promoting, setPromoting] = useState<Entry | null>(null);
@@ -79,9 +85,13 @@ export default function StartupsPipelinePage() {
 	const [editing, setEditing] = useState<Entry | null>(null);
 	// A filter change starts over at page 1 with nothing selected (page 3 of the old view was empty).
 	const refilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setSelected(new Set()); };
+	// The status chips are tabs; these are the filters "Clear" resets.
+	const activeFilters = [assigned, search, from, to].filter(Boolean).length;
+	const clearFilters = () => { for (const set of [setAssigned, setSearch, setFrom, setTo]) set(''); setPage(1); setSelected(new Set()); };
+	const onSort = (s: string) => { setSort(s); setPage(1); };
 
 	const { data, error, isLoading } = useSWR<Response>(
-		['/api/admin/startups-pipeline', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, page, limit: 50 }],
+		['/api/admin/startups-pipeline', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, sort, page, limit: 50 }],
 		{ dedupingInterval: 15_000 },
 	);
 	const [statsRange, setStatsRange] = useState<RangeValue>({});
@@ -132,6 +142,17 @@ export default function StartupsPipelinePage() {
 			: { ids: [...selected], assigned_to: bulkAssignee || null }),
 		roundRobin ? 'Distributed round-robin' : 'Assigned',
 	);
+	const exportCsv = async () => {
+		setExporting(true);
+		try {
+			const params = Object.fromEntries(Object.entries({ status, assigned_to: assigned, q: search, from, to, sort }).filter(([, v]) => v));
+			const { rows, capped } = await fetchAllPages<Entry>('/api/admin/startups-pipeline', params);
+			downloadCsv('startups-to-add.csv',
+				['Added', 'Name', 'Website', 'HQ city', 'HQ country', 'Source', 'Status', 'Enrichment', 'Assigned to'],
+				rows.map((e) => [e.created_at.slice(0, 10), e.name, e.website ?? '', e.hq_city ?? '', e.hq_country ?? '', e.source ?? '', tidy(e.status), tidy(e.enrichment_status), e.assigned_to ? adminName(e.assigned_to) : '']));
+			toast.success(`Exported ${rows.length.toLocaleString()} row${rows.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
+		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
+	};
 	const bulkStatus = (s: Status) => act(() => api('PATCH', '/api/admin/startups-pipeline/bulk-status', { ids: [...selected], status: s }), 'Updated');
 	const bulkDelete = () => { void (async () => { if (await ask(`Delete ${selected.size} entr(ies)?`)) void act(() => api('DELETE', '/api/admin/startups-pipeline/bulk', { ids: [...selected] }), 'Deleted'); })(); };
 
@@ -176,15 +197,17 @@ export default function StartupsPipelinePage() {
 			</Section>
 			<div style={{ marginBottom: 'var(--space-5)' }} />
 
-			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', gap: 8, flexWrap: 'wrap' }}>
+			<FilterBar>
 				{TABS.map((t) => <button key={t.key} className={`chip ${status === t.key ? 'on' : ''}`} onClick={() => refilter(setStatusRaw)(t.key)}>{t.label}</button>)}
-				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={190} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
-				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name / site…" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
-				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" />
-				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" />
+				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={190} ariaLabel="Assignee" options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
+				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name / site…" aria-label="Search startups" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
+				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" aria-label="Added from" />
+				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" aria-label="Added to" />
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 				<div style={{ flex: 1 }} />
+				<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}><Download size={12} /> {exporting ? 'Exporting…' : 'Export CSV'}</button>
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
-			</div>
+			</FilterBar>
 
 			{selected.size > 0 && (
 				<div className="card" style={{ padding: 12, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -207,13 +230,24 @@ export default function StartupsPipelinePage() {
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
 			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
-			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={entries.length === 0} emptyMsg={`Nothing in ${status || 'any status'}.`} onRetry={refreshAll}>
+			<div className="card" ref={cols.ref}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} startup${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
+				<AsyncState loading={isLoading} error={error} empty={entries.length === 0} emptyMsg={activeFilters ? 'No startups match these filters.' : `Nothing in ${status ? tidy(status).toLowerCase() : 'any status'}.`} onRetry={refreshAll}>
 					<table className="data-table">
 						<thead>
 							<tr>
 								<th style={{ width: 28 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-								<th>Date</th><th>Name</th><th>HQ</th><th>Source</th><th>Enrichment</th><th>Assigned</th><th>Status</th><th style={{ textAlign: 'right' }}>Actions</th>
+								<SortableTh label="Date" field="added" sort={sort} onSort={onSort} />
+								<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
+								<SortableTh label="HQ" field="hq" sort={sort} onSort={onSort} />
+								<SortableTh label="Source" field="source" sort={sort} onSort={onSort} />
+								<SortableTh label="Enrichment" field="enrichment" sort={sort} onSort={onSort} />
+								<th>Assigned</th>
+								<SortableTh label="Status" field="status" sort={sort} onSort={onSort} />
+								<th style={{ textAlign: 'right' }}>Actions</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -227,10 +261,10 @@ export default function StartupsPipelinePage() {
 									<td title={e.website ? (e.enrichment_error ?? undefined) : 'Enrichment needs a website — add one with Edit'}>
 										{!e.website && e.enrichment_status !== 'enriched'
 											? <Tag>no website</Tag>
-											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{e.enrichment_status}</Tag>}
+											: <Tag variant={e.enrichment_status === 'enriched' ? 'pos' : e.enrichment_status === 'failed' ? 'warn' : ''}>{tidy(e.enrichment_status)}</Tag>}
 									</td>
 									<td>{adminName(e.assigned_to)}</td>
-									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{e.status}</Tag></td>
+									<td><Tag variant={e.status === 'added' ? 'pos' : e.status === 'rejected' ? 'warn' : ''}>{tidy(e.status)}</Tag></td>
 									<td style={{ textAlign: 'right' }}>
 										<div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
 											<button className="btn ghost" title="View enriched data" onClick={() => setViewing(e)}><Eye size={12} /></button>

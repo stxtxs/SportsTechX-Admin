@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 /**
  * Tiny shared atoms for admin pages. Mirrors the small subset of components
@@ -31,7 +32,7 @@ export function PageHeader({ kicker, title, subtitle, action }: PageHeaderProps)
 				display: 'flex',
 				alignItems: 'flex-end',
 				justifyContent: 'space-between',
-				marginBottom: 'var(--space-5)',
+				marginBottom: 'var(--space-4)',
 				flexWrap: 'wrap',
 				gap: 16,
 			}}
@@ -54,7 +55,7 @@ export function PageHeader({ kicker, title, subtitle, action }: PageHeaderProps)
 				<h1
 					style={{
 						fontFamily: 'var(--font-display)',
-						fontSize: 38,
+						fontSize: 28,
 						fontWeight: 800,
 						letterSpacing: '-0.02em',
 						lineHeight: 1,
@@ -305,13 +306,24 @@ export function StatsPanel({
 	action?: React.ReactNode;
 	children: React.ReactNode;
 }) {
+	// Admins who come to work the list can fold the numbers away; remembered per page, per browser.
+	const pathname = usePathname();
+	const [open, setOpen] = React.useState(true);
+	const key = `admin.stats.closed.${pathname}`;
+	React.useEffect(() => { try { setOpen(localStorage.getItem(key) !== '1'); } catch { /* show */ } }, [key]);
+	const toggle = () => setOpen((o) => { try { localStorage.setItem(key, o ? '1' : '0'); } catch { /* ignore */ } return !o; });
 	return (
-		<div className="card" style={{ marginBottom: 'var(--space-5)' }}>
-			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px var(--space-4)', borderBottom: '1px solid var(--border)', gap: 12 }}>
-				<div style={{ fontWeight: 700, fontSize: 15 }}>{title}</div>
-				{action && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{action}</div>}
+		<div className="card" style={{ marginBottom: 'var(--space-4)' }}>
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px var(--space-4)', borderBottom: open ? '1px solid var(--border)' : 'none', gap: 12, flexWrap: 'wrap' }}>
+				<button type="button" onClick={toggle} aria-expanded={open}
+					style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', fontFamily: 'inherit', fontWeight: 700, fontSize: 15 }}>
+					<span aria-hidden style={{ display: 'inline-block', transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none', fontSize: 11, color: 'var(--fg-muted)' }}>▶</span>
+					{title}
+					{!open && <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--fg-muted)' }}>hidden · click to show</span>}
+				</button>
+				{open && action && <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>{action}</div>}
 			</div>
-			<div style={{ padding: 'var(--space-4)' }}>{children}</div>
+			{open && <div style={{ padding: 'var(--space-4)' }}>{children}</div>}
 		</div>
 	);
 }

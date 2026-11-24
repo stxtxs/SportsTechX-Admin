@@ -11,14 +11,16 @@ import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState, Loading, StatCard, RichStatCard, StatsPanel, Section, Pager, SortableTh } from '@/components/atoms';
 import { ComboBarLine, PieDonut, PieLegend, toSegments, type Bucket } from '@/components/charts';
-import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter, SectorTierFilter } from '@/components/filters';
+import { FilterBar, FilterSelect, StatStrip, FilterRange, RefSlugFilter, SectorTierFilter, GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/components/filters';
 import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components/csv-import';
 import { Field } from '@/components/tabbed-form';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useEditParam } from '@/hooks/use-edit-param';
+import { qk } from '@/lib/query-keys';
+import { useTableColumns } from '@/hooks/use-table-columns';
 import {
-	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade,
+	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade, InvestorSelectOne,
 	type DealInvestor,
 } from '@/components/entity-pickers';
 
@@ -32,6 +34,9 @@ interface Deal {
 	currency_code?: string | null;
 	status?: string | null;
 	primary_sector?: string | null;
+	hq_country?: string | null;
+	lead_investor?: string | null;
+	created_at?: string | null;
 }
 interface DealsResponse { data: Deal[]; total: number; totalPages: number }
 interface DealStats { total: number; total_amount: number; total_rows?: number; this_year?: number; last_year?: number; yoy_change?: number | null; by_year: Array<{ year: number; deals: number; amt: number }>; by_round_type: Bucket[]; by_size_bucket: Bucket[] }
@@ -52,7 +57,8 @@ function fmtAmount(v?: string | null): string {
 }
 const fmtMoney = (n: number): string => n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(1)}M`;
 
-export function DealsView({ embedded = false }: { embedded?: boolean }) {
+export function DealsView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('deals');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [search, setSearch] = useUrlState('deal', 'search', '');
@@ -67,6 +73,14 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 	const [amountMin, setAmountMin] = useUrlState('deal', 'amountMin', '');
 	const [amountMax, setAmountMax] = useUrlState('deal', 'amountMax', '');
 	const [disclosed, setDisclosed] = useUrlState('deal', 'disclosed', '');
+	const [tech, setTech] = useUrlState('deal', 'tech', '');
+	const [country, setCountry] = useUrlState('deal', 'country', '');
+	const [continent, setContinent] = useUrlState('deal', 'continent', '');
+	const [region, setRegion] = useUrlState('deal', 'region', '');
+	const [coVerified, setCoVerified] = useUrlState('deal', 'coVerified', '');
+	const [investor, setInvestor] = useUrlState('deal', 'investor', '');
+	const [from, setFrom] = useUrlState('deal', 'from', '');
+	const [to, setTo] = useUrlState('deal', 'to', '');
 	const [page, setPage] = useUrlNumber('deal', 'page', 1);
 	const [sort, setSort] = useUrlState('deal', 'sort', '-announced_date');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
@@ -84,10 +98,22 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 			deal_size_bucket: sizeBucket || undefined, year: year || undefined,
 			sector_slug: sector || undefined, sport_slug: sport || undefined, round_type_slug: roundType || undefined,
 			amount_usd_min: dAmountMin || undefined, amount_usd_max: dAmountMax || undefined, disclosed_only: disclosed || undefined,
+			tech_tag_slug: tech || undefined, country: country || undefined, continent: continent || undefined, region: region || undefined,
+			is_company_verified: coVerified || undefined, investor_id: investor || undefined, from: from || undefined, to: to || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },
 	);
+	const filterState: Array<[string, (v: string) => void]> = [
+		[search, setSearch], [status, setStatus], [businessModel, setBusinessModel], [sizeBucket, setSizeBucket], [year, setYear],
+		[sector, setSector], [sport, setSport], [roundType, setRoundType], [amountMin, setAmountMin], [amountMax, setAmountMax],
+		[disclosed, setDisclosed], [tech, setTech], [country, setCountry], [continent, setContinent], [region, setRegion],
+		[coVerified, setCoVerified], [investor, setInvestor], [from, setFrom], [to, setTo],
+	];
+	const activeFilters = filterState.filter(([v]) => v).length;
+	const clearFilters = () => { filterState.forEach(([, set]) => set('')); setPage(1); };
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<DealStats>(['/api/admin/stats/deals'], { dedupingInterval: 60_000 });
 	const yearChart = (stats.data?.by_year ?? []).map((r) => ({ year: r.year, amt: Number(r.amt), deals: Number(r.deals) }));
 	const sizeSegments = toSegments(stats.data?.by_size_bucket ?? []);
@@ -154,15 +180,37 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 				<CsvCheckButton entity="deals" />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add deal</button>
 			</FilterBar>
+			<FilterBar>
+				<RefSlugFilter kind="tech-tags" ariaLabel="Tech tag" value={tech} onChange={f(setTech)} allLabel="All tech tags" />
+				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
+				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
+				<FilterSelect ariaLabel="Company verified" value={coVerified} onChange={f(setCoVerified)} options={[{ value: 'true', label: 'Verified companies only' }]} allLabel="Any company" />
+				<div style={{ width: 220 }}><InvestorSelectOne value={investor} onChange={f(setInvestor)} placeholder="Filter by investor…" /></div>
+				<DateRangeFilter label="Announced" from={from} to={to} onFrom={f(setFrom)} onTo={f(setTo)} />
+			</FilterBar>
 
 			{(creating || editingId) && (
 				<DealModal id={editingId} onClose={() => { setCreating(false); setEditingId(null); }} onSaved={() => { setCreating(false); setEditingId(null); void refresh(); }} />
 			)}
 
 			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={deals.length === 0} emptyMsg={search ? 'No deals match.' : 'No deals yet.'} onRetry={() => void refresh()}>
+				<ListCount total={data?.total} noun={['deal', 'deals']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={deals.length === 0} emptyMsg={activeFilters ? 'No deals match these filters.' : 'No deals yet.'} onRetry={() => void refresh()}>
+					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
-						<thead><tr><th>Company</th><th>Round</th><SortableTh label="Year" field="announced_date" sort={sort} onSort={onSort} /><SortableTh label="Amount" field="amount_usd" sort={sort} onSort={onSort} /><th>Status</th><th style={{ textAlign: 'right' }} /></tr></thead>
+						<thead><tr>
+							<SortableTh label="Company" field="company_name" sort={sort} onSort={onSort} />
+							<SortableTh label="Round" field="round_type_name" sort={sort} onSort={onSort} />
+							<SortableTh label="Year" field="announced_date" sort={sort} onSort={onSort} />
+							<SortableTh label="Amount" field="amount_usd" sort={sort} onSort={onSort} />
+							<SortableTh label="Sector" field="primary_sector" sort={sort} onSort={onSort} />
+							<SortableTh label="HQ" field="hq_country" sort={sort} onSort={onSort} />
+							<SortableTh label="Lead investor" field="lead_investor" sort={sort} onSort={onSort} />
+							<th>Status</th>
+							<SortableTh label="Added" field="created_at" sort={sort} onSort={onSort} />
+							<th style={{ textAlign: 'right' }} />
+						</tr></thead>
 						<tbody>
 							{deals.map((d) => (
 								<tr key={d.id}>
@@ -170,7 +218,11 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 									<td>{d.round_type_name ?? '—'}</td>
 									<td className="num">{d.announced_year ?? '—'}</td>
 									<td className="num">{fmtAmount(d.amount_usd)}</td>
+									<td>{d.primary_sector ?? '—'}</td>
+									<td>{d.hq_country ?? '—'}</td>
+									<td>{d.lead_investor ?? '—'}</td>
 									<td>{d.status ?? '—'}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(d.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(d.id)}>Edit</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void remove(d.id)}><Trash2 size={12} /></button>
@@ -179,6 +231,7 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 							))}
 						</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />

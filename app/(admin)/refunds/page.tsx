@@ -5,8 +5,11 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, AsyncState } from '@/components/atoms';
+import { PageHeader, AsyncState, SortableTh, Pager } from '@/components/atoms';
 import { FilterBar, FilterSelect } from '@/components/filters';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 /**
  * Refunds owed after an in-app downgrade.
@@ -37,23 +40,34 @@ interface RefundRequest {
 	requested_at: string;
 	reviewed_at: string | null;
 }
-interface Resp { data?: RefundRequest[] }
+interface Resp { data: RefundRequest[]; total: number; totalPages: number }
 
 const STATUSES = ['pending', 'refunded', 'rejected', 'failed'] as const;
+const STATUS_LABEL: Record<string, string> = { pending: 'Waiting', refunded: 'Refunded', rejected: 'Rejected', failed: 'Failed' };
 const statusChip: Record<string, string> = { pending: 'warn', refunded: 'on', rejected: '', failed: 'bad' };
 
 const money = (cents: number, ccy: string) =>
 	new Intl.NumberFormat(undefined, { style: 'currency', currency: (ccy || 'eur').toUpperCase() }).format((cents ?? 0) / 100);
 
-export default function RefundsPage() {
-	const [status, setStatus] = useState('pending');
+export default function RefundsPage() {
+	const cols = useTableColumns('refunds');
+	// Defaults to the work queue (pending); "All statuses" is '' and is kept in the URL.
+	const [status, setStatus] = useUrlState('refund', 'status', 'pending');
+	const [search, setSearch] = useUrlState('refund', 'q');
+	const [sort, setSort] = useUrlState('refund', 'sort', '-requested');
+	const [page, setPage] = useUrlNumber('refund', 'page', 1);
+	const debouncedSearch = useDebouncedValue(search);
 	const [pending, setPending] = useState<string | null>(null);
+	const activeFilters = (status !== 'pending' ? 1 : 0) + (search ? 1 : 0);
+	/** Change a filter or the sort and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
+	const clearFilters = () => { setStatus('pending'); setSearch(''); setPage(1); };
 
-	const { data, error, isLoading, mutate } = useSWR<Resp | RefundRequest[]>(
-		['/api/admin/refunds', { status: status || 'all' }],
+	const { data, error, isLoading, mutate } = useSWR<Resp>(
+		['/api/admin/refunds', { status: status || 'all', q: debouncedSearch || undefined, sort, page, limit: 50 }],
 		{ dedupingInterval: 15_000 },
 	);
-	const rows: RefundRequest[] = Array.isArray(data) ? data : (data?.data ?? []);
+	const rows = data?.data ?? [];
 
 	const act = async (r: RefundRequest, action: 'approve' | 'reject') => {
 		// Releasing money deserves one deliberate pause. The amount is in the
@@ -81,19 +95,33 @@ export default function RefundsPage() {
 			/>
 
 			<FilterBar>
-				<FilterSelect
-					value={status} onChange={setStatus} allLabel="All statuses"
-					options={STATUSES.map((s) => ({ value: s, label: s }))}
+				<input
+					className="search-input" style={{ flex: '0 0 280px', height: 32 }}
+					placeholder="Search customer, invoice or subscription id…" aria-label="Search refunds" value={search}
+					onChange={(e) => f(setSearch)(e.target.value)}
 				/>
+				<FilterSelect
+					ariaLabel="Status" value={status} onChange={f(setStatus)} allLabel="All statuses"
+					options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+				/>
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
-			<div className="card" style={{ padding: 'var(--space-4)' }}>
-				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="Nothing to refund." onRetry={() => void mutate()}>
+			<div className="card" ref={cols.ref}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} refund${data.total === 1 ? '' : 's'}${status ? ` · ${STATUS_LABEL[status] ?? status}` : ''}${search ? ' matching the search' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
+				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No refunds match the search.' : 'Nothing to refund.'} onRetry={() => void mutate()}>
 					<table className="data-table">
 						<thead>
 							<tr>
-								<th>Requested</th><th>Customer</th><th>Refund</th>
-								<th>Unused</th><th>Status</th><th>Actions</th>
+								<SortableTh label="Requested" field="requested" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Customer" field="customer" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Refund" field="amount" sort={sort} onSort={f(setSort)} />
+								<th>Unused</th>
+								<SortableTh label="Status" field="status" sort={sort} onSort={f(setSort)} />
+								<SortableTh label="Reviewed" field="reviewed" sort={sort} onSort={f(setSort)} />
 							</tr>
 						</thead>
 						<tbody>
@@ -118,7 +146,7 @@ export default function RefundsPage() {
 										{r.basis ? `${r.basis.days_remaining} of ${r.basis.days_total} days` : '—'}
 									</td>
 									<td>
-										<span className={`chip ${statusChip[r.status] ?? ''}`}>{r.status}</span>
+										<span className={`chip ${statusChip[r.status] ?? ''}`}>{STATUS_LABEL[r.status] ?? r.status}</span>
 										{r.failure_reason && (
 											<div style={{ fontSize: 11, color: 'var(--fg-muted)', maxWidth: 240 }}>{r.failure_reason}</div>
 										)}
@@ -143,6 +171,7 @@ export default function RefundsPage() {
 					</table>
 				</AsyncState>
 			</div>
+			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 		</div>
 	);
 }

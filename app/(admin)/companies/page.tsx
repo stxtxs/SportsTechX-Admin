@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
-import { useSearchParams, usePathname } from 'next/navigation';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Building2, BadgeCheck, Rocket, Coins, Layers, CircleDollarSign, GitMerge } from 'lucide-react';
@@ -25,14 +25,14 @@ import {
 	EMPTY_SOCIAL, EMPTY_LOCATION, type SocialValue, type LocationValue, type DealInvestor,
 } from '@/components/entity-pickers';
 import { DealModal, DealsView, type StagedDeal } from '@/components/admin-views/deals';
+import { GeoFacetFilter, ListCount, fmtListDate } from '@/components/filters';
 import { AcquisitionModal, AcquisitionsView, type StagedAcq } from '@/components/admin-views/acquisitions';
-import { ClaimsView } from '@/components/admin-views/claims';
-import { DataRequestsView } from '@/components/admin-views/data-requests';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Company {
 	id: string;
@@ -47,6 +47,8 @@ interface Company {
 	hq_city?: string | null;
 	founded_year?: number | null;
 	status?: string | null;
+	total_funding_usd?: number | string | null;
+	created_at?: string | null;
 }
 interface CompaniesResponse { data: Company[]; total: number; totalPages: number }
 interface CompanyStats { total: number; verified: number; unicorn: number; raising: number; total_rows?: number; this_year?: number | null; last_year?: number | null; yoy_change?: number | null; verified_this_month?: number; verified_last_month?: number; verified_mom?: number | null; by_status: Bucket[]; by_sector: Bucket[]; by_business_model: Bucket[] }
@@ -56,6 +58,7 @@ const STATUSES = ['active', 'inactive', 'needs_review', 'dead', 'acquired', 'ipo
 const BUSINESS_MODELS = ['b2b', 'b2c', 'b2b2c'] as const;
 
 export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('companies');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [search, setSearch] = useUrlState('co', 'q', '', 'q');
@@ -71,6 +74,12 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const [foundedMax, setFoundedMax] = useUrlState('co', 'foundedMax', '');
 	const [fundingMin, setFundingMin] = useUrlState('co', 'fundingMin', '');
 	const [fundingMax, setFundingMax] = useUrlState('co', 'fundingMax', '');
+	const [model, setModel] = useUrlState('co', 'model', '');
+	const [round, setRound] = useUrlState('co', 'round', '');
+	const [tech, setTech] = useUrlState('co', 'tech', '');
+	const [continent, setContinent] = useUrlState('co', 'continent', '');
+	const [region, setRegion] = useUrlState('co', 'region', '');
+	const [funded, setFunded] = useUrlState('co', 'funded', '');
 	const [page, setPage] = useUrlNumber('co', 'page', 1);
 	const [sort, setSort] = useUrlState('co', 'sort', '-created_at');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
@@ -81,8 +90,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const [removePending, setRemovePending] = useState(false);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 
-	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
-	const dCountry = useDebouncedValue(country);
+	// Typed filters (min/max) wait for typing to pause, like search, instead of one request per key.
 	const dFoundedMin = useDebouncedValue(foundedMin);
 	const dFoundedMax = useDebouncedValue(foundedMax);
 	const dFundingMin = useDebouncedValue(fundingMin);
@@ -90,14 +98,25 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const { data, error, isLoading } = useSWR<CompaniesResponse>(
 		['/api/companies', {
 			search: debouncedSearch || undefined, status: status || undefined, sector: sector || undefined,
-			is_verified: verified || undefined, sport: sport || undefined, country: dCountry.trim() || undefined,
+			is_verified: verified || undefined, sport: sport || undefined, country: country || undefined,
 			is_actively_raising: raising || undefined, is_unicorn: unicorn || undefined,
 			founded_year_min: dFoundedMin || undefined, founded_year_max: dFoundedMax || undefined,
 			min_funding: dFundingMin || undefined, max_funding: dFundingMax || undefined,
+			business_model: model || undefined, last_round_type: round || undefined, tech_tag: tech || undefined,
+			continent: continent || undefined, region: region || undefined, exclude_unfunded: funded || undefined,
 			page, limit: 30, sort, include_hidden: 1,   // admins see hidden (test) records; users never do
 		}],
 		{ dedupingInterval: 30_000 },
 	);
+	const filterState: Array<[string, (v: string) => void]> = [
+		[search, setSearch], [status, setStatus], [sector, setSector], [verified, setVerified], [sport, setSport], [country, setCountry],
+		[raising, setRaising], [unicorn, setUnicorn], [foundedMin, setFoundedMin], [foundedMax, setFoundedMax], [fundingMin, setFundingMin],
+		[fundingMax, setFundingMax], [model, setModel], [round, setRound], [tech, setTech], [continent, setContinent], [region, setRegion], [funded, setFunded],
+	];
+	const activeFilters = filterState.filter(([v]) => v).length;
+	const clearFilters = () => { filterState.forEach(([, set]) => set('')); setPage(1); };
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<CompanyStats>(['/api/admin/stats/companies'], { dedupingInterval: 60_000 });
 	const statusSegments = toSegments(stats.data?.by_status ?? []);
 	const sectorSegments = toSegments(stats.data?.by_sector ?? []);
@@ -166,7 +185,6 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="All sectors" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="All sports" />
 				<FilterSelect ariaLabel="Verified" value={verified} onChange={(v) => { setVerified(v); reset1(); }} options={[{ value: 'true', label: 'Verified' }, { value: 'false', label: 'Unverified' }]} allLabel="Any verification" />
-				<input className="search-input" style={{ height: 32, width: 130 }} placeholder="Country" value={country} onChange={(e) => { setCountry(e.target.value); reset1(); }} />
 				<BoolFilter ariaLabel="Actively raising" value={raising} onChange={(v) => { setRaising(v); reset1(); }} yesLabel="Raising" noLabel="Not raising" allLabel="Any raising" />
 				<BoolFilter ariaLabel="Unicorn" value={unicorn} onChange={(v) => { setUnicorn(v); reset1(); }} yesLabel="Unicorn" noLabel="Non-unicorn" allLabel="Any size" />
 				<FilterRange label="Founded" min={foundedMin} max={foundedMax} onMin={(v) => { setFoundedMin(v); reset1(); }} onMax={(v) => { setFoundedMax(v); reset1(); }} width={64} />
@@ -176,6 +194,15 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 				<CsvTemplateButton entity="companies" />
 				<CsvCheckButton entity="companies" />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add company</button>
+			</FilterBar>
+			<FilterBar>
+				<FilterSelect ariaLabel="Business model" value={model} onChange={f(setModel)} options={[...BUSINESS_MODELS]} allLabel="All models" />
+				<RefSlugFilter kind="round-types" ariaLabel="Has a round of type" value={round} onChange={f(setRound)} allLabel="Any funding round" />
+				<RefSlugFilter kind="tech-tags" ariaLabel="Tech tag" value={tech} onChange={f(setTech)} allLabel="All tech tags" />
+				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
+				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
+				<FilterSelect ariaLabel="Funding" value={funded} onChange={f(setFunded)} options={[{ value: 'true', label: 'Funded only' }]} allLabel="Funded or not" />
 			</FilterBar>
 
 			{(creating || editingId) && (
@@ -188,17 +215,30 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 			{merging && <MergeModal kind="company" id={merging.id} name={merging.name} onClose={() => setMerging(null)} onMerged={() => { setMerging(null); void refresh(); }} />}
 
 			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={companies.length === 0} emptyMsg={search ? 'No companies match.' : 'No companies yet.'} onRetry={() => void refresh()}>
+				<ListCount total={data?.total} noun={['company', 'companies']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={companies.length === 0} emptyMsg={activeFilters ? 'No companies match these filters.' : 'No companies yet.'} onRetry={() => void refresh()}>
+					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
-						<thead><tr><SortableTh label="Name" field="name" sort={sort} onSort={onSort} /><th>Slug</th><th>Sector</th><th>HQ</th><th>Status</th><th style={{ textAlign: 'right' }} /></tr></thead>
+						<thead><tr>
+							<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
+							<th className="hide-md">Slug</th><th>Sector</th><th>HQ</th>
+							<SortableTh label="Founded" field="founded_year" sort={sort} onSort={onSort} />
+							<SortableTh label="Total funding" field="total_funding" sort={sort} onSort={onSort} align="right" />
+							<th>Status</th>
+							<SortableTh label="Added" field="created_at" sort={sort} onSort={onSort} />
+							<th style={{ textAlign: 'right' }} />
+						</tr></thead>
 						<tbody>
 							{companies.map((c) => (
 								<tr key={c.id}>
 									<td>{c.name}</td>
-									<td className="num">{c.slug ?? '—'}</td>
+									<td className="num hide-md">{c.slug ?? '—'}</td>
 									<td>{c.primary_sector ?? '—'}</td>
 									<td>{c.hq_country ?? '—'}</td>
+									<td className="num">{c.founded_year ?? '—'}</td>
+									<td className="num" style={{ textAlign: 'right' }}>{fmtFunding(c.total_funding_usd)}</td>
 									<td>{c.status ?? '—'}{c.is_hidden && <span className="tag" style={{ marginLeft: 6 }} title="Hidden from users">Hidden</span>}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(c.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(c.id)}>Edit</button>
 										<button className="btn ghost" title="Merge this duplicate into another company" onClick={() => setMerging({ id: c.id, name: c.name })}>Merge</button>
@@ -210,11 +250,19 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 							))}
 						</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 		</div>
 	);
+}
+
+/** Total funding (USD) for the list column; 0/unknown shows a dash. */
+function fmtFunding(v?: number | string | null): string {
+	const n = Number(v);
+	if (!v || !Number.isFinite(n) || n <= 0) return '—';
+	return n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}K` : `$${n}`;
 }
 
 interface CompanyForm {
@@ -1155,19 +1203,24 @@ function CompanyForm({ id, initial, onClose, onSaved, promotePipelineId, enriche
 // tabs for the differentiable entities. The active tab lives in the URL (?tab=)
 // so it survives a refresh.
 interface EntityYoyStats { total: number; this_year?: number | null; last_year?: number | null; yoy_change?: number | null }
-type CdTab = 'companies' | 'deals' | 'acquisitions' | 'claims' | 'changes';
+type CdTab = 'companies' | 'deals' | 'acquisitions';
 const CD_TABS: ReadonlyArray<{ key: CdTab; label: string }> = [
 	{ key: 'companies', label: 'Companies' },
 	{ key: 'deals', label: 'Deals' },
 	{ key: 'acquisitions', label: 'M&A' },
-	{ key: 'claims', label: 'Ownership claims' },
-	{ key: 'changes', label: 'Data changes' },
 ];
+/** Claims and data changes moved to the one Review page; old links land on it, filtered. */
+const MOVED_TABS: Record<string, string> = {
+	claims: '/claims?claim.type=company',
+	changes: '/claims?tab=changes&dcr.entity=company%2Cdeal',
+};
 export default function CompaniesAdminPage() {
 	const searchParams = useSearchParams();
 	const pathname = usePathname();
+	const router = useRouter();
 	const raw = searchParams.get('tab');
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
+	useEffect(() => { if (raw && MOVED_TABS[raw]) router.replace(MOVED_TABS[raw]); }, [raw, router]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
 	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
@@ -1210,8 +1263,6 @@ export default function CompaniesAdminPage() {
 			{tab === 'companies' && <CompaniesView embedded />}
 			{tab === 'deals' && <DealsView embedded />}
 			{tab === 'acquisitions' && <AcquisitionsView embedded />}
-			{tab === 'claims' && <ClaimsView embedded lockType="company" />}
-			{tab === 'changes' && <DataRequestsView embedded lockEntity="company,deal" />}
 		</div>
 	);
 }

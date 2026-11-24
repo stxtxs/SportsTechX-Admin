@@ -18,6 +18,8 @@ import { Field } from '@/components/tabbed-form';
 import { CompanySelectOne, SectorCascade, SportsPicker, CurrencySelect, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/components/filters';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Acquisition {
 	id: string;
@@ -27,6 +29,8 @@ interface Acquisition {
 	amount_usd?: string | null;
 	acquisition_type?: string | null;
 	primary_sector?: string | null;
+	hq_country?: string | null;
+	created_at?: string | null;
 }
 interface AcqResponse { data: Acquisition[]; total: number; totalPages: number }
 interface AcqStats { total: number; total_amount: number; sportstech: number; total_rows?: number; this_year?: number; last_year?: number; yoy_change?: number | null; by_year: Array<{ year: number; deals: number; amt: number }>; by_type: Bucket[] }
@@ -45,7 +49,8 @@ function fmtAmount(v?: string | null): string {
 }
 const fmtMoney = (n: number): string => n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(1)}M`;
 
-export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
+export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('acquisitions');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [search, setSearch] = useUrlState('acq', 'q', '', 'q');
@@ -58,6 +63,16 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 	const [stech, setStech] = useUrlState('acq', 'stech', '');
 	const [amountMin, setAmountMin] = useUrlState('acq', 'amountMin', '');
 	const [amountMax, setAmountMax] = useUrlState('acq', 'amountMax', '');
+	const [disclosed, setDisclosed] = useUrlState('acq', 'disclosed', '');
+	const [model, setModel] = useUrlState('acq', 'model', '');
+	const [continent, setContinent] = useUrlState('acq', 'continent', '');
+	const [region, setRegion] = useUrlState('acq', 'region', '');
+	const [buyerModel, setBuyerModel] = useUrlState('acq', 'buyerModel', '');
+	const [buyerCountry, setBuyerCountry] = useUrlState('acq', 'buyerCountry', '');
+	const [buyerContinent, setBuyerContinent] = useUrlState('acq', 'buyerContinent', '');
+	const [buyerStech, setBuyerStech] = useUrlState('acq', 'buyerStech', '');
+	const [from, setFrom] = useUrlState('acq', 'from', '');
+	const [to, setTo] = useUrlState('acq', 'to', '');
 	const [page, setPage] = useUrlNumber('acq', 'page', 1);
 	const [sort, setSort] = useUrlState('acq', 'sort', '-acquisition_date');
 	const onSort = (s: string) => { setSort(s); setPage(1); };
@@ -65,20 +80,33 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 	const [creating, setCreating] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 
-	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
-	const dCountry = useDebouncedValue(country);
+	// Typed filters (min/max) wait for typing to pause, like search, instead of one request per key.
 	const dAmountMin = useDebouncedValue(amountMin);
 	const dAmountMax = useDebouncedValue(amountMax);
 	const { data, error, isLoading } = useSWR<AcqResponse>(
 		['/api/acquisitions', {
 			q: debouncedSearch || undefined, acquisition_type: type || undefined, year: year || undefined,
-			sector_slug: sector || undefined, sport_slug: sport || undefined, country: dCountry.trim() || undefined,
+			sector_slug: sector || undefined, sport_slug: sport || undefined, country: country || undefined,
 			acquiree_is_sportstech: stech || undefined,
-			amount_usd_min: dAmountMin || undefined, amount_usd_max: dAmountMax || undefined,
+			amount_usd_min: dAmountMin || undefined, amount_usd_max: dAmountMax || undefined, disclosed_only: disclosed || undefined,
+			acquiree_business_model: model || undefined, continent: continent || undefined, region: region || undefined,
+			acquirer_business_model: buyerModel || undefined, acquirer_country: buyerCountry || undefined,
+			acquirer_continent: buyerContinent || undefined, acquirer_is_sportstech: buyerStech || undefined,
+			from: from || undefined, to: to || undefined,
 			page, limit: 30, sort,
 		}],
 		{ dedupingInterval: 30_000 },
 	);
+	const filterState: Array<[string, (v: string) => void]> = [
+		[search, setSearch], [type, setType], [year, setYear], [sector, setSector], [sport, setSport], [country, setCountry],
+		[stech, setStech], [amountMin, setAmountMin], [amountMax, setAmountMax], [disclosed, setDisclosed], [model, setModel],
+		[continent, setContinent], [region, setRegion], [buyerModel, setBuyerModel], [buyerCountry, setBuyerCountry],
+		[buyerContinent, setBuyerContinent], [buyerStech, setBuyerStech], [from, setFrom], [to, setTo],
+	];
+	const activeFilters = filterState.filter(([v]) => v).length;
+	const clearFilters = () => { filterState.forEach(([, set]) => set('')); setPage(1); };
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); reset1(); };
 	const stats = useSWR<AcqStats>(['/api/admin/stats/acquisitions'], { dedupingInterval: 60_000 });
 	const yearChart = (stats.data?.by_year ?? []).map((r) => ({ year: r.year, amt: Number(r.amt), deals: Number(r.deals) }));
 	const typeSegments = toSegments(stats.data?.by_type ?? []);
@@ -134,14 +162,27 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 				<FilterSelect ariaLabel="Year" value={year} onChange={(v) => { setYear(v); reset1(); }} options={yearOpts} allLabel="All years" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="Any sector" />
 				<RefSlugFilter kind="sports" ariaLabel="Sport (either side)" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="Any sport" />
-				<input className="search-input" style={{ height: 32, width: 130 }} placeholder="Country" value={country} onChange={(e) => { setCountry(e.target.value); reset1(); }} />
-				<FilterSelect ariaLabel="SportsTech acquiree" value={stech} onChange={(v) => { setStech(v); reset1(); }} options={[{ value: 'true', label: 'SportsTech acquiree' }]} allLabel="Any acquiree" />
+				<FilterSelect ariaLabel="SportsTech acquiree" value={stech} onChange={(v) => { setStech(v); reset1(); }} options={[{ value: 'true', label: 'SportsTech acquiree' }, { value: 'false', label: 'Non-SportsTech acquiree' }]} allLabel="Any acquiree" />
 				<FilterRange label="Value $" min={amountMin} max={amountMax} onMin={(v) => { setAmountMin(v); reset1(); }} onMax={(v) => { setAmountMax(v); reset1(); }} />
+				<FilterSelect ariaLabel="Disclosed" value={disclosed} onChange={f(setDisclosed)} options={[{ value: 'true', label: 'Disclosed only' }]} allLabel="Any amount" />
 				<div style={{ flex: 1 }} />
 				<CsvImportButton entity="acquisitions" onDone={() => void refresh()} />
 				<CsvTemplateButton entity="acquisitions" />
 				<CsvCheckButton entity="acquisitions" />
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add acquisition</button>
+			</FilterBar>
+			<FilterBar>
+				<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Acquiree</span>
+				<FilterSelect ariaLabel="Acquiree business model" value={model} onChange={f(setModel)} options={[...BUSINESS_MODELS]} allLabel="Any model" />
+				<GeoFacetFilter kind="countries" value={country} onChange={f(setCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={continent} onChange={f(setContinent)} allLabel="Any continent" />
+				<GeoFacetFilter kind="regions" value={region} onChange={f(setRegion)} allLabel="Any region" />
+				<span style={{ fontSize: 12, color: 'var(--fg-muted)', marginLeft: 8 }}>Acquirer</span>
+				<FilterSelect ariaLabel="Acquirer business model" value={buyerModel} onChange={f(setBuyerModel)} options={[...BUSINESS_MODELS]} allLabel="Any model" />
+				<GeoFacetFilter kind="countries" value={buyerCountry} onChange={f(setBuyerCountry)} allLabel="Any country" />
+				<GeoFacetFilter kind="continents" value={buyerContinent} onChange={f(setBuyerContinent)} allLabel="Any continent" />
+				<FilterSelect ariaLabel="SportsTech acquirer" value={buyerStech} onChange={f(setBuyerStech)} options={[{ value: 'true', label: 'SportsTech acquirer' }, { value: 'false', label: 'Non-SportsTech acquirer' }]} allLabel="Any acquirer" />
+				<DateRangeFilter label="Announced" from={from} to={to} onFrom={f(setFrom)} onTo={f(setTo)} />
 			</FilterBar>
 
 			{(creating || editingId) && (
@@ -149,9 +190,21 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 			)}
 
 			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={search ? 'No acquisitions match.' : 'No acquisitions yet.'} onRetry={() => void refresh()}>
+				<ListCount total={data?.total} noun={['acquisition', 'acquisitions']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No acquisitions match these filters.' : 'No acquisitions yet.'} onRetry={() => void refresh()}>
+					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
-						<thead><tr><th>Acquiree</th><th>Acquirer</th><SortableTh label="Year" field="acquisition_date" sort={sort} onSort={onSort} /><SortableTh label="Amount" field="amount_usd" sort={sort} onSort={onSort} /><th>Type</th><th style={{ textAlign: 'right' }} /></tr></thead>
+						<thead><tr>
+							<SortableTh label="Acquiree" field="acquiree_name" sort={sort} onSort={onSort} />
+							<SortableTh label="Acquirer" field="acquirer_name" sort={sort} onSort={onSort} />
+							<SortableTh label="Year" field="acquisition_date" sort={sort} onSort={onSort} />
+							<SortableTh label="Amount" field="amount_usd" sort={sort} onSort={onSort} />
+							<SortableTh label="Type" field="acquisition_type" sort={sort} onSort={onSort} />
+							<SortableTh label="Sector" field="primary_sector" sort={sort} onSort={onSort} />
+							<SortableTh label="Acquiree HQ" field="hq_country" sort={sort} onSort={onSort} />
+							<SortableTh label="Added" field="created_at" sort={sort} onSort={onSort} />
+							<th style={{ textAlign: 'right' }} />
+						</tr></thead>
 						<tbody>
 							{rows.map((a) => (
 								<tr key={a.id}>
@@ -160,6 +213,9 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 									<td className="num">{a.acquisition_year ?? '—'}</td>
 									<td className="num">{fmtAmount(a.amount_usd)}</td>
 									<td>{a.acquisition_type ?? '—'}</td>
+									<td>{a.primary_sector ?? '—'}</td>
+									<td>{a.hq_country ?? '—'}</td>
+									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(a.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
 										<button className="btn ghost" onClick={() => setEditingId(a.id)}>Edit</button>
 										<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void remove(a.id)}><Trash2 size={12} /></button>
@@ -168,6 +224,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 							))}
 						</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />

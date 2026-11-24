@@ -231,15 +231,13 @@ const BLOCK_OF: Record<string, Record<string, string>> = {
 	benchmark26: { meta: '', intro: 'why-now', sections: '*', closing: 'closing', method: 'method', ui: '', personal: '' },
 	methodology: { note: '' },
 };
-/** Blocks that move but never lock (the server has no lock rule for them): the Benchmark's intro,
- *  closing and method; FTABR26's methodology note and credits. */
-const NEVER_LOCKED: Record<string, string[]> = { benchmark26: ['why-now', 'closing', 'method'], ftabr26: ['methodology', 'credits'] };
-const lockable = (template: string, block: string) => !(NEVER_LOCKED[template] ?? []).includes(block);
 
 type Part = (typeof GSTER26_PARTS)[number];
 
-function PartsList({ slug, parts, order, locked, partId, meta, labelOf, onSelect, onReorder, onToggleLock }: {
-	slug: string; parts: Part[]; order: string[]; locked: string[]; partId: string;
+function PartsList({ slug, parts, order, locked, lockable, partId, meta, labelOf, onSelect, onReorder, onToggleLock }: {
+	slug: string; parts: Part[]; order: string[]; locked: string[];
+	/** Blocks the server can lock (from the edit payload) — the only ones with a Paid switch. */
+	lockable: string[]; partId: string;
 	meta: (p: Part) => string; labelOf: (block: string) => string;
 	onSelect: (id: string) => void; onReorder: (next: string[]) => void; onToggleLock: (block: string) => void;
 }) {
@@ -270,7 +268,7 @@ function PartsList({ slug, parts, order, locked, partId, meta, labelOf, onSelect
 				<SortableContext items={order} strategy={verticalListSortingStrategy}>
 					{order.map((b) => (
 						<BlockRow key={b} id={b} label={labelOf(b)} parts={partsOf(b)} partId={partId} meta={meta}
-							canLock={lockable(slug, b)} locked={locked.includes(b)} onSelect={onSelect} onToggleLock={() => onToggleLock(b)} />
+							canLock={lockable.includes(b)} locked={locked.includes(b)} onSelect={onSelect} onToggleLock={() => onToggleLock(b)} />
 					))}
 				</SortableContext>
 			</DndContext>
@@ -312,13 +310,15 @@ function BlockRow({ id, label, parts, partId, meta, canLock, locked, onSelect, o
 
 // ---- the editor ----------------------------------------------------------------
 
-export function Gster26Editor({ reportId, slug, template, saved, previewOpen, onClosePreview, onSaved }: {
+export function Gster26Editor({ reportId, slug, template, saved, lockable, previewOpen, onClosePreview, onSaved }: {
 	reportId: string;
 	/** The report's URL slug (live link, image folder, frozen data). */
 	slug: string;
 	/** Its page template (reports.template): parts, blocks, preview frame and message prefix. */
 	template: string;
 	saved: Content | null;
+	/** Blocks the server's lock rules can lock (edit payload `lockable_blocks`). */
+	lockable: string[];
 	previewOpen: boolean;
 	onClosePreview: () => void;
 	onSaved: () => void;
@@ -418,10 +418,10 @@ export function Gster26Editor({ reportId, slug, template, saved, previewOpen, on
 				<aside className="rep-editor__list">
 					<div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Page parts</div>
 					<div style={{ fontSize: 11, color: 'var(--fg-muted)', marginBottom: 8, lineHeight: 1.45 }}>
-						{order.length > 0 && <>Drag <GripVertical size={10} style={{ verticalAlign: -1 }} /> to reorder. {ORDER_NOTE[template] ?? ''} <strong>Paid</strong> blocks show Explore readers only their heading and “Unlocked with Raise or Scout”.</>}
+						{order.length > 0 && <>Drag <GripVertical size={10} style={{ verticalAlign: -1 }} /> to reorder. {ORDER_NOTE[template] ?? ''}</>}{lockable.length > 0 && <> <strong>Paid</strong> blocks show Explore readers only their heading and “Unlocked with Raise or Scout”.</>}
 					</div>
 					<PartsList
-						slug={template} parts={PARTS} order={order} locked={locked} partId={partId} labelOf={labelOf}
+						slug={template} parts={PARTS} order={order} locked={locked} lockable={lockable} partId={partId} labelOf={labelOf}
 						meta={(p) => `${p.keys.length} block${p.keys.length === 1 ? '' : 's'}${partDirty(p) ? ' · edited' : ''}`}
 						onSelect={setPartId} onReorder={setOrder} onToggleLock={toggleLock}
 					/>

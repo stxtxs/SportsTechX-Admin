@@ -84,7 +84,8 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	const [editingId, setEditingId] = useEditParam();
 	const [removePending, setRemovePending] = useState(false);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
-	const [viewingId, setViewingId] = useState<string | null>(null);
+	// `?open=<id>` shows an entry's detail directly (global search, shared links).
+	const [viewingId, setViewingId] = useEditParam('open');
 
 	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
 	const dCountry = useDebouncedValue(country);

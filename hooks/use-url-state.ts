@@ -76,6 +76,12 @@ const listOnly = (qs: string) => {
  * sessionStorage) and, when you come back to a page through a link without a query, restores
  * it — so leaving a filtered list and returning doesn't lose the filters or the page.
  */
+/** Drop a page's saved list view (e.g. it holds a tab that no longer exists and would redirect again). */
+export function forgetListQuery(pathname: string): void {
+	// Deferred: the shell's save effect runs after the page's effects and would store it again.
+	setTimeout(() => { try { sessionStorage.removeItem(STORE + pathname); } catch { /* ignore */ } }, 0);
+}
+
 export function useRestoreListQuery(): void {
 	const pathname = usePathname();
 	const sp = useSearchParams();

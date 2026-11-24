@@ -5,12 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { api, fetchAllPages } from '@/lib/api';
+import { fetchAllPages } from '@/lib/api';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Modal } from '@/components/modal';
-import { PageHeader, PillTabs, AsyncState, StatCard, StatsPanel, Section } from '@/components/atoms';
+import { PageHeader, PillTabs, AsyncState, StatCard, StatsPanel, Section, SortableTh, Pager } from '@/components/atoms';
 import { ComboBarLine, PieDonut, PieLegend, Funnel, toSegments, type Bucket } from '@/components/charts';
-import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
+import { FilterBar, FilterSelect, FilterRange, StatStrip } from '@/components/filters';
+import { accessSourceLabel, roleLabel, tierLabel } from '@/lib/labels';
 import { Select } from '@/components/select';
 import { CreateAccountModal } from './account-access';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
@@ -49,8 +50,21 @@ interface User {
 	renews?: boolean;
 	login_count?: number;
 	playmakers?: boolean;
+	access_source?: string | null;
+	access_reason?: string | null;
+	blocked_at?: string | null;
+	is_legacy_user?: boolean;
+	migrated_at?: string | null;
+	is_test_account?: boolean;
+	claims_count?: number;
 }
 interface UsersResponse { data: User[]; total: number; totalPages: number }
+
+const SOURCE_OPTIONS = ['stripe', 'admin_grant', 'claim_trial', 'admin_tier', 'legacy', 'revoked', 'unknown', 'none']
+	.map((v) => ({ value: v, label: v === 'none' ? 'Not recorded (free plan)' : accessSourceLabel(v) }));
+/** Drop empty filters so they stay out of the request and the URL. */
+const clean = (o: Record<string, string | number | undefined>) =>
+	Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v !== undefined));
 
 export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) {
 	const { mutate } = useSWRConfig();
@@ -58,10 +72,20 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	const [role, setRole] = useUrlState('user', 'role');
 	const [tier, setTier] = useUrlState('user', 'tier');
 	const [pm, setPm] = useUrlState('user', 'pm');
-	const [pmPending, setPmPending] = useState<string | null>(null);
+	const [src, setSrc] = useUrlState('user', 'src');
+	const [jf, setJf] = useUrlState('user', 'jf');
+	const [jt, setJt] = useUrlState('user', 'jt');
+	const [lf, setLf] = useUrlState('user', 'lf');
+	const [lt, setLt] = useUrlState('user', 'lt');
+	const [li, setLi] = useUrlState('user', 'li');
+	const [lmin, setLmin] = useUrlState('user', 'lmin');
+	const [lmax, setLmax] = useUrlState('user', 'lmax');
+	const [blk, setBlk] = useUrlState('user', 'blk');
+	const [leg, setLeg] = useUrlState('user', 'leg');
+	const [hideTest, setHideTest] = useUrlState('user', 'test');
+	const [sort, setSort] = useUrlState('user', 'sort', '-joined');
 	const [page, setPage] = useUrlNumber('user', 'page', 1);
 	const router = useRouter();
-	const [rolePending, setRolePending] = useState<string | null>(null);
 	const [from, setFrom] = useUrlState('user', 'from');
 	const [to, setTo] = useUrlState('user', 'to');
 	const [freqBucket, setFreqBucket] = useState<'never' | 'once' | '2-5' | '6+' | null>(null);
@@ -87,8 +111,19 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	}, []);
 
 	const debouncedSearch = useDebouncedValue(search);
+	const filters = clean({
+		role, tier, playmakers: pm, source: src, joined_from: jf, joined_to: jt, login_from: lf, login_to: lt,
+		logged_in: li, logins_min: lmin, logins_max: lmax, blocked: blk, legacy: leg, hide_test: hideTest,
+	});
+	const activeFilters = Object.keys(filters).length + (search ? 1 : 0);
+	const clearFilters = () => {
+		for (const set of [setSearch, setRole, setTier, setPm, setSrc, setJf, setJt, setLf, setLt, setLi, setLmin, setLmax, setBlk, setLeg, setHideTest]) set('');
+		setPage(1);
+	};
+	/** Set a filter and go back to page 1. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
 	const { data, error, isLoading } = useSWR<UsersResponse>(
-		['/api/admin/users', { q: debouncedSearch || undefined, role: role || undefined, tier: tier || undefined, playmakers: pm || undefined, page, limit: 30 }],
+		['/api/admin/users', { ...filters, q: debouncedSearch || undefined, sort, page, limit: 30 }],
 		{ dedupingInterval: 15_000 },
 	);
 	const stats = useSWR<UserStats>(['/api/admin/stats/users'], { dedupingInterval: 60_000 });
@@ -110,14 +145,14 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	const exportCsv = async () => {
 		setExporting(true);
 		try {
-			const { rows, capped } = await fetchAllPages<User>('/api/admin/users', {
-				...(search ? { q: search } : {}), ...(role ? { role } : {}), ...(tier ? { tier } : {}), ...(pm ? { playmakers: pm } : {}),
-			});
+			const { rows, capped } = await fetchAllPages<User>('/api/admin/users', { ...filters, ...(search ? { q: search } : {}), sort });
 			if (capped) toast.warning('Export capped at 5000 users — narrow the filters for a complete export.');
 			const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 			const plan = (u: User) => u.is_trial ? `trial${u.trial_ends_at ? ` until ${u.trial_ends_at.slice(0, 10)}` : ''}` : u.active_subscription ? 'paid' : '';
-			const csv = ['email,name,tier,plan,role,playmakers,company,logins,joined,last_seen',
-				...rows.map((u) => [u.email, u.display_name, u.user_type, plan(u), u.user_role, u.playmakers ? 'yes' : 'no', u.company_name, u.login_count ?? 0, u.created_at, u.last_seen_at].map(esc).join(','))].join('\n');
+			const csv = ['email,name,tier,plan,why_this_plan,reason,role,playmakers,company,logins,joined,last_login,claims,blocked,old_hub_account,test_account',
+				...rows.map((u) => [u.email, u.display_name, tierLabel(u.user_type ?? 'explore'), plan(u), u.access_source ? accessSourceLabel(u.access_source) : '', u.access_reason,
+					u.user_role, u.playmakers ? 'yes' : 'no', u.company_name, u.login_count ?? 0, u.created_at, u.last_seen_at, u.claims_count ?? 0,
+					u.blocked_at ? 'yes' : 'no', u.is_legacy_user ? (u.migrated_at ? 'migrated' : 'not signed in yet') : 'no', u.is_test_account ? 'yes' : 'no'].map(esc).join(','))].join('\n');
 			const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
 			const a = document.createElement('a'); a.href = url; a.download = `users-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);
 			toast.success(`Exported ${rows.length} users`);
@@ -126,39 +161,11 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 	};
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
-
-	const promote = async (id: string) => {
-		setRolePending(id);
-		try {
-			await api('POST', `/api/admin/users/${id}/promote`);
-			toast.success('User promoted');
-			void refresh();
-		} catch (e) { toast.error((e as Error).message); }
-		finally { setRolePending(null); }
-	};
-	const demote = async (id: string) => {
-		setRolePending(id);
-		try {
-			await api('POST', `/api/admin/users/${id}/demote`);
-			toast.success('User demoted');
-			void refresh();
-		} catch (e) { toast.error((e as Error).message); }
-		finally { setRolePending(null); }
-	};
-
-	// Playmakers membership label only — tier, access and billing are untouched.
-	const togglePlaymakers = async (u: User) => {
-		setPmPending(u.id);
-		try {
-			await api('PATCH', `/api/admin/users/${u.id}`, { playmakers: !u.playmakers });
-			toast.success(u.playmakers ? 'Removed from Playmakers' : 'Marked as Playmakers member');
-			void refresh();
-			void mutate([`/api/admin/users/${u.id}`]);   // the Manage page's cached copy
-		} catch (e) { toast.error((e as Error).message); }
-		finally { setPmPending(null); }
-	};
-
 	const users = data?.data ?? [];
+	const onSort = (s: string) => { setSort(s); setPage(1); };
+	const dateInput = (label: string, value: string, set: (v: string) => void) => (
+		<input className="search-input" type="date" style={{ height: 32, width: 140 }} value={value} onChange={(e) => f(set)(e.target.value)} aria-label={label} title={label} />
+	);
 	return (
 		<div>
 			{view === 'stats' && (<>
@@ -309,61 +316,82 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 			<FilterBar>
 				<input
 					className="search-input"
-					style={{ flex: '0 0 280px', height: 32 }}
-					placeholder="Search email or name…"
+					style={{ flex: '0 0 260px', height: 32 }}
+					placeholder="Search email, name or company…"
 					value={search}
-					onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+					onChange={(e) => f(setSearch)(e.target.value)}
+					aria-label="Search users"
 				/>
-				<FilterSelect ariaLabel="Tier" value={tier} onChange={(v) => { setTier(v); setPage(1); }} options={[...TIERS]} allLabel="All tiers" />
-				<FilterSelect ariaLabel="Role" value={role} onChange={(v) => { setRole(v); setPage(1); }} options={[...ROLES]} allLabel="All roles" />
-				<FilterSelect ariaLabel="Playmakers" value={pm} onChange={(v) => { setPm(v); setPage(1); }} options={[{ value: 'yes', label: 'Playmakers members' }, { value: 'no', label: 'Not Playmakers' }]} allLabel="All members" />
+				<FilterSelect ariaLabel="Plan" value={tier} onChange={f(setTier)} options={TIERS.map((t) => ({ value: t, label: tierLabel(t) }))} allLabel="All plans" />
+				<FilterSelect ariaLabel="Why they have their plan" value={src} onChange={f(setSrc)} options={SOURCE_OPTIONS} allLabel="Any plan source" />
+				<FilterSelect ariaLabel="Role" value={role} onChange={f(setRole)} options={ROLES.map((r) => ({ value: r, label: roleLabel(r) }))} allLabel="All roles" />
+				<FilterSelect ariaLabel="Playmakers" value={pm} onChange={f(setPm)} options={[{ value: 'yes', label: 'Playmakers members' }, { value: 'no', label: 'Not Playmakers' }]} allLabel="Playmakers: any" />
 				<div style={{ flex: 1 }} />
 				<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>
 				<button className="btn" onClick={() => setCreating(true)}>Create account</button>
 			</FilterBar>
+			<FilterBar>
+				<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Joined</span>
+				{dateInput('Joined from', jf, setJf)}<span style={{ color: 'var(--fg-muted)' }}>–</span>{dateInput('Joined to', jt, setJt)}
+				<span style={{ fontSize: 12, color: 'var(--fg-muted)', marginLeft: 8 }}>Last login</span>
+				{dateInput('Last login from', lf, setLf)}<span style={{ color: 'var(--fg-muted)' }}>–</span>{dateInput('Last login to', lt, setLt)}
+				<FilterSelect ariaLabel="Signed in" value={li} onChange={f(setLi)} options={[{ value: 'never', label: 'Never signed in' }, { value: 'ever', label: 'Signed in at least once' }]} allLabel="Signed in: any" />
+				<FilterRange label="Logins" min={lmin} max={lmax} onMin={f(setLmin)} onMax={f(setLmax)} width={64} />
+				<FilterSelect ariaLabel="Blocked" value={blk} onChange={f(setBlk)} options={[{ value: 'yes', label: 'Blocked' }, { value: 'no', label: 'Not blocked' }]} allLabel="Blocked: any" />
+				<FilterSelect ariaLabel="Old Hub account" value={leg} onChange={f(setLeg)} options={[{ value: 'yes', label: 'From the old Hub' }, { value: 'not_migrated', label: 'Old Hub, not signed in to Atlas yet' }]} allLabel="Old Hub: any" />
+				<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+					<input type="checkbox" checked={hideTest === 'yes'} onChange={(e) => f(setHideTest)(e.target.checked ? 'yes' : '')} /> Hide test accounts
+				</label>
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
+			</FilterBar>
 
 			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={users.length === 0} emptyMsg={search ? 'No users match.' : 'No users yet.'} onRetry={() => void refresh()}>
+				<div style={{ padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} user${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+				</div>
+				<AsyncState loading={isLoading} error={error} empty={users.length === 0} emptyMsg={activeFilters ? 'No users match these filters.' : 'No users yet.'} onRetry={() => void refresh()}>
 				<div className="table-scroll">
 				<table className="data-table">
 					<thead>
 						<tr>
-							<th>Email</th>
-							<th>Name</th>
-							<th>Company</th>
-							<th>Tier</th>
-							<th>Role</th>
-							<th title="Playmakers membership (label only — does not change tier or access)">Playmakers</th>
-							<th>Logins</th>
-							<th>Last seen</th>
-							<th>Joined</th>
-							<th>Access expires</th>
-							<th style={{ textAlign: 'right' }}>Actions</th>
+							<SortableTh label="User" field="name" sort={sort} onSort={onSort} />
+							<th className="hide-md">Company</th>
+							<SortableTh label="Plan" field="tier" sort={sort} onSort={onSort} />
+							<th className="hide-md">Why this plan</th>
+							<SortableTh label="Logins" field="logins" sort={sort} onSort={onSort} align="right" />
+							<SortableTh label="Last login" field="last_login" sort={sort} onSort={onSort} />
+							<SortableTh label="Joined" field="joined" sort={sort} onSort={onSort} />
+							<th>Access ends</th>
+							<th className="hide-sm" style={{ textAlign: 'right' }}>Claims</th>
+							<th style={{ textAlign: 'right' }} aria-label="Open" />
 						</tr>
 					</thead>
 					<tbody>
 						{users.map((u) => (
-								<tr key={u.id}>
-									<td>{u.email}</td>
-									<td>{u.display_name ?? '—'}</td>
-									<td style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{u.company_name ?? '—'}</td>
+								<tr key={u.id} style={{ cursor: 'pointer' }} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,input')) router.push(`/users/${u.id}`); }}>
 									<td>
-										<span className="tag">{u.user_type ?? 'explore'}</span>
+										<div style={{ fontWeight: 600 }}>{u.display_name || u.email}</div>
+										{u.display_name && <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{u.email}</div>}
+										<div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+											{u.user_role === 'admin' && <span className="tag pos">Admin</span>}
+											{u.blocked_at && <span className="tag neg">Blocked</span>}
+											{u.playmakers && <span className="tag">Playmakers</span>}
+											{u.is_test_account && <span className="tag">Test</span>}
+										</div>
+									</td>
+									<td className="hide-md" style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{u.company_name ?? '—'}</td>
+									<td>
+										<span className="tag">{tierLabel(u.user_type ?? 'explore')}</span>
 										{u.is_trial
-											? <span className="tag warn" title={u.trial_ends_at ? `Trial ends ${fmtDate(u.trial_ends_at)}` : 'On trial'} style={{ marginLeft: 4 }}>trial{u.trial_ends_at ? ` · ends ${fmtDate(u.trial_ends_at)}` : ''}</span>
-											: u.active_subscription ? <span className="tag pos" style={{ marginLeft: 4 }}>paid</span> : null}
+											? <span className="tag warn" title={u.trial_ends_at ? `Trial ends ${fmtDate(u.trial_ends_at)}` : 'On trial'} style={{ marginLeft: 4 }}>trial</span>
+											: u.active_subscription && u.access_source === 'stripe' ? <span className="tag pos" style={{ marginLeft: 4 }}>paid</span> : null}
 									</td>
-									<td>{u.user_role === 'admin' ? <span className="tag pos">admin</span> : 'user'}</td>
-									<td>
-										<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-											<input type="checkbox" checked={!!u.playmakers} disabled={pmPending === u.id} onChange={() => void togglePlaymakers(u)}
-												aria-label={`Playmakers member: ${u.email ?? u.id}`} />
-											{u.playmakers ? <span className="tag pos">member</span> : <span style={{ color: 'var(--fg-muted)' }}>—</span>}
-										</label>
+									<td className="hide-md" style={{ fontSize: 12 }} title={u.access_reason ?? undefined}>
+										{u.access_source ? accessSourceLabel(u.access_source) : <span style={{ color: 'var(--fg-muted)' }}>{(u.user_type ?? 'explore') === 'explore' ? 'Free plan' : '—'}</span>}
 									</td>
-									<td className="num">{(u.login_count ?? 0).toLocaleString()}</td>
-									<td className="num">{u.last_seen_at ? fmtDate(u.last_seen_at) : '—'}</td>
-									<td className="num">{new Date(u.created_at).toLocaleDateString()}</td>
+									<td className="num" style={{ textAlign: 'right' }}>{(u.login_count ?? 0).toLocaleString()}</td>
+									<td className="num">{u.last_seen_at ? fmtDate(u.last_seen_at) : <span style={{ color: 'var(--fg-muted)' }}>{u.login_count ? '—' : 'Never'}</span>}</td>
+									<td className="num">{fmtDate(u.created_at)}</td>
 									<td className="num">
 										{u.is_trial && u.trial_ends_at
 											? <span className={new Date(u.trial_ends_at) < new Date() ? 'tag' : 'tag warn'} title={`Trial ends ${fmtDate(u.trial_ends_at)}`}>{fmtDate(u.trial_ends_at)}</span>
@@ -375,15 +403,9 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 													? <span style={{ color: 'var(--fg-muted)', fontSize: 12 }} title="Paid tier with no subscription end — admin-granted / comped">Permanent</span>
 													: <span style={{ color: 'var(--fg-muted)' }}>—</span>}
 									</td>
+									<td className="hide-sm num" style={{ textAlign: 'right' }}>{u.claims_count || <span style={{ color: 'var(--fg-muted)' }}>—</span>}</td>
 									<td style={{ textAlign: 'right' }}>
-										<div style={{ display: 'inline-flex', gap: 6 }}>
-											{u.user_role === 'admin' ? (
-												<button className="btn ghost" disabled={rolePending === u.id} onClick={() => void demote(u.id)}>Demote</button>
-											) : (
-												<button className="btn ghost" disabled={rolePending === u.id} onClick={() => void promote(u.id)}>Promote</button>
-											)}
-											<Link href={`/users/${u.id}`} className="btn">Manage →</Link>
-										</div>
+										<Link href={`/users/${u.id}`} className="btn ghost">Open →</Link>
 									</td>
 								</tr>
 						))}
@@ -393,15 +415,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 				</AsyncState>
 			</div>
 
-			{data && data.totalPages > 1 && (
-				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-					<span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-muted)', alignSelf: 'center', marginRight: 8 }}>
-						Page {page} of {data.totalPages}
-					</span>
-					<button className="btn ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
-					<button className="btn ghost" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next</button>
-				</div>
-			)}
+			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
 
 			</>)}
 
@@ -865,7 +879,7 @@ export default function UsersAdminPage() {
 		<div>
 			<PageHeader
 				kicker={`Identity · ${(stats.data?.total ?? 0).toLocaleString()} users`}
-				title="User analytics"
+				title="Users"
 				subtitle={SUBTITLES[tab]}
 			/>
 			<PillTabs tabs={TABS.map((t) => ({ key: t.key, label: t.label }))} value={tab} onChange={onTab} />

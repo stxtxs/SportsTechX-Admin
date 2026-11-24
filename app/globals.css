@@ -453,12 +453,53 @@ textarea.search-input { border-radius: var(--radius-md); }
   font-family: var(--font-mono); font-size: 10px; font-weight: 600; text-align: center; letter-spacing: 0;
 }
 .nav-link.active .nav-count { background: color-mix(in oklab, var(--accent-fg) 25%, transparent); color: var(--accent-fg); }
-/* Topbar global search: a full box on desktop, an icon on narrow screens. */
-.admin-search-trigger { flex: 0 1 380px; min-width: 0; }
-.admin-search-trigger > span:not(.kbd) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Topbar global search (components/command-palette.tsx): the box turns into the input in
+ * place and results drop down under it — no page-wide backdrop. Same card language as the
+ * rest of the admin: rounded surface, soft shadow, quiet hover/selected rows. */
+.adm-search { position: relative; flex: 0 1 400px; min-width: 0; }
+.adm-search-box {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 10px;
+  background: var(--bg-2); color: var(--fg-muted); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font: inherit; font-size: 13px; cursor: text; text-align: left; transition: border-color .15s, background .15s;
+}
+.adm-search-box:hover { border-color: var(--border-strong); }
+.adm-search-box.is-open { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); color: var(--fg); }
+.adm-search-box input { flex: 1; min-width: 0; height: 100%; background: none; border: 0; outline: 0; color: var(--fg); font: inherit; font-size: 13px; }
+.adm-search-ph { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-kbd {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-left: 2px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; flex-shrink: 0;
+}
+.adm-search-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  width: max(100%, 520px); max-height: min(70vh, 520px); overflow-y: auto;
+  padding: 6px; background: var(--surface); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .28);
+}
+.adm-search-group + .adm-search-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.adm-search-group-label { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: .06em; }
+.adm-search-row { position: relative; padding: 8px 10px; border-radius: var(--radius-md); cursor: pointer; }
+.adm-search-row.sel { background: var(--bg-2); }
+.adm-search-row.sel::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 3px; background: var(--accent); }
+.adm-search-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-search-sub { margin-top: 2px; font-size: 12px; color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-search-empty { padding: 16px 10px; font-size: 13px; color: var(--fg-muted); }
+.adm-search-foot {
+  position: sticky; bottom: -6px; display: flex; align-items: center; gap: 14px;
+  margin: 6px -6px -6px; padding: 8px 14px; font-size: 11px; color: var(--fg-muted);
+  background: var(--surface); border-top: 1px solid var(--border);
+}
 @media (max-width: 720px) {
-  .admin-search-trigger { flex: 0 0 auto; width: 34px; padding: 0; justify-content: center; }
-  .admin-search-trigger > span { display: none; }
+  /* Phones: an icon in the topbar; when open, the box and results span the screen under it. */
+  .adm-search { flex: 0 0 auto; position: static; }
+  .admin-search-trigger.adm-search-box { width: 36px; padding: 0; justify-content: center; }
+  .admin-search-trigger .adm-search-ph, .admin-search-trigger .adm-kbd { display: none; }
+  .adm-search-box.is-open { position: fixed; top: 10px; left: 8px; right: 8px; width: auto; z-index: 61; }
+  .adm-search-box.is-open .adm-kbd { display: none; }
+  .adm-search-pop { position: fixed; top: calc(var(--topbar-h) + 2px); left: 8px; right: 8px; width: auto; }
+  .adm-search-foot { display: none; }
   /* Phone width: tighter topbar so search + bell + theme + avatar + sign-out fit without sideways scroll. */
   .admin-topbar { gap: 8px; padding: 0 12px; }
   .admin-topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

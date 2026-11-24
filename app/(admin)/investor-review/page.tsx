@@ -238,7 +238,7 @@ export default function InvestorReviewPage() {
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{skipping && <SkipModal row={skipping} onClose={() => setSkipping(null)} onSaved={() => { setSkipping(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
-			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
+			{editing && <EditCandidateModal websiteRequired name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
 			<div className="card" ref={cols.ref}>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
@@ -409,8 +409,8 @@ function ImportModal({ admins, onClose, onSaved }: { admins: Array<{ id: string;
 		if (!rows.length) { toast.error('Paste at least one line'); return; }
 		setPending(true);
 		try {
-			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/investor-review/import', { rows, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
-			toast.success(`Imported ${r.inserted}${r.skipped ? `, skipped ${r.skipped} dup(s)` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`); onSaved();
+			const r = await api<{ inserted: number; skipped: number; no_website?: number; enqueued: number }>('POST', '/api/admin/investor-review/import', { rows, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
+			toast.success(`Imported ${r.inserted}${r.skipped ? `, skipped ${r.skipped} dup(s)` : ''}${r.no_website ? `, skipped ${r.no_website} without a website` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`); onSaved();
 		} catch (e) { toast.error((e as Error).message); } finally { setPending(false); }
 	};
 	return (

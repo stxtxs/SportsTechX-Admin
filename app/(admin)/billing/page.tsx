@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import useSWR from 'swr';
 import { toast } from 'sonner';
 import { CalendarPlus, Coins, KeyRound, RefreshCw } from 'lucide-react';
@@ -8,6 +9,7 @@ import { api } from '@/lib/api';
 import { PageHeader, Section, StatCard } from '@/components/atoms';
 import { StatStrip } from '@/components/filters';
 import { UserSelectOne, UserMultiPicker } from '@/components/entity-pickers';
+import { tidy, tierLabel } from '@/lib/labels';
 
 /**
  * Billing ▸ admin support tools. Three manual interventions plus a read-only
@@ -258,7 +260,7 @@ export default function BillingAdminPage() {
 						</div>
 					</div>
 					<button className="btn" disabled={parsedEmails.length === 0 || accessPending} onClick={() => void bulkGrantAccess()}>
-						<KeyRound size={13} /> {accessPending ? 'Granting…' : `Grant ${accessTier} for ${accessDays}d × ${parsedEmails.length}`}
+						<KeyRound size={13} /> {accessPending ? 'Granting…' : `Grant ${tierLabel(accessTier)} for ${accessDays}d × ${parsedEmails.length}`}
 					</button>
 
 					{accessResults && (
@@ -271,7 +273,7 @@ export default function BillingAdminPage() {
 									<div key={i} style={{ display: 'flex', gap: 8, padding: '3px 6px', borderRadius: 4, background: 'var(--bg-2)', color: r.success ? 'var(--fg-2)' : 'var(--neg)' }}>
 										<span style={{ width: 14 }}>{r.success ? '✓' : '✗'}</span>
 										<span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.email}</span>
-										<span style={{ color: 'var(--fg-muted)' }}>{r.success ? (r.profile_id?.slice(0, 8) ?? '') : (r.error ?? 'failed')}</span>
+										<span style={{ color: 'var(--fg-muted)' }}>{r.success ? (r.profile_id ? <Link href={`/users/${r.profile_id}`} style={{ color: 'var(--accent)' }}>Open user</Link> : '') : (r.error ?? 'failed')}</span>
 									</div>
 								))}
 							</div>
@@ -291,7 +293,7 @@ interface ResyncResult { email: string; result: unknown }
 function summarise(result: unknown): string {
 	if (result && typeof result === 'object') {
 		const r = result as { status?: unknown; message?: unknown };
-		if (typeof r.status === 'string') return r.message ? `${r.status}: ${String(r.message)}` : r.status;
+		if (typeof r.status === 'string') return r.message ? `${tidy(r.status)}: ${String(r.message)}` : tidy(r.status);
 	}
 	return 'done';
 }
@@ -351,7 +353,7 @@ function OpsAndFunnel() {
 						<tbody>
 							{(data?.by_plan ?? []).map((r) => (
 								<tr key={r.tier ?? '—'}>
-									<td style={{ textTransform: 'capitalize' }}>{r.tier ?? '—'}</td>
+									<td>{tierLabel(r.tier)}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{r.trialing.toLocaleString()}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{r.paid.toLocaleString()}</td>
 								</tr>

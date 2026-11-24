@@ -24,8 +24,10 @@ import { confirmDelete } from '@/lib/delete-impact';
 import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
-import { GeoFacetFilter, ListCount, fmtListDate } from '@/components/filters';
+import { GeoFacetFilter, ListCount, fmtListDate } from '@/components/filters';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { investorCategoryLabel, tidy } from '@/lib/labels';
+import Link from 'next/link';
 
 interface Investor {
 	id: string;
@@ -57,7 +59,7 @@ const STATUSES = ['active', 'inactive', 'paused'] as const;
  */
 export { useEditParam } from '@/hooks/use-edit-param';
 
-export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
+export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const cols = useTableColumns('investors');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
@@ -191,8 +193,8 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 					value={search}
 					onChange={(e) => { setSearch(e.target.value); setPage(1); }}
 				/>
-				<FilterSelect ariaLabel="Category" value={category} onChange={(v) => { setCategory(v); reset1(); }} options={[...CATEGORIES]} allLabel="All categories" />
-				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={[...STATUSES]} allLabel="All statuses" />
+				<FilterSelect ariaLabel="Category" value={category} onChange={(v) => { setCategory(v); reset1(); }} options={CATEGORIES.map((c) => ({ value: c, label: investorCategoryLabel(c) }))} allLabel="All categories" />
+				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); reset1(); }} options={STATUSES.map((s) => ({ value: s, label: tidy(s) }))} allLabel="All statuses" />
 				<FilterSelect ariaLabel="Verified" value={verified} onChange={(v) => { setVerified(v); reset1(); }} options={[{ value: 'true', label: 'Verified' }, { value: 'false', label: 'Unverified' }]} allLabel="Any verification" />
 				<SectorTierFilter value={sector} onChange={(v) => { setSector(v); reset1(); }} allTopLabel="Any sector" />
 				<RefSlugFilter kind="sports" ariaLabel="Thesis sport" value={sport} onChange={(v) => { setSport(v); reset1(); }} allLabel="Any sport" />
@@ -242,12 +244,12 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 							{rows.map((r) => (
 								<tr key={r.id}>
 									<td><div style={{ fontWeight: 600 }}>{r.name}</div>{r.website && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.website}</div>}</td>
-									<td>{r.category ?? '—'}</td>
+									<td>{investorCategoryLabel(r.category)}</td>
 									<td>{r.year_launched ?? '—'}</td>
 									<td>{r.hq_country ?? '—'}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{Number(r.deals_count ?? 0).toLocaleString()}</td>
 									<td className="num" style={{ textAlign: 'right' }}>{fmtAum(r.total_aum_usd)}</td>
-									<td>{r.status ?? '—'}</td>
+									<td>{tidy(r.status)}</td>
 									<td>{r.is_verified ? '✓' : '—'}</td>
 									<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(r.created_at)}</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -323,6 +325,10 @@ interface InvestorEdit extends Investor {
 	thesis_sector_ids?: string[]; thesis_sport_ids?: string[]; thesis_tech_tag_ids?: string[]; thesis_round_type_ids?: string[];
 	thesis_amount_min?: string | null; thesis_amount_max?: string | null;
 	thesis_revenue_stages?: string[]; thesis_geo?: Array<{ scope_type: string; scope_value: string }>;
+	updated_at?: string | null;
+	/** Read-only Overview data (server-computed, never saved back). */
+	overview?: { deals_count: number; claims_count: number; verified_at: string | null; verified_by: string | null } | null;
+	portfolio?: Array<{ id: string; company_id: string | null; company_name: string | null; round_type_name: string | null; amount_usd: string | number | null; announced_year: number | null; is_lead: boolean }>;
 }
 
 function toInvestorForm(h: InvestorEdit): InvestorForm {
@@ -360,12 +366,69 @@ export function InvestorModal({ id, onClose, onSaved, seed, promoteReviewId, enr
 	const isEdit = !!id;
 	const { data: hydrated } = useEditPayload<InvestorEdit>(isEdit ? `/api/admin/investors/${id}/edit` : null);
 	if (isEdit && !hydrated) return <Modal title="Edit investor" onClose={onClose}><Loading msg="Loading investor…" /></Modal>;
-	return <InvestorForm id={id} initial={hydrated ? toInvestorForm(hydrated) : { ...EMPTY_INVESTOR, ...seed }} onClose={onClose} onSaved={onSaved} promoteReviewId={promoteReviewId} enrichedFields={enrichedFields} />;
+	return <InvestorForm id={id} record={hydrated} initial={hydrated ? toInvestorForm(hydrated) : { ...EMPTY_INVESTOR, ...seed }} onClose={onClose} onSaved={onSaved} promoteReviewId={promoteReviewId} enrichedFields={enrichedFields} />;
 }
 
-function InvestorForm({ id, initial, onClose, onSaved, promoteReviewId, enrichedFields }: { id: string | null; initial: InvestorForm; onClose: () => void; onSaved: (createdId?: string) => void; promoteReviewId?: string; enrichedFields?: string[] }) {
+const fmtDay = (s?: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—');
+
+/** First tab of an existing investor: the record and its portfolio, read-only. */
+function InvestorOverview({ r }: { r: InvestorEdit }) {
+	const o = r.overview;
+	const deals = r.portfolio ?? [];
+	const site = r.website ? (r.website.startsWith('http') ? r.website : `https://${r.website}`) : null;
+	const facts: Array<[string, React.ReactNode]> = [
+		['Category', investorCategoryLabel(r.category)],
+		['HQ', [r.hq_city, r.hq_country].filter(Boolean).join(', ') || '—'],
+		['Launched', r.year_launched ?? '—'],
+		['AUM', fmtAum(r.total_funding)],
+		['Status', tidy(r.status)],
+		['Verified', r.is_verified
+			? <><span className="tag pos">Verified</span>{o?.verified_at && <span style={{ color: 'var(--fg-muted)', marginLeft: 6 }}>{o.verified_by ? `by ${o.verified_by} · ` : ''}{fmtDay(o.verified_at)}</span>}</>
+			: <span className="tag">Not verified</span>],
+		['Actively investing', r.actively_investing ? <span className="tag pos">Yes</span> : 'No'],
+		['Last updated', fmtDay(r.updated_at)],
+	];
+	return (
+		<div style={{ display: 'grid', gap: 16 }}>
+			<div>
+				<div style={{ fontWeight: 700, fontSize: 18 }}>{r.name}</div>
+				{site && <a href={site} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: 13 }}>{r.website}</a>}
+				{r.description && <p style={{ fontSize: 13, color: 'var(--fg-2)', margin: '8px 0 0' }}>{r.description}</p>}
+			</div>
+			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+				{facts.map(([k, v]) => <div key={k}><div className="co-stat-label">{k}</div><div style={{ fontSize: 13 }}>{v}</div></div>)}
+			</div>
+			<div style={{ fontSize: 13 }}>
+				{o && `${o.claims_count} claim${o.claims_count === 1 ? '' : 's'} · `}
+				<Link href={`/claims?claim.type=investor&claim.q=${encodeURIComponent(r.name)}`} style={{ color: 'var(--accent)' }}>View claims on the Review page</Link>
+			</div>
+			<div>
+				<div className="co-stat-label" style={{ marginBottom: 6 }}>
+					Portfolio · {(o?.deals_count ?? deals.length).toLocaleString()} deal{(o?.deals_count ?? deals.length) === 1 ? '' : 's'}{(o?.deals_count ?? 0) > deals.length ? ` (latest ${deals.length})` : ''}
+				</div>
+				{deals.length === 0 ? <div style={{ fontSize: 13, color: 'var(--fg-muted)' }}>No deals linked to this investor yet.</div> : (
+					<table className="data-table">
+						<thead><tr><th>Company</th><th>Round</th><th style={{ textAlign: 'right' }}>Amount</th><th>Year</th></tr></thead>
+						<tbody>
+							{deals.map((d) => (
+								<tr key={d.id}>
+									<td>{d.company_id ? <Link href={`/companies?edit=${d.company_id}`} style={{ color: 'var(--accent)' }}>{d.company_name ?? '—'}</Link> : (d.company_name ?? '—')}{d.is_lead && <span className="tag" style={{ marginLeft: 6 }}>Lead</span>}</td>
+									<td>{d.round_type_name ?? '—'}</td>
+									<td className="num" style={{ textAlign: 'right' }}>{fmtAum(d.amount_usd) === '—' ? 'Undisclosed' : fmtAum(d.amount_usd)}</td>
+									<td className="num">{d.announced_year ?? '—'}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				)}
+			</div>
+		</div>
+	);
+}
+
+function InvestorForm({ id, record, initial, onClose, onSaved, promoteReviewId, enrichedFields }: { id: string | null; record?: InvestorEdit; initial: InvestorForm; onClose: () => void; onSaved: (createdId?: string) => void; promoteReviewId?: string; enrichedFields?: string[] }) {
 	const isEdit = !!id;
-	const [tab, setTab] = useTabs('profile');
+	const [tab, setTab] = useTabs(isEdit ? 'overview' : 'profile');
 	const [form, setForm] = useState<InvestorForm>(initial);
 	const [pending, setPending] = useState(false);
 
@@ -462,6 +525,7 @@ function InvestorForm({ id, initial, onClose, onSaved, promoteReviewId, enriched
 					active={tab}
 					onChange={setTab}
 					tabs={[
+						...(isEdit && record ? [{ key: 'overview', label: 'Overview', node: <InvestorOverview r={record} /> }] : []),
 						{
 							key: 'profile', label: 'Profile', node: (
 								<>
@@ -471,14 +535,14 @@ function InvestorForm({ id, initial, onClose, onSaved, promoteReviewId, enriched
 									<Field name="description" label="Description"><textarea className="search-input" style={{ minHeight: 70, resize: 'vertical' }} value={form.description} onChange={(e) => set('description', e.target.value)} /></Field>
 									<div style={{ display: 'grid', gridTemplateColumns: '1fr 120px', gap: 12 }}>
 										<Field label="Category">
-											<Select value={form.category} onChange={(v) => set('category', v)} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...CATEGORIES.map((c) => ({ value: c, label: c.replace(/_/g, ' ') }))]} />
+											<Select value={form.category} onChange={(v) => set('category', v)} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="—" options={[{ value: '', label: '—' }, ...CATEGORIES.map((c) => ({ value: c, label: investorCategoryLabel(c) }))]} />
 										</Field>
 										<Field name="year_launched" label="Launched"><YearSelect value={form.year_launched} onChange={(v) => set('year_launched', v)} /></Field>
 									</div>
 									<Field label="Status">
 										<div style={{ display: 'flex', gap: 6 }}>
 											{(['active', 'paused', 'inactive'] as const).map((s) => (
-												<button key={s} type="button" className={`chip ${form.status === s ? 'on' : ''}`} onClick={() => set('status', s)}>{s}</button>
+												<button key={s} type="button" className={`chip ${form.status === s ? 'on' : ''}`} onClick={() => set('status', s)}>{tidy(s)}</button>
 											))}
 										</div>
 									</Field>

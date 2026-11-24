@@ -9,6 +9,7 @@ import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState, StatCard } from '@/components/atoms';
+import { tidy, tierLabel } from '@/lib/labels';
 
 interface Plan {
 	id: string;
@@ -80,9 +81,9 @@ export default function PlansEditorialPage() {
 							<div style={{ minWidth: 0 }}>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 									<div style={{ fontWeight: 700, fontSize: 16 }}>{p.name}</div>
-									<span className="chip">{p.tier}</span>
-									{p.billing_interval && <span className="chip">{p.billing_interval}</span>}
-									{!p.is_active && <span className="chip" style={{ color: 'var(--accent)' }}>archived</span>}
+									<span className="chip">{tierLabel(p.tier)}</span>
+									{p.billing_interval && <span className="chip">{tidy(p.billing_interval)}</span>}
+									{!p.is_active && <span className="chip" style={{ color: 'var(--accent)' }}>Archived</span>}
 								</div>
 								{p.tagline && <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 4 }}>{p.tagline}</div>}
 							</div>
@@ -172,7 +173,7 @@ function EditModal({ plan, onClose, onSaved }: { plan: Plan; onClose: () => void
 
 	return (
 		<Modal
-			title={`Edit ${plan.tier} · ${plan.billing_interval}`}
+			title={`Edit ${tierLabel(plan.tier)} · ${tidy(plan.billing_interval).toLowerCase()}`}
 			onClose={onClose}
 			width={640}
 			footer={
@@ -281,7 +282,7 @@ function CreateModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
 				<Field label="Description"><textarea className="search-input" style={{ minHeight: 60 }} value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<Field label="Tier">
-						<Select value={tier} onChange={(v) => setTier(v as 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'raise', label: 'raise' }, { value: 'scout', label: 'scout' }]} />
+						<Select value={tier} onChange={(v) => setTier(v as 'raise' | 'scout')} width="100%" style={{ display: 'block', width: '100%' }} options={[{ value: 'raise', label: tierLabel('raise') }, { value: 'scout', label: tierLabel('scout') }]} />
 					</Field>
 					<Field label="Billing interval">
 						<div style={{ fontSize: 13, color: 'var(--fg-2)', padding: '7px 0' }}>Yearly <span style={{ color: 'var(--fg-muted)' }}>· Atlas sells yearly plans only</span></div>

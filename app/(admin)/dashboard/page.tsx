@@ -5,11 +5,10 @@ import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { PageHeader, Section, AsyncState, StatCard, StatsPanel, Tag } from '@/components/atoms';
 import { ComboBarLine, PieDonut, PieLegend, HBarDrilldown, toSegments, CHART_COLORS, type HBarRow } from '@/components/charts';
+import { claimTypeLabel, investorCategoryLabel, requestEntityLabel, tidy } from '@/lib/labels';
 
 const fmtMoney = (n: number): string =>
 	n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n).toLocaleString()}`;
-
-const prettyCat = (s: string): string => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 interface AnnualRow { year: number; total_amount: number | string; deal_count: number }
 interface InvestorTypeRow { category: string; count: number }
@@ -93,7 +92,7 @@ export default function AdminDashboard() {
 
 	const annualFChart = (annualF.data ?? []).map((r) => ({ year: r.year, amt: Number(r.total_amount), deals: r.deal_count }));
 	const annualMChart = (annualM.data ?? []).map((r) => ({ year: r.year, amt: Number(r.total_amount), deals: r.deal_count }));
-	const investorSegments = toSegments((invByType.data ?? []).map((r) => ({ label: prettyCat(r.category), value: r.count })));
+	const investorSegments = toSegments((invByType.data ?? []).map((r) => ({ label: investorCategoryLabel(r.category), value: r.count })));
 
 	const tree = sectorTree.data ?? [];
 	const sectorTotal = tree.reduce((s, r) => s + Number(r.total_amount), 0);
@@ -255,11 +254,11 @@ export default function AdminDashboard() {
 							<thead><tr><th>Created</th><th>Type</th><th>Target</th></tr></thead>
 							<tbody>
 								{(claims.data?.data ?? []).map((c) => {
-									const name = c.entity_name ?? c.entity_id ?? '';
+									const name = c.entity_name ?? '';
 									return (
 										<tr key={c.id} {...rowLink(name ? `/claims?q=${encodeURIComponent(name)}` : '/claims')}>
 											<td className="num">{new Date(c.created_at).toLocaleDateString()}</td>
-											<td>{c.entity_type ?? c.claim_type}</td>
+											<td>{claimTypeLabel(c.claim_type)}</td>
 											<td>{name || '—'}</td>
 										</tr>
 									);
@@ -279,8 +278,8 @@ export default function AdminDashboard() {
 									return (
 										<tr key={r.id} {...rowLink(name ? `/claims?tab=changes&q=${encodeURIComponent(name)}` : '/claims?tab=changes')}>
 											<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
-											<td>{name || r.entity_type}</td>
-											<td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.field_change ?? '—'}</td>
+											<td>{name || requestEntityLabel(r.entity_type)}</td>
+											<td style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.field_change ? tidy(r.field_change) : '—'}</td>
 										</tr>
 									);
 								})}

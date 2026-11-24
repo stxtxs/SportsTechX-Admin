@@ -5,7 +5,7 @@ import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload, Pencil, Download } from 'lucide-react';
 import { api, fetchAllPages } from '@/lib/api';
-import { tidy, investorCategoryLabel } from '@/lib/labels';
+import { tidy, investorCategoryLabel, enrichmentStatusLabel } from '@/lib/labels';
 import { downloadCsv } from '@/components/csv-import';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
 import { Select } from '@/components/select';
@@ -144,7 +144,7 @@ export default function InvestorReviewPage() {
 			const { rows: all, capped } = await fetchAllPages<QueueRow>('/api/admin/investor-review', params);
 			downloadCsv('investors-to-add.csv',
 				['Added', 'Name', 'Website', 'Category', 'Country', 'Status', 'Skip reason', 'Enrichment', 'Assigned to'],
-				all.map((r) => [r.created_at.slice(0, 10), r.name, r.website ?? '', r.category ? investorCategoryLabel(r.category) : '', r.country ?? '', tidy(r.status), r.skip_reason ?? '', tidy(r.enrichment_status), r.assigned_to ? adminName(r.assigned_to) : '']));
+				all.map((r) => [r.created_at.slice(0, 10), r.name, r.website ?? '', r.category ? investorCategoryLabel(r.category) : '', r.country ?? '', tidy(r.status), r.skip_reason ?? '', enrichmentStatusLabel(r.enrichment_status), r.assigned_to ? adminName(r.assigned_to) : '']));
 			toast.success(`Exported ${all.length.toLocaleString()} row${all.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
 		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
 	};
@@ -266,7 +266,7 @@ export default function InvestorReviewPage() {
 										{/* Most deal-queued candidates have no website, so "pending" here never moved. */}
 										{!r.website && r.enrichment_status !== 'enriched'
 											? <Tag>no website</Tag>
-											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{tidy(r.enrichment_status)}</Tag>}
+											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(r.enrichment_status)}</Tag>}
 									</td>
 									<td>{adminName(r.assigned_to)}</td>
 									<td>
@@ -337,7 +337,7 @@ function PromoteModal({ row, onClose, onDone }: { row: QueueRow; onClose: () => 
 		try {
 			const r = await api<{ filled?: string[] }>('POST', `/api/admin/investor-review/${row.id}/merge`, { investor_id: investorId });
 			countWorkItem('investor_review');
-			toast.success(r.filled?.length ? `Merged — filled ${r.filled.length} empty field(s): ${r.filled.join(', ').replace(/_/g, ' ')}` : 'Merged into existing investor (nothing missing to fill)');
+			toast.success(r.filled?.length ? `Merged — filled ${r.filled.length} empty field(s): ${r.filled.map((f) => tidy(f).toLowerCase()).join(', ')}` : 'Merged into existing investor (nothing missing to fill)');
 			onDone();
 		}
 		catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
@@ -434,7 +434,7 @@ function ViewModal({ row, onClose }: { row: QueueRow; onClose: () => void }) {
 	const kw = Array.isArray(raw.keywords) ? (raw.keywords as unknown[]).join(', ') : '';
 	const notEnriched = !!data && data.enrichment_status !== 'enriched' && !data.apollo_raw;
 	const fields: Array<[string, React.ReactNode]> = data ? [
-		['Enrichment', <Tag key="e" variant={data.enrichment_status === 'enriched' ? 'pos' : data.enrichment_status === 'failed' ? 'warn' : ''}>{data.enrichment_status}</Tag>],
+		['Enrichment', <Tag key="e" variant={data.enrichment_status === 'enriched' ? 'pos' : data.enrichment_status === 'failed' ? 'warn' : ''}>{enrichmentStatusLabel(data.enrichment_status)}</Tag>],
 		['Description', val(data.description)],
 		['Country', val(data.country ?? raw.country)],
 		['City', val(data.city ?? raw.city)],

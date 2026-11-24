@@ -419,7 +419,7 @@ function CompanyOverview({ c, onTab }: { c: CompanyEdit; onTab: (tab: string) =>
 				<StatCard label="Funding deals" value={(o?.deals_count ?? 0).toLocaleString()} />
 				<StatCard label="Total raised" value={fmtFunding(o?.total_raised_usd)} />
 				<StatCard label="M&A deals" value={(o?.ma_count ?? 0).toLocaleString()} />
-				<StatCard label="Last updated" value={fmtDay(c.updated_at)} />
+				<StatCard label="Last updated" value={c.updated_at ? new Date(c.updated_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'} sub={c.updated_at ? String(new Date(c.updated_at).getFullYear()) : undefined} />
 			</StatStrip>
 		</div>
 	);

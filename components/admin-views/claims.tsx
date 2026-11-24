@@ -9,6 +9,7 @@ import { Select } from '@/components/select';
 import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager } from '@/components/atoms';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
+import { useEditParam } from '@/hooks/use-edit-param';
 import { Funnel } from '@/components/charts';
 import { StatStrip } from '@/components/filters';
 import { SectorCascade, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
@@ -70,7 +71,8 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const [cpage, setCpage] = useUrlNumber(ns, 'cpage', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [sendEmail, setSendEmail] = useState(true);
-	const [expandedId, setExpandedId] = useState<string | null>(null);
+	// `?open=<id>` expands a claim directly (global search, shared links).
+	const [expandedId, setExpandedId] = useEditParam('open');
 	const [showCompleted, setShowCompleted] = useState(false);
 	const [search, setSearch] = useUrlState(ns, 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);

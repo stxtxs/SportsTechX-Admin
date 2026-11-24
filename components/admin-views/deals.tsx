@@ -16,6 +16,7 @@ import { CsvImportButton, CsvTemplateButton, CsvCheckButton } from '@/components
 import { Field } from '@/components/tabbed-form';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useEditParam } from '@/hooks/use-edit-param';
 import {
 	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade,
 	type DealInvestor,
@@ -71,7 +72,8 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
-	const [editingId, setEditingId] = useState<string | null>(null);
+	// `?edit=<id>` opens a deal directly (global search, shared links).
+	const [editingId, setEditingId] = useEditParam();
 
 	// Typed filters (country, min/max) wait for typing to pause, like search, instead of one request per key.
 	const dAmountMin = useDebouncedValue(amountMin);

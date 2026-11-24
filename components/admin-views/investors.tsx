@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEditParam } from '@/hooks/use-edit-param';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { Plus, Save, Trash2, Banknote, BadgeCheck, Coins, Layers } from 'lucide-react';
@@ -49,20 +49,7 @@ const STATUSES = ['active', 'inactive', 'paused'] as const;
  * Which record's edit form is open, seeded from `?edit=<id>` so a link (Data changes →
  * "Open record") lands on the form. Closing drops the param. Shared with the ecosystem lists.
  */
-export function useEditParam(): [string | null, (v: string | null) => void] {
-	const sp = useSearchParams();
-	const [id, setId] = useState<string | null>(() => sp.get('edit'));
-	const set = (v: string | null) => {
-		setId(v);
-		const q = new URLSearchParams(window.location.search);
-		if (v === null && q.has('edit')) {
-			q.delete('edit');
-			const qs = q.toString();
-			window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
-		}
-	};
-	return [id, set];
-}
+export { useEditParam } from '@/hooks/use-edit-param';
 
 export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	const { mutate } = useSWRConfig();

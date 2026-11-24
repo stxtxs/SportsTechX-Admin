@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
+import { useEditParam } from '@/hooks/use-edit-param';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
 import { PageHeader, AsyncState, Loading, ErrorState, StatCard, RichStatCard, StatsPanel, PillTabs, Section, Pager, SortableTh } from '@/components/atoms';
@@ -75,7 +76,8 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const reset1 = () => setPage(1);
 	const [creating, setCreating] = useState(false);
-	const [editingId, setEditingId] = useState<string | null>(null);
+	// `?edit=<id>` opens a company directly (global search, shared links).
+	const [editingId, setEditingId] = useEditParam();
 	const [removePending, setRemovePending] = useState(false);
 	const [merging, setMerging] = useState<{ id: string; name: string } | null>(null);
 

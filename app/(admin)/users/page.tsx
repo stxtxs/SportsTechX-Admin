@@ -61,7 +61,7 @@ interface User {
 }
 interface UsersResponse { data: User[]; total: number; totalPages: number }
 
-const SOURCE_OPTIONS = ['stripe', 'admin_grant', 'claim_trial', 'admin_tier', 'legacy', 'revoked', 'unknown', 'none']
+const SOURCE_OPTIONS = ['stripe', 'admin_grant', 'claim_trial', 'admin_tier', 'legacy', 'revoked', 'signup', 'unknown', 'none']
 	.map((v) => ({ value: v, label: v === 'none' ? 'Not recorded (free plan)' : accessSourceLabel(v) }));
 /** Drop empty filters so they stay out of the request and the URL. */
 const clean = (o: Record<string, string | number | undefined>) =>

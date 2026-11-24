@@ -1283,7 +1283,7 @@ export default function CompaniesAdminPage() {
 	const tab: CdTab = (CD_TABS.some((t) => t.key === raw) ? raw : 'companies') as CdTab;
 	useEffect(() => { if (raw && MOVED_TABS[raw]) { forgetListQuery(pathname); router.replace(MOVED_TABS[raw]); } }, [raw, router, pathname]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
+	const setTab = (t: CdTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); q.delete('edit'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const from = dateRange.from, to = dateRange.to;

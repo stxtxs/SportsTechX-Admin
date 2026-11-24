@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 /**
@@ -9,8 +9,16 @@ import { useSearchParams } from 'next/navigation';
  */
 export function useEditParam(param = 'edit'): [string | null, (v: string | null) => void] {
 	const sp = useSearchParams();
-	const [id, setId] = useState<string | null>(() => sp.get(param));
+	const fromUrl = sp.get(param);
+	const [id, setId] = useState<string | null>(fromUrl);
+	const lastWritten = useRef(fromUrl);
+	// A navigation to this same page with a new ?edit= (e.g. picking a record in global search while
+	// already on its list) doesn't remount the page: adopt the URL's id.
+	useEffect(() => {
+		if (fromUrl !== lastWritten.current) { lastWritten.current = fromUrl; setId(fromUrl); }
+	}, [fromUrl]);
 	const set = (v: string | null) => {
+		lastWritten.current = v;
 		setId(v);
 		const q = new URLSearchParams(window.location.search);
 		if (v) q.set(param, v); else q.delete(param);

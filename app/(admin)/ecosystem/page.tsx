@@ -840,7 +840,7 @@ const ECO_TABS: ReadonlyArray<{ key: EcoTab; label: string }> = [
 const MOVED_TABS: Record<string, string> = {
 	'investor-claims': '/claims?claim.type=investor',
 	'entity-claims': '/claims?claim.type=ecosystem_entity',
-	changes: '/claims?tab=changes',
+	changes: '/claims?tab=changes&dcr.entity=investor%2Cecosystem%2Cinvestor_fund%2Cinvestor_portfolio',
 };
 
 export default function EcosystemAdminPage() {
@@ -851,7 +851,7 @@ export default function EcosystemAdminPage() {
 	const tab: EcoTab = (ECO_TABS.some((t) => t.key === raw) ? raw : 'programs') as EcoTab;
 	useEffect(() => { if (raw && MOVED_TABS[raw]) { forgetListQuery(pathname); router.replace(MOVED_TABS[raw]); } }, [raw, router, pathname]);
 	// Keep each tab's own list filters (co.*, deal.* …) when switching tabs.
-	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); window.history.replaceState(null, '', `${pathname}?${q}`); };
+	const setTab = (t: EcoTab) => { const q = new URLSearchParams(window.location.search); q.set('tab', t); q.delete('q'); q.delete('open'); q.delete('edit'); window.history.replaceState(null, '', `${pathname}?${q}`); };
 
 	const [dateRange, setDateRange] = useState<RangeValue>({});
 	const { from, to } = dateRange;

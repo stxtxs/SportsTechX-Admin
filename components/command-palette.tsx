@@ -59,14 +59,14 @@ export function CommandPalette() {
 
 	// Server matches for 2+ characters; pages match in the browser.
 	useEffect(() => {
-		if (!open || term.length < 2) { setResults({}); return; }
+		if (!open || term.length < 2) { setResults({}); setLoading(false); return; }
 		let live = true;
 		setLoading(true);
 		api<Results>('GET', `/api/admin/search?q=${encodeURIComponent(term)}`)
 			.then((r) => { if (live) { setResults(r); setSel(0); } })
 			.catch(() => { if (live) setResults({}); })
 			.finally(() => { if (live) setLoading(false); });
-		return () => { live = false; };
+		return () => { live = false; setLoading(false); };
 	}, [term, open]);
 
 	const pages = useMemo<Hit[]>(() => {
@@ -109,7 +109,12 @@ export function CommandPalette() {
 						ref={input}
 						autoFocus
 						value={q}
-						onChange={(e) => setQ(e.target.value)}
+						onChange={(e) => {
+							setQ(e.target.value);
+							setSel(0);
+							// Drop the previous term's results so Enter can't open a stale record during the debounce.
+							if (e.target.value.trim() !== term) setResults({});
+						}}
 						onKeyDown={onKeyDown}
 						placeholder="Search users, companies, investors, deals, reports, pages…"
 						aria-label="Search the admin"

@@ -61,7 +61,9 @@ export function useTableColumns(id: string): { ref: (el: HTMLElement | null) => 
 
 	const ref = useCallback((el: HTMLElement | null) => { if (el) el.dataset.cols = id; setBox(el); }, [id]);
 
-	const hideable = labels.map((label, i) => ({ label, i })).filter((c) => c.i > 0 && c.label);
+	// The first named column identifies the row (a leading checkbox column has no name): never hideable.
+	const firstNamed = labels.findIndex((l) => !!l);
+	const hideable = labels.map((label, i) => ({ label, i })).filter((c) => c.i > firstNamed && c.label);
 	const hiddenIdx = hideable.filter((c) => hidden.includes(c.label)).map((c) => c.i + 1);
 	// Only the list's own table (not tables nested inside an expanded detail row).
 	const css = hiddenIdx.length
@@ -72,7 +74,7 @@ export function useTableColumns(id: string): { ref: (el: HTMLElement | null) => 
 	const menu = (
 		<>
 			{css && <style>{css}</style>}
-			{hideable.length >= 3 && (
+			{(hideable.length >= 3 || hiddenIdx.length > 0) && (
 				<div className="cols-menu" ref={pop}>
 					<button type="button" className="btn ghost" aria-haspopup="true" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
 						<Columns3 size={14} /> Columns{hiddenIdx.length ? ` · ${hiddenIdx.length} hidden` : ''}

@@ -187,6 +187,8 @@ interface ReportMeta {
 	is_listed?: boolean;
 	/** Page template of a custom report (gster26 / ftabr26 / benchmark26 / methodology); null = section or PDF report. */
 	template?: string | null;
+	/** Blocks the server can lock (its lock rules) — only these get a Paid switch. */
+	lockable_blocks?: string[];
 	is_published: boolean;
 	has_sections: boolean;
 	theme: ReportThemeOverride | null;
@@ -340,6 +342,7 @@ export default function ReportSectionsEditorPage(
 					reportId={reportId}
 					slug={report?.slug ?? ''}
 					template={report?.template ?? ''}
+					lockable={report?.lockable_blocks ?? []}
 					saved={(report?.content ?? null) as Parameters<typeof Gster26Editor>[0]['saved']}
 					previewOpen={previewOpen}
 					onClosePreview={() => setPreviewOpen(false)}

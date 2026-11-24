@@ -56,7 +56,7 @@ function sortRows<T>(rows: T[], sort: string, get: Record<string, (r: T) => stri
 		return dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y)));
 	});
 }
-const userName = (u: { name: string | null; email: string | null; profile_id: string }) => u.name || u.email || u.profile_id.slice(0, 8);
+const userName = (u: { name: string | null; email: string | null; profile_id: string }) => u.name || u.email || 'Deleted user';
 
 export default function CreditUsagePage() {
 	const { data: usage, isLoading, error } = useSWR<UsageResp>(['/api/admin/credits/usage'], { dedupingInterval: 30_000 });
@@ -212,7 +212,7 @@ export default function CreditUsagePage() {
 											<td style={{ whiteSpace: 'nowrap', color: 'var(--fg-muted)', fontSize: 12 }}>{fmtWhen(r.occurred_at)}</td>
 											<td>
 												<Link href={`/users/${r.profile_id}`} style={{ color: 'var(--fg)', textDecoration: 'none', fontWeight: 600 }}>
-													{r.name || r.email || r.profile_id.slice(0, 8)}
+													{r.name || r.email || 'Deleted user'}
 												</Link>
 											</td>
 											<td>{poolLabel(r.credit_type)}</td>

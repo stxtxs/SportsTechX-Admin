@@ -253,7 +253,7 @@ function BillingLog() {
 						{rows.map((r) => (
 							<tr key={r.id}>
 								<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
-								<td>{r.email ?? r.display_name ?? (r.profile_id ? `${r.profile_id.slice(0, 8)}…` : '—')}</td>
+								<td>{r.email ?? r.display_name ?? <span style={{ color: 'var(--fg-muted)' }}>{r.profile_id ? 'Deleted user' : 'No Atlas account linked'}</span>}</td>
 								<td>{r.plan ? tierLabel(r.plan) : '—'}</td>
 								<td className="num">{r.amount_cents != null ? fmtMoney(r.amount_cents / 100, r.currency ?? 'eur', 2) : '—'}</td>
 								<td><Tag variant={r.status === 'active' || r.status === 'trialing' ? 'pos' : r.status === 'canceled' || r.status === 'unpaid' || r.status === 'past_due' ? 'neg' : ''}>{stripeStatusLabel(r.status)}</Tag></td>

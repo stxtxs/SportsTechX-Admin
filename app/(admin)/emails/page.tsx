@@ -5,10 +5,13 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { Eye, RefreshCw, Save, Send, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, AsyncState, PillTabs, StatCard, Pager, Tag } from '@/components/atoms';
+import { PageHeader, AsyncState, PillTabs, StatCard, Pager, Tag, SortableTh } from '@/components/atoms';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { useConfirm } from '@/components/confirm';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { FilterBar, FilterSelect } from '@/components/filters';
+import { useConfirm } from '@/components/confirm';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Field { key: string; label: string; multiline?: boolean }
 interface BuiltIn { id: string; label: string; subject: string; fields: Field[] }
@@ -214,21 +217,35 @@ function Compose({ onSent }: { onSent: (batchId: string) => void }) {
 
 const PAGE = 50;
 
-function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () => void }) {
-	const [status, setStatus] = useState('');
-	const [provider, setProvider] = useState('');
-	const [delivery, setDelivery] = useState('');
-	const [q, setQ] = useState('');
-	const [page, setPage] = useState(1);
+const EMAIL_STATUS: Record<string, string> = { pending: 'Waiting to send', sending: 'Sending', sent: 'Sent', failed: 'Failed', stuck: 'Stuck' };
+const EMAIL_DELIVERY: Record<string, string> = { delivered: 'Delivered', bounced: 'Bounced', complained: 'Marked as spam', delayed: 'Delayed', rejected: 'Rejected' };
+const EMAIL_PROVIDER: Record<string, string> = { ses: 'Amazon SES', resend: 'Resend' };
+
+function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () => void }) {
+	const cols = useTableColumns('emails');
+	const [status, setStatus] = useUrlState('em', 'status');
+	const [provider, setProvider] = useUrlState('em', 'via');
+	const [delivery, setDelivery] = useUrlState('em', 'delivery');
+	const [q, setQ] = useUrlState('em', 'q');
+	const [from, setFrom] = useUrlState('em', 'from');
+	const [to, setTo] = useUrlState('em', 'to');
+	const [sort, setSort] = useUrlState('em', 'sort', '-queued');
+	const [page, setPage] = useUrlNumber('em', 'page', 1);
 	// Debounced: every keystroke used to be its own request (log + 30-day stats).
 	const dq = useDebouncedValue(q.trim());
 	const { data, error, isLoading, mutate } = useSWR<LogResp>(
-		['/api/admin/emails/log', { status, provider, delivery, q: dq, batch, limit: PAGE, offset: (page - 1) * PAGE }],
+		['/api/admin/emails/log', { status, provider, delivery, q: dq, batch, from, to, sort, limit: PAGE, offset: (page - 1) * PAGE }],
 		{ refreshInterval: 15_000 },
 	);
 	const s = data?.stats;
 	const p = data?.providers;
-	const reset = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(1); };
+	const reset = (fn: (v: string) => void) => (v: string) => { fn(v); setPage(1); };
+	const active = [status, provider, delivery, q, from, to].filter(Boolean).length;
+	const clear = () => { for (const set of [setStatus, setProvider, setDelivery, setQ, setFrom, setTo]) set(''); setPage(1); };
+	const onSort = reset(setSort);
+	const dateInput = (label: string, value: string, set: (v: string) => void) => (
+		<input className="search-input" type="date" style={{ height: 32, width: 140 }} value={value} onChange={(e) => reset(set)(e.target.value)} aria-label={label} title={label} />
+	);
 
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -240,19 +257,34 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 				<StatCard label="Bounced / complaints (30d)" value={s ? `${s.bounced_30d} / ${s.complained_30d}` : '—'} loading={isLoading} sub={s ? `${s.suppressed} addresses blocked` : undefined} />
 			</div>
 
-			<div className="card" style={{ padding: 'var(--space-4)' }}>
-				<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-					<input className="search-input" placeholder="Search recipient or subject" style={{ width: 240 }} value={q} onChange={(e) => reset(setQ)(e.target.value)} />
-					<Select value={status} onChange={reset(setStatus)} width={140} options={[{ value: '', label: 'Any status' }, ...['pending', 'sending', 'sent', 'failed', 'stuck'].map((v) => ({ value: v, label: v }))]} />
-					<Select value={provider} onChange={reset(setProvider)} width={140} options={[{ value: '', label: 'Any provider' }, { value: 'ses', label: 'SES' }, { value: 'resend', label: 'Resend' }]} />
-					<Select value={delivery} onChange={reset(setDelivery)} width={160} options={[{ value: '', label: 'Any delivery' }, ...['delivered', 'bounced', 'complained', 'delayed', 'rejected'].map((v) => ({ value: v, label: v })), { value: 'none', label: 'no report yet' }]} />
-					{batch && <button className="chip on" onClick={clearBatch} title="Show all emails">This send only ✕</button>}
+			<div className="card" ref={cols.ref} style={{ padding: 'var(--space-4)' }}>
+				<FilterBar>
+					<input className="search-input" placeholder="Search recipient, subject or template" style={{ width: 260, height: 32 }} value={q} onChange={(e) => reset(setQ)(e.target.value)} aria-label="Search emails" />
+					<FilterSelect ariaLabel="Status" value={status} onChange={reset(setStatus)} allLabel="Any status" options={Object.entries(EMAIL_STATUS).map(([value, label]) => ({ value, label }))} />
+					<FilterSelect ariaLabel="Sent via" value={provider} onChange={reset(setProvider)} allLabel="Any provider" options={Object.entries(EMAIL_PROVIDER).map(([value, label]) => ({ value, label }))} />
+					<FilterSelect ariaLabel="Delivery" value={delivery} onChange={reset(setDelivery)} allLabel="Any delivery" options={[...Object.entries(EMAIL_DELIVERY).map(([value, label]) => ({ value, label })), { value: 'none', label: 'No report yet' }]} />
+					<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Queued</span>
+					{dateInput('Queued from', from, setFrom)}<span style={{ color: 'var(--fg-muted)' }}>–</span>{dateInput('Queued to', to, setTo)}
+					{batch && <button className="chip on" onClick={() => { clearBatch(); setPage(1); }} title="Show all emails">This send only ✕</button>}
+					{active > 0 && <button className="btn ghost" onClick={clear}>Clear {active} filter{active === 1 ? '' : 's'}</button>}
 					<button className="btn ghost" style={{ marginLeft: 'auto' }} onClick={() => void mutate()}><RefreshCw size={12} /> Refresh</button>
-				</div>
+				</FilterBar>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8 }}>
+					{data ? `${data.total.toLocaleString()} email${data.total === 1 ? '' : 's'}${active || batch ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
 				<AsyncState loading={isLoading} error={error} empty={(data?.rows.length ?? 0) === 0} emptyMsg="No emails match." onRetry={() => void mutate()}>
 					<table className="data-table">
 						<thead>
-							<tr><th>Queued</th><th>To</th><th>Subject</th><th>Status</th><th>Via</th><th>Delivery</th><th>Detail</th></tr>
+							<tr>
+								<SortableTh label="Queued" field="queued" sort={sort} onSort={onSort} />
+								<SortableTh label="To" field="to" sort={sort} onSort={onSort} />
+								<SortableTh label="Subject" field="subject" sort={sort} onSort={onSort} />
+								<SortableTh label="Status" field="status" sort={sort} onSort={onSort} />
+								<SortableTh label="Via" field="provider" sort={sort} onSort={onSort} />
+								<SortableTh label="Delivery" field="delivery" sort={sort} onSort={onSort} />
+								<th>Detail</th>
+							</tr>
 						</thead>
 						<tbody>
 							{data?.rows.map((r) => (
@@ -260,9 +292,9 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 									<td style={{ whiteSpace: 'nowrap', fontSize: 12, color: 'var(--fg-muted)' }}>{new Date(r.enqueued_at).toLocaleString()}</td>
 									<td style={{ fontSize: 12 }}>{r.to_email}</td>
 									<td style={{ fontSize: 12.5 }}>{r.subject}<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.template}{r.source === 'admin_email' ? ' · sent by admin' : r.source === 'admin_bulk' ? ' · bulk send by admin' : ''}</div></td>
-									<td><Tag variant={r.status === 'sent' ? 'pos' : r.status === 'failed' ? 'neg' : 'warn'}>{r.status}</Tag></td>
-									<td style={{ fontSize: 12 }}>{r.provider ?? '—'}</td>
-									<td>{r.delivery_status ? <Tag variant={r.delivery_status === 'delivered' ? 'pos' : r.delivery_status === 'delayed' ? 'warn' : 'neg'}>{r.delivery_status}</Tag> : <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>}</td>
+									<td><Tag variant={r.status === 'sent' ? 'pos' : r.status === 'failed' ? 'neg' : 'warn'}>{EMAIL_STATUS[r.status] ?? r.status}</Tag></td>
+									<td style={{ fontSize: 12 }}>{r.provider ? EMAIL_PROVIDER[r.provider] ?? r.provider : '—'}</td>
+									<td>{r.delivery_status ? <Tag variant={r.delivery_status === 'delivered' ? 'pos' : r.delivery_status === 'delayed' ? 'warn' : 'neg'}>{EMAIL_DELIVERY[r.delivery_status] ?? r.delivery_status}</Tag> : <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>—</span>}</td>
 									<td style={{ fontSize: 11.5, color: 'var(--fg-muted)', maxWidth: 320 }}>{r.delivery_detail ?? r.last_error ?? ''}</td>
 								</tr>
 							))}

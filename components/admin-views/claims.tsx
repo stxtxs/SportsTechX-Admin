@@ -6,15 +6,16 @@ import { toast } from 'sonner';
 import { ChevronDown, ChevronRight, ExternalLink, Mail, MailCheck } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
-import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager } from '@/components/atoms';
+import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager, SortableTh } from '@/components/atoms';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
 import { useEditParam } from '@/hooks/use-edit-param';
 import { Funnel } from '@/components/charts';
-import { StatStrip } from '@/components/filters';
+import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { SectorCascade, LocationFields, EMPTY_LOCATION, type LocationValue } from '@/components/entity-pickers';
 import { YearSelect } from '@/components/year-select';
-import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 type ClaimStatus = 'pending' | 'picked_up' | 'verified' | 'rejected';
 interface QueueStats { claims: { pending: number; picked_up: number; verified: number; rejected: number } }
@@ -51,24 +52,23 @@ interface Claim {
 /** The report page lives in the Atlas app, not the admin panel. */
 const ATLAS_BASE = process.env.NEXT_PUBLIC_ATLAS_URL ?? 'https://www.atlas.sportstechx.com';
 
-const TYPE_FILTERS: Array<{ label: string; key: string }> = [
-	{ label: 'All types', key: '' },
-	{ label: 'Companies', key: 'company' },
-	{ label: 'Investors', key: 'investor' },
-	{ label: 'Ecosystem', key: 'ecosystem_entity' },
+const TYPE_FILTERS = [
+	{ label: 'Companies', value: 'company' },
+	{ label: 'Investors', value: 'investor' },
+	{ label: 'Ecosystem', value: 'ecosystem_entity' },
 ];
 
 interface ClaimsResponse { data: Claim[]; total: number; totalPages: number }
 
-export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean; lockType?: 'company' | 'investor' | 'ecosystem_entity' }) {
-	// Several tabs reuse this view with different locked types: each keeps its own filters.
-	const ns = lockType ? `claim-${lockType.replace('_', '-')}` : 'claim';
+export function ClaimsView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('claims');
+	const ns = 'claim';
 	const { mutate } = useSWRConfig();
-	// A tab that locks the type (e.g. Companies → Claims) ignores the URL value.
-	const [claimTypeUrl, setClaimType] = useUrlState(ns, 'type');
-	const claimType = lockType ?? claimTypeUrl;
+	const [claimType, setClaimType] = useUrlState(ns, 'type');
 	const [page, setPage] = useUrlNumber(ns, 'page', 1);
 	const [cpage, setCpage] = useUrlNumber(ns, 'cpage', 1);
+	// One sort for both tables (they share the column headers).
+	const [sort, setSort] = useUrlState(ns, 'sort', '-sent');
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [sendEmail, setSendEmail] = useState(true);
 	// `?open=<id>` expands a claim directly (global search, shared links).
@@ -79,7 +79,11 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 
 	// Pending (open) and Completed are separate server queries, each with its own pages: one
 	// mixed page split in the browser hid older pending claims behind newer completed ones.
-	const filters = { claim_type: claimType || undefined, q: debouncedSearch || undefined };
+	const filters = { claim_type: claimType || undefined, q: debouncedSearch || undefined, sort };
+	const activeFilters = (claimType ? 1 : 0) + (search ? 1 : 0);
+	/** Change a filter or the sort and go back to the first page of both lists. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setCpage(1); };
+	const clearFilters = () => { setClaimType(''); setSearch(''); setPage(1); setCpage(1); };
 	const { data, error, isLoading } = useSWR<ClaimsResponse>(
 		['/api/admin/claims', { ...filters, status: 'open', page, limit: 50 }],
 		{ dedupingInterval: 30_000 },
@@ -140,13 +144,13 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	const claimsHead = (
 		<thead>
 			<tr>
-				<th>Company</th>
-				<th>Contact</th>
-				<th>Type</th>
+				<SortableTh label="Company" field="name" sort={sort} onSort={f(setSort)} />
+				<SortableTh label="Contact" field="contact" sort={sort} onSort={f(setSort)} />
+				<SortableTh label="Type" field="type" sort={sort} onSort={f(setSort)} />
 				<th style={{ textAlign: 'center' }}>Verified</th>
 				<th style={{ textAlign: 'center' }}>Actively&nbsp;Raising</th>
-				<th>Picked Up By</th>
-				<th>Date</th>
+				<SortableTh label="Picked Up By" field="picked_up_by" sort={sort} onSort={f(setSort)} />
+				<SortableTh label="Sent" field="sent" sort={sort} onSort={f(setSort)} />
 				<th style={{ textAlign: 'center' }}>Notify</th>
 			</tr>
 		</thead>
@@ -266,7 +270,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 	);
 
 	return (
-		<div>
+		<div ref={cols.ref}>
 			{!embedded && <PageHeader kicker={`Queues · ${((data?.total ?? 0) + (done.data?.total ?? 0)).toLocaleString()} claims`} title="Claims" />}
 
 			{!embedded && (
@@ -293,15 +297,18 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 
 			<div style={{ height: 'var(--space-4)' }} />
 
-			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', alignItems: 'center' }}>
-				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search company / claimant…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); setCpage(1); }} />
-				{!lockType && (
-					<Select value={claimType} onChange={(v) => { setClaimType(v); setPage(1); setCpage(1); }} width={150} options={TYPE_FILTERS.map((tf) => ({ value: tf.key, label: tf.label }))} />
-				)}
+			<FilterBar>
+				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search company / claimant…" aria-label="Search claims" value={search} onChange={(e) => f(setSearch)(e.target.value)} />
+				<FilterSelect ariaLabel="Claim type" value={claimType} onChange={f(setClaimType)} options={TYPE_FILTERS} allLabel="All types" />
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 				<div style={{ flex: 1 }} />
 				<label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: 'var(--fg-2)' }}>
 					<input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)} /> Send email on verify
 				</label>
+			</FilterBar>
+			<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+				<span style={{ marginLeft: 'auto', order: 2 }}>{cols.menu}</span>
+				{data && done.data ? `${(data.total + done.data.total).toLocaleString()} claim${data.total + done.data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
 			</div>
 
 
@@ -310,7 +317,7 @@ export function ClaimsView({ embedded = false, lockType }: { embedded?: boolean;
 					Pending <span className="tag">{(data?.total ?? 0).toLocaleString()}</span>
 				</div>
 				<div className="card" style={{ padding: 0, maxHeight: 420, overflow: 'auto' }}>
-					<AsyncState loading={isLoading} error={error} empty={pending.length === 0} emptyMsg="No pending claims" onRetry={() => void refresh()}>
+					<AsyncState loading={isLoading} error={error} empty={pending.length === 0} emptyMsg={activeFilters ? 'No pending claims match these filters.' : 'No pending claims'} onRetry={() => void refresh()}>
 						<table className="data-table">
 							{claimsHead}
 							<tbody>{pending.map(renderRow)}</tbody>

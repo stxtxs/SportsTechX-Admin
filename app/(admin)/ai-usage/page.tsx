@@ -6,8 +6,11 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Receipt, RefreshCw, Save, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, StatCard, StatsPanel, Section, AsyncState, Pager } from '@/components/atoms';
+import { PageHeader, StatCard, StatsPanel, Section, AsyncState, Pager, SortableTh } from '@/components/atoms';
+import { FilterBar, FilterSelect } from '@/components/filters';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { tierLabel } from '@/lib/labels';
 import { ComboBarLine } from '@/components/charts';
 
 /**
@@ -31,6 +34,7 @@ interface Totals {
 }
 interface FeatureRow {
 	feature: string;
+	label?: string;
 	provider: string;
 	calls: number;
 	usd: string;
@@ -60,6 +64,7 @@ type RangeKey = (typeof RANGES)[number]['key'];
 interface LedgerRow {
 	id: string;
 	feature: string;
+	feature_label?: string;
 	provider: string;
 	model: string;
 	input_tokens: number;
@@ -83,9 +88,23 @@ const usd = (v: string | number | undefined) =>
 	`$${Number(v ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 const num = (v: string | number | undefined) => Number(v ?? 0).toLocaleString();
 
+/** Client-side sort for the summary tables (every row is already loaded). "-key" = descending. */
+function sortRows<T>(rows: T[], sort: string, get: Record<string, (r: T) => string | number>): T[] {
+	const fn = get[sort.replace(/^-/, '')];
+	if (!fn) return rows;
+	const dir = sort.startsWith('-') ? -1 : 1;
+	return [...rows].sort((a, b) => {
+		const x = fn(a), y = fn(b);
+		return dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y)));
+	});
+}
+const userName = (u: { profile_id: string | null; profile_name: string | null; profile_email: string | null }) =>
+	u.profile_id ? (u.profile_name || u.profile_email || u.profile_id.slice(0, 8)) : 'system / background';
+
 export default function AiUsagePage() {
 	const router = useRouter();
-	const [range, setRange] = useState<RangeKey>('30d');
+	const [rangeRaw, setRange] = useUrlState('ai', 'range', '30d');
+	const range = (RANGES.some((r) => r.key === rangeRaw) ? rangeRaw : '30d') as RangeKey;
 	const days = RANGES.find((r) => r.key === range)?.days ?? 30;
 	// Must be memoised on the range: Date.now() changes every render, so an inline
 	// value makes a fresh SWR key each time and the request never settles.
@@ -98,22 +117,43 @@ export default function AiUsagePage() {
 		['/api/admin/ai-usage/summary', { from }],
 		{ dedupingInterval: 30_000 },
 	);
-	const [recentQ, setRecentQ] = useState('');
-	const [recentPage, setRecentPage] = useState(1);
-	const recentDq = useDebouncedValue(recentQ);
+	const [recentQ, setRecentQ] = useUrlState('ai', 'q');
+	const [credited, setCredited] = useUrlState('ai', 'credited');
+	const [recentSort, setRecentSort] = useUrlState('ai', 'sort', '-when');
+	const [recentPage, setRecentPage] = useUrlNumber('ai', 'page', 1);
+	const recentDq = useDebouncedValue(recentQ.trim());
 	const { data: recent, mutate: mutateRecent } = useSWR<{ data: LedgerRow[]; total: number; page: number; totalPages: number }>(
-		['/api/admin/ai-usage/recent', { q: recentDq || undefined, page: recentPage, limit: 25 }],
+		['/api/admin/ai-usage/recent', { q: recentDq || undefined, credited, sort: recentSort, page: recentPage, limit: 25 }],
 		{ dedupingInterval: 30_000 },
 	);
 	const recentRows = recent?.data ?? [];
+	/** Set a recent-calls filter/sort and go back to page 1. */
+	const rf = (set: (v: string) => void) => (v: string) => { set(v); setRecentPage(1); };
+	const recentActive = (recentQ ? 1 : 0) + (credited ? 1 : 0);
+
+	// Summary tables are small and fully loaded: sorted (and the user table searched) in the browser.
+	const [featureSort, setFeatureSort] = useUrlState('ai', 'fsort', '-cost');
+	const [modelSort, setModelSort] = useUrlState('ai', 'msort', '-cost');
+	const [userSort, setUserSort] = useUrlState('ai', 'usort', '-cost');
+	const [userQ, setUserQ] = useUrlState('ai', 'uq');
 
 	const t = summary?.totals;
 	const spendChart = (summary?.byDay ?? []).map((d) => {
 		const v = Number(d.usd);
 		return { label: new Date(d.day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), amt: v, deals: v };
 	});
-	const byModel = summary?.byModel ?? [];
-	const byUser = summary?.byUser ?? [];
+	const byFeature = sortRows(summary?.byFeature ?? [], featureSort, {
+		feature: (r) => (r.label ?? r.feature).toLowerCase(), calls: (r) => Number(r.calls), tokens: (r) => Number(r.tokens), cost: (r) => Number(r.usd),
+	});
+	const byModel = sortRows(summary?.byModel ?? [], modelSort, {
+		model: (m) => m.model.toLowerCase(), calls: (m) => Number(m.calls), tokens: (m) => Number(m.tokens), cost: (m) => Number(m.usd),
+	});
+	const uq = userQ.trim().toLowerCase();
+	const byUser = sortRows(
+		(summary?.byUser ?? []).filter((u) => !uq || `${u.profile_name ?? ''} ${u.profile_email ?? ''}`.toLowerCase().includes(uq)),
+		userSort,
+		{ user: (u) => userName(u).toLowerCase(), calls: (u) => Number(u.calls), cost: (u) => Number(u.usd), unrecovered: (u) => Number(u.uncredited_usd) },
+	);
 	const refresh = () => { void mutateSummary(); void mutateRecent(); };
 
 	return (
@@ -164,11 +204,19 @@ export default function AiUsagePage() {
 			<div className="card" style={{ padding: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
 				<div style={{ fontWeight: 700, marginBottom: 10 }}>Spend by feature</div>
 				<table className="data-table">
-					<thead><tr><th>Feature</th><th>Provider</th><th>Calls</th><th>Tokens</th><th>Cost</th></tr></thead>
+					<thead>
+						<tr>
+							<SortableTh label="Feature" field="feature" sort={featureSort} onSort={setFeatureSort} />
+							<th>Provider</th>
+							<SortableTh label="Calls" field="calls" sort={featureSort} onSort={setFeatureSort} />
+							<SortableTh label="Tokens" field="tokens" sort={featureSort} onSort={setFeatureSort} />
+							<SortableTh label="Cost" field="cost" sort={featureSort} onSort={setFeatureSort} />
+						</tr>
+					</thead>
 					<tbody>
-						{(summary?.byFeature ?? []).map((r) => (
+						{byFeature.map((r) => (
 							<tr key={`${r.feature}:${r.provider}`}>
-								<td>{r.feature}</td>
+								<td title={r.feature}>{r.label ?? r.feature}</td>
 								<td style={{ color: 'var(--fg-muted)' }}>{r.provider}</td>
 								<td className="num">{num(r.calls)}</td>
 								<td className="num">{num(r.tokens)}</td>
@@ -188,7 +236,14 @@ export default function AiUsagePage() {
 				<Section title="Spend by model" meta="rates editable above" padded={false}>
 					<AsyncState loading={isLoading} error={error} empty={byModel.length === 0} emptyMsg="No AI usage in this range." onRetry={() => void mutateSummary()}>
 						<table className="data-table">
-							<thead><tr><th>Model</th><th style={{ textAlign: 'right' }}>Calls</th><th style={{ textAlign: 'right' }}>Tokens</th><th style={{ textAlign: 'right' }}>Cost</th></tr></thead>
+							<thead>
+								<tr>
+									<SortableTh label="Model" field="model" sort={modelSort} onSort={setModelSort} />
+									<SortableTh label="Calls" field="calls" sort={modelSort} onSort={setModelSort} align="right" />
+									<SortableTh label="Tokens" field="tokens" sort={modelSort} onSort={setModelSort} align="right" />
+									<SortableTh label="Cost" field="cost" sort={modelSort} onSort={setModelSort} align="right" />
+								</tr>
+							</thead>
 							<tbody>
 								{byModel.map((m) => (
 									<tr key={`${m.provider}:${m.model}`}>
@@ -206,20 +261,31 @@ export default function AiUsagePage() {
 					</AsyncState>
 				</Section>
 
-				<Section title="Spend by user" meta="top 50 · who drives the cost" padded={false}>
-					<AsyncState loading={isLoading} error={error} empty={byUser.length === 0} emptyMsg="No AI usage in this range." onRetry={() => void mutateSummary()}>
+				<Section title="Spend by user" meta="top 50 by cost · who drives the cost" padded={false}>
+					<div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)' }}>
+						<input className="search-input" style={{ height: 30, width: 240, maxWidth: '100%' }} placeholder="Search name or email (top 50)…"
+							value={userQ} onChange={(e) => setUserQ(e.target.value)} aria-label="Search users by spend" />
+					</div>
+					<AsyncState loading={isLoading} error={error} empty={byUser.length === 0} emptyMsg={uq ? 'No user in the top 50 matches.' : 'No AI usage in this range.'} onRetry={() => void mutateSummary()}>
 						<div className="table-scroll">
 							<table className="data-table">
-								<thead><tr><th>User</th><th style={{ textAlign: 'right' }}>Calls</th><th style={{ textAlign: 'right' }}>Cost</th><th style={{ textAlign: 'right' }}>Unrecovered</th></tr></thead>
+								<thead>
+									<tr>
+										<SortableTh label="User" field="user" sort={userSort} onSort={setUserSort} />
+										<SortableTh label="Calls" field="calls" sort={userSort} onSort={setUserSort} align="right" />
+										<SortableTh label="Cost" field="cost" sort={userSort} onSort={setUserSort} align="right" />
+										<SortableTh label="Unrecovered" field="unrecovered" sort={userSort} onSort={setUserSort} align="right" />
+									</tr>
+								</thead>
 								<tbody>
 									{byUser.map((u) => (
 										<tr key={u.profile_id ?? 'system'}>
 											<td>
 												{u.profile_id ? (
 													<>
-														<div>{u.profile_name || u.profile_email || u.profile_id.slice(0, 8)}</div>
+														<div>{userName(u)}</div>
 														<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
-															{u.profile_is_admin ? 'Admin' : (u.profile_tier ?? 'explore')}
+															{u.profile_is_admin ? 'Admin' : tierLabel(u.profile_tier ?? 'explore')}
 														</div>
 													</>
 												) : <span style={{ color: 'var(--fg-muted)' }}>system / background</span>}
@@ -239,17 +305,28 @@ export default function AiUsagePage() {
 			</div>
 
 			{/* Recent rows — one per LLM call, the highest-velocity table here. */}
-			<Section title="Recent calls" meta={`${(recent?.total ?? 0).toLocaleString()} calls`} padded={false}>
-				<div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)' }}>
-					<input className="search-input" style={{ flex: '0 0 260px', height: 30, maxWidth: '100%' }} placeholder="Search feature, model or user email…"
-						value={recentQ} onChange={(e) => { setRecentQ(e.target.value); setRecentPage(1); }} />
+			<Section title="Recent calls" meta={`${(recent?.total ?? 0).toLocaleString()} call${recent?.total === 1 ? '' : 's'}${recentActive ? ' match' : ''} · all time`} padded={false}>
+				<div style={{ padding: 'var(--space-3) var(--space-4) 0', borderBottom: '1px solid var(--border)' }}>
+					<FilterBar>
+						<input className="search-input" style={{ flex: '0 0 260px', height: 32, maxWidth: '100%' }} placeholder="Search feature, model, user name or email…"
+							value={recentQ} onChange={(e) => rf(setRecentQ)(e.target.value)} aria-label="Search calls" />
+						<FilterSelect ariaLabel="Credited" value={credited} onChange={rf(setCredited)} allLabel="Credited or not"
+							options={[{ value: 'yes', label: 'Charged to the user' }, { value: 'no', label: 'Company-borne' }]} />
+						{recentActive > 0 && <button className="btn ghost" onClick={() => { setRecentQ(''); setCredited(''); setRecentPage(1); }}>Clear {recentActive} filter{recentActive === 1 ? '' : 's'}</button>}
+					</FilterBar>
 				</div>
 				<div style={{ overflowX: 'auto' }}>
 					<table className="data-table">
 						<thead>
 							<tr>
-								<th>When</th><th>Feature</th><th>Model</th><th>In</th><th>Out</th>
-								<th>Cost</th><th>Credited</th><th>User</th>
+								<SortableTh label="When" field="when" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="Feature" field="feature" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="Model" field="model" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="In" field="in" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="Out" field="out" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="Cost" field="cost" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="Credited" field="credits" sort={recentSort} onSort={rf(setRecentSort)} />
+								<SortableTh label="User" field="user" sort={recentSort} onSort={rf(setRecentSort)} />
 							</tr>
 						</thead>
 						<tbody>
@@ -258,7 +335,7 @@ export default function AiUsagePage() {
 									<td style={{ whiteSpace: 'nowrap', color: 'var(--fg-muted)', fontSize: 12 }}>
 										{new Date(r.created_at).toLocaleString()}
 									</td>
-									<td>{r.feature}</td>
+									<td title={r.feature}>{r.feature_label ?? r.feature}</td>
 									<td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{r.model}</td>
 									<td className="num">{num(r.input_tokens)}</td>
 									<td className="num">{num(r.output_tokens)}</td>
@@ -274,7 +351,7 @@ export default function AiUsagePage() {
 								</tr>
 							))}
 							{recentRows.length === 0 && (
-								<tr><td colSpan={8} style={{ color: 'var(--fg-muted)' }}>{recentDq ? 'No calls match.' : 'No calls yet.'}</td></tr>
+								<tr><td colSpan={8} style={{ color: 'var(--fg-muted)' }}>{recentActive ? 'No calls match.' : 'No calls yet.'}</td></tr>
 							)}
 						</tbody>
 					</table>
@@ -298,7 +375,7 @@ function UserCell({ row, router }: { row: LedgerRow; router: ReturnType<typeof u
 	const name = row.profile_name || row.profile_email || `${row.profile_id.slice(0, 8)}…`;
 	const isAdmin = !!row.profile_is_admin;
 	const tier = (row.profile_tier ?? 'explore').toLowerCase();
-	const badge = isAdmin ? 'Admin' : tier === 'explore' ? 'Explore · top-up/granted' : tier;
+	const badge = isAdmin ? 'Admin' : tier === 'explore' ? 'Explore · top-up/granted' : tierLabel(tier);
 	const badgeColor = isAdmin ? 'var(--accent)' : tier === 'explore' ? 'var(--fg-muted)' : 'var(--fg-2)';
 
 	const open = () => {

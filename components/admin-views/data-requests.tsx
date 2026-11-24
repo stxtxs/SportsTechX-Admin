@@ -4,14 +4,16 @@ import { useMemo, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager } from '@/components/atoms';
+import { PageHeader, AsyncState, StatCard, StatsPanel, Section, Pager, SortableTh } from '@/components/atoms';
+import { requestStatusLabel, tidy } from '@/lib/labels';
 import { Funnel } from '@/components/charts';
 import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { Modal } from '@/components/modal';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useInitialQuery } from '@/hooks/use-initial-query';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
-import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 type DcrStatus = 'open' | 'picked_up' | 'resolved' | 'rejected';
 interface QueueStats { data_requests: Array<{ label: string; value: number }> }
@@ -361,26 +363,31 @@ function ClaimEditSummary({ r, sectorMap, roundMap, techMap, rounds, current, de
 	);
 }
 
-const TABS: Array<{ label: string; key: DcrStatus }> = [
-	{ label: 'Open', key: 'open' },
-	{ label: 'Picked up', key: 'picked_up' },
-	{ label: 'Resolved', key: 'resolved' },
-	{ label: 'Rejected', key: 'rejected' },
-];
+const STATUSES: DcrStatus[] = ['open', 'picked_up', 'resolved', 'rejected'];
+const ENTITY_LABELS: Record<string, string> = {
+	company: 'Company', deal: 'Deal', investor: 'Investor', investor_fund: 'Investor fund',
+	investor_portfolio: 'Investor portfolio', ecosystem: 'Ecosystem',
+};
+const entityLabel = (v: string | null) => (v ? ENTITY_LABELS[v] ?? tidy(v) : '');
 
-export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: boolean; lockEntity?: string }) {
+export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
+	const cols = useTableColumns('data-changes');
 	const { mutate } = useSWRConfig();
 	const [status, setStatus] = useUrlState('dcr', 'status', '');
-	// Only offered when the view isn't locked to a section (the all-queues page).
 	const [entity, setEntity] = useUrlState('dcr', 'entity', '');
 	const [search, setSearch] = useUrlState('dcr', 'q', '', 'q');
 	const debouncedSearch = useDebouncedValue(search);
+	const [sort, setSort] = useUrlState('dcr', 'sort', '-created');
 	const [page, setPage] = useUrlNumber('dcr', 'page', 1);
 	const [pendingId, setPendingId] = useState<string | null>(null);
 	const [selected, setSelected] = useState<Set<string>>(new Set());
+	const activeFilters = (status ? 1 : 0) + (entity ? 1 : 0) + (search ? 1 : 0);
+	/** Change a filter or the sort: back to page 1, and drop a selection the new view may hide. */
+	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setSelected(new Set()); };
+	const clearFilters = () => { for (const set of [setStatus, setEntity, setSearch]) set(''); setPage(1); setSelected(new Set()); };
 
 	const { data, error, isLoading } = useSWR<DcrResponse>(
-		['/api/admin/data-change-requests', { status: status || undefined, q: debouncedSearch || undefined, entity_type: lockEntity || entity || undefined, page, limit: 30 }],
+		['/api/admin/data-change-requests', { status: status || undefined, q: debouncedSearch || undefined, entity_type: entity || undefined, sort, page, limit: 30 }],
 		{ dedupingInterval: 15_000 },
 	);
 	const stats = useSWR<QueueStats>(['/api/admin/stats/queues'], { dedupingInterval: 60_000 });
@@ -512,15 +519,14 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 			<div style={{ height: 'var(--space-4)' }} />
 
 			<FilterBar>
-				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search target / requester / field…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
-				<FilterSelect ariaLabel="Status" value={status} onChange={(v) => { setStatus(v); setPage(1); }} options={TABS.map((t) => ({ value: t.key, label: t.label }))} allLabel="All statuses" />
-				{!lockEntity && (
-					<FilterSelect ariaLabel="Entity" value={entity} onChange={(v) => { setEntity(v); setPage(1); setSelected(new Set()); }} allLabel="All entities" options={[
-						{ value: 'company,deal', label: 'Companies & deals' },
-						{ value: 'investor,investor_fund,investor_portfolio', label: 'Investors' },
-						{ value: 'ecosystem', label: 'Ecosystem' },
-					]} />
-				)}
+				<input className="search-input" style={{ flex: '0 0 260px', height: 32 }} placeholder="Search target / requester / field…" aria-label="Search data change requests" value={search} onChange={(e) => f(setSearch)(e.target.value)} />
+				<FilterSelect ariaLabel="Status" value={status} onChange={f(setStatus)} options={STATUSES.map((s) => ({ value: s, label: requestStatusLabel(s) }))} allLabel="All statuses" />
+				<FilterSelect ariaLabel="Entity" value={entity} onChange={f(setEntity)} allLabel="All entities" options={[
+					{ value: 'company,deal', label: 'Companies & deals' },
+					{ value: 'investor,investor_fund,investor_portfolio', label: 'Investors' },
+					{ value: 'ecosystem', label: 'Ecosystem' },
+				]} />
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
 			{selected.size > 0 && (
@@ -533,17 +539,21 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 				</div>
 			)}
 
-			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={items.length === 0} emptyMsg={search || status ? 'No matching requests.' : 'No data change requests.'} onRetry={() => void refresh()}>
+			<div className="card" ref={cols.ref}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} request${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
+				<AsyncState loading={isLoading} error={error} empty={items.length === 0} emptyMsg={activeFilters ? 'No matching requests.' : 'No data change requests.'} onRetry={() => void refresh()}>
 				<table className="data-table">
 					<thead>
 						<tr>
 							<th style={{ width: 28 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" /></th>
-							<th>Created</th>
-							<th>Target</th>
-							<th>Requested change</th>
-							<th>Requester</th>
-							<th>Status</th>
+							<SortableTh label="Created" field="created" sort={sort} onSort={f(setSort)} />
+							<SortableTh label="Target" field="target" sort={sort} onSort={f(setSort)} />
+							<SortableTh label="Requested change" field="field" sort={sort} onSort={f(setSort)} />
+							<SortableTh label="Requester" field="requester" sort={sort} onSort={f(setSort)} />
+							<SortableTh label="Status" field="status" sort={sort} onSort={f(setSort)} />
 							<th style={{ textAlign: 'right' }}>Actions</th>
 						</tr>
 					</thead>
@@ -554,7 +564,7 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 								<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
 								<td>
 									<span style={{ fontWeight: 600 }}>{r.target_name_snapshot ?? '—'}</span>
-									<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.entity_type ?? ''}</div>
+									<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{entityLabel(r.entity_type)}</div>
 								</td>
 								<td style={{ maxWidth: 320 }}>
 									{asClaimEdit(r.context) ? (
@@ -575,7 +585,7 @@ export function DataRequestsView({ embedded = false, lockEntity }: { embedded?: 
 									{r.resolution_notes && <div style={{ fontSize: 11, color: 'var(--fg-muted)', marginTop: 4 }}>note: {r.resolution_notes}</div>}
 								</td>
 								<td style={{ fontSize: 12 }}>{r.user_email ?? '—'}</td>
-								<td><span className="tag">{r.status}</span></td>
+								<td><span className="tag">{requestStatusLabel(r.status)}</span></td>
 								<td style={{ textAlign: 'right' }}>
 									<div style={{ display: 'inline-flex', gap: 6 }}>
 										<button className="btn ghost" onClick={() => openModal(r)}>Review</button>

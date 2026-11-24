@@ -9,13 +9,17 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Loading } from '@/components/atoms';
+import { PageHeader, AsyncState, Loading, SortableTh } from '@/components/atoms';
+import { FilterSelect } from '@/components/filters';
+import { ListCount, fmtListDate } from '@/components/filters';
+import { useUrlState } from '@/hooks/use-url-state';
 import { YearSelect } from '@/components/year-select';
 import { ImageInput } from '@/components/image-input';
 import { ReportPdfInput } from '@/components/report-pdf-input';
 import { ReportEditionsModal } from '@/components/report-editions-modal';
 import { confirmDelete } from '@/lib/delete-impact';
-import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useEditPayload } from '@/hooks/use-edit-payload';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 interface Report {
 	id: string;
@@ -26,6 +30,8 @@ interface Report {
 	show_on_dashboard?: boolean;
 	has_sections?: boolean;
 	is_published?: boolean;
+	is_listed?: boolean;
+	created_at?: string | null;
 }
 interface Response { data: Report[]; total: number }
 
@@ -44,7 +50,8 @@ const parseTags = (s: string): string[] => [...new Set(s.split(',').map((t) => t
 /** Slugify a title/code into a URL-safe report slug. */
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-export default function ReportsAdminPage() {
+export default function ReportsAdminPage() {
+	const cols = useTableColumns('reports');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [draft, setDraft] = useState({ ...emptyDraft });
@@ -52,9 +59,15 @@ export default function ReportsAdminPage() {
 	const [removePending, setRemovePending] = useState(false);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [editionsId, setEditionsId] = useState<string | null>(null);
-	const [search, setSearch] = useState('');
+	const [search, setSearch] = useUrlState('rep', 'q', '');
+	const [status, setStatus] = useUrlState('rep', 'status', '');
+	const [sort, setSort] = useUrlState('rep', 'sort', '-period');
 	const [analyticsOpen, setAnalyticsOpen] = useState(false);
+	// Every report in one request (a few dozen): search, status and sort run in the browser.
 	const { data, error, isLoading } = useSWR<Response>(['/api/reports', { limit: 200 }], { dedupingInterval: 30_000 });
+	// Views / downloads per report for those columns and sorts (same key as the analytics panel, so they share the fetch).
+	const stats = useSWR<{ reports: ReportStat[] }>(['/api/admin/reports/analytics'], { dedupingInterval: 60_000 });
+	const statById = new Map((stats.data?.reports ?? []).map((s) => [s.id, s]));
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/reports');
 
@@ -127,9 +140,29 @@ export default function ReportsAdminPage() {
 	};
 
 	const allReports = data?.data ?? [];
-	const reports = search.trim()
-		? allReports.filter((r) => r.title.toLowerCase().includes(search.trim().toLowerCase()))
-		: allReports;
+	const term = search.trim().toLowerCase();
+	const sortKey = sort.replace(/^-/, '');
+	const sortVal = (r: Report): string | number | null => {
+		switch (sortKey) {
+			case 'title': return r.title.toLowerCase();
+			case 'created': return r.created_at ?? null;
+			case 'views': return statById.get(r.id)?.views ?? 0;
+			case 'downloads': return statById.get(r.id)?.downloads ?? 0;
+			default: return r.report_year ? r.report_year * 100 + (r.report_month ?? 0) : null;   // period
+		}
+	};
+	const reports = allReports
+		.filter((r) => !term || r.title.toLowerCase().includes(term) || (r.slug ?? '').toLowerCase().includes(term))
+		.filter((r) => !status || reportStatus(r) === status)
+		.sort((a, b) => {
+			const x = sortVal(a), y = sortVal(b);
+			if (x === y) return 0;
+			if (x === null) return 1;   // missing values last, either direction
+			if (y === null) return -1;
+			return (x < y ? -1 : 1) * (sort.startsWith('-') ? -1 : 1);
+		});
+	const activeFilters = (term ? 1 : 0) + (status ? 1 : 0);
+	const onSort = (s: string) => setSort(s);
 	return (
 		<div>
 			<PageHeader kicker={`Library · ${(data?.total ?? 0).toLocaleString()} reports`} title="Reports" />
@@ -191,19 +224,37 @@ export default function ReportsAdminPage() {
 			</div>
 
 			<div className="card">
-				<div style={{ padding: '12px var(--space-4)', borderBottom: '1px solid var(--border)' }}>
-					<input className="search-input" style={{ width: 320, height: 30 }} placeholder="Search reports by title…" value={search} onChange={(e) => setSearch(e.target.value)} />
+				<div style={{ padding: '12px var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+					<input className="search-input" style={{ width: 320, height: 32 }} placeholder="Search reports by title or slug…" value={search} onChange={(e) => setSearch(e.target.value)} />
+					<FilterSelect ariaLabel="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} allLabel="All statuses" />
 				</div>
-				<AsyncState loading={isLoading} error={error} empty={reports.length === 0} emptyMsg={search ? 'No reports match.' : 'No reports yet.'} onRetry={() => void refresh()}>
+				<ListCount total={data ? reports.length : undefined} noun={['report', 'reports']} filters={activeFilters} onClear={() => { setSearch(''); setStatus(''); }}  right={cols.menu} />
+				<AsyncState loading={isLoading} error={error} empty={reports.length === 0} emptyMsg={activeFilters ? 'No reports match these filters.' : 'No reports yet.'} onRetry={() => void refresh()}>
+				<div className="table-scroll" ref={cols.ref}>
 				<table className="data-table">
-					<thead><tr><th>Title</th><th>Model</th><th>Period</th><th>Status</th><th style={{ textAlign: 'right' }}></th></tr></thead>
+					<thead><tr>
+						<SortableTh label="Title" field="title" sort={sort} onSort={onSort} />
+						<th>Model</th>
+						<SortableTh label="Period" field="period" sort={sort} onSort={onSort} />
+						<th>Status</th>
+						<SortableTh label="Views" field="views" sort={sort} onSort={onSort} align="right" />
+						<SortableTh label="Downloads" field="downloads" sort={sort} onSort={onSort} align="right" />
+						<SortableTh label="Added" field="created" sort={sort} onSort={onSort} />
+						<th style={{ textAlign: 'right' }}></th>
+					</tr></thead>
 					<tbody>
 						{reports.map((r) => (
 							<tr key={r.id}>
 								<td>{r.title}{r.show_on_dashboard && <span className="tag" style={{ marginLeft: 6 }}>featured</span>}</td>
 								<td>{r.has_sections ? <span className="tag pos">sections</span> : <span className="tag">pdf</span>}</td>
 								<td className="num">{r.report_year ? `${r.report_month ? MONTHS[r.report_month - 1] + ' ' : ''}${r.report_year}` : '—'}</td>
-								<td>{r.is_published === false ? <span className="tag">draft</span> : <span className="tag pos">published</span>}</td>
+								<td>
+									{r.is_published === false ? <span className="tag">draft</span> : <span className="tag pos">published</span>}
+									{r.is_listed === false && <span className="tag" style={{ marginLeft: 4 }} title="Opens by link but stays out of the reports library">unlisted</span>}
+								</td>
+								<td className="num" style={{ textAlign: 'right' }}>{stats.data ? (statById.get(r.id)?.views ?? 0).toLocaleString() : '—'}</td>
+								<td className="num" style={{ textAlign: 'right' }}>{stats.data ? (statById.get(r.id)?.downloads ?? 0).toLocaleString() : '—'}</td>
+								<td className="num" style={{ whiteSpace: 'nowrap' }}>{fmtListDate(r.created_at)}</td>
 								<td style={{ textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
 									{r.has_sections && (
 										<Link href={`/reports/${r.id}`} className="btn ghost" title="Edit sections">
@@ -235,11 +286,20 @@ export default function ReportsAdminPage() {
 						))}
 					</tbody>
 				</table>
+				</div>
 				</AsyncState>
 			</div>
 		</div>
 	);
 }
+
+const STATUS_OPTIONS = [
+	{ value: 'published', label: 'Published (in library)' },
+	{ value: 'unlisted', label: 'Published, unlisted' },
+	{ value: 'draft', label: 'Draft' },
+];
+/** One status per report for the filter: draft wins, then unlisted (published but out of the library). */
+const reportStatus = (r: Report) => (r.is_published === false ? 'draft' : r.is_listed === false ? 'unlisted' : 'published');
 
 interface ReportStat { id: string; title: string; report_year?: number | null; report_month?: number | null; downloads: number; unique_users: number; last_download: string | null; views: number; unique_viewers: number; last_view: string | null }
 

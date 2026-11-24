@@ -3,23 +3,26 @@
 import { useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { toast } from 'sonner';
-import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload, Pencil } from 'lucide-react';
-import { api } from '@/lib/api';
+import { Plus, Trash2, Check, SkipForward, Rocket, Undo2, RefreshCw, Eye, Upload, Pencil, Download } from 'lucide-react';
+import { api, fetchAllPages } from '@/lib/api';
+import { tidy, investorCategoryLabel } from '@/lib/labels';
+import { downloadCsv } from '@/components/csv-import';
 import { val, fmtNum, enrichedKeys } from '@/lib/format';
 import { Select } from '@/components/select';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, StatCard, StatsPanel, AsyncState, Tag, Chip, Section, Pager } from '@/components/atoms';
+import { PageHeader, StatCard, StatsPanel, AsyncState, Tag, Chip, Section, Pager, SortableTh } from '@/components/atoms';
 import { Funnel } from '@/components/charts';
-import { StatStrip } from '@/components/filters';
+import { FilterBar, StatStrip } from '@/components/filters';
 import { DateRangePicker, type RangeValue } from '@/components/date-range-picker';
 import { AssignToAdmins, CompletionByAdmin, TimeAnalytics, WeeklyMetrics } from '@/components/queue-stats';
 import { WorkSessionTimer, countWorkItem } from '@/components/work-session-timer';
 import { CandidateInput, EditCandidateModal, parseInvestorCandidates } from '@/components/candidate-import';
 import { InvestorModal } from '@/components/admin-views/investors';
 import { AddCandidateModal, L } from '@/components/investor-candidate-modal';
-import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
+import { useTableColumns } from '@/hooks/use-table-columns';
 
 type EnrichStatus = 'pending' | 'enriching' | 'enriched' | 'failed';
 interface QueueRow {
@@ -51,7 +54,8 @@ interface Preview { matches: DedupeMatch[]; prefill: { name: string; website: st
 
 const STATUSES = ['pending', 'completed', 'skipped'] as const;
 
-export default function InvestorReviewPage() {
+export default function InvestorReviewPage() {
+	const cols = useTableColumns('investor-review');
 	const { mutate } = useSWRConfig();
 	const ask = useConfirm();
 	const [status, setStatus] = useUrlState('ir', 'status', 'pending');
@@ -61,6 +65,9 @@ export default function InvestorReviewPage() {
 	const debouncedSearch = useDebouncedValue(search);
 	const [from, setFrom] = useUrlState('ir', 'from', '');
 	const [to, setTo] = useUrlState('ir', 'to', '');
+	// '' = the server default: pending first, then newest.
+	const [sort, setSort] = useUrlState('ir', 'sort', '');
+	const [exporting, setExporting] = useState(false);
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [creating, setCreating] = useState(false);
 	const [importing, setImporting] = useState(false);
@@ -72,9 +79,13 @@ export default function InvestorReviewPage() {
 	const [statsRange, setStatsRange] = useState<RangeValue>({});
 	// A filter change starts over at page 1 with nothing selected (page 3 of the old view was empty).
 	const refilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); setSelected(new Set()); };
+	// The status chips are tabs; these are the filters "Clear" resets.
+	const activeFilters = [assigned, search, from, to].filter(Boolean).length;
+	const clearFilters = () => { for (const set of [setAssigned, setSearch, setFrom, setTo]) set(''); setPage(1); setSelected(new Set()); };
+	const onSort = (s: string) => { setSort(s); setPage(1); };
 
 	const { data, error, isLoading } = useSWR<QueueResponse>(
-		['/api/admin/investor-review', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, page, limit: 50 }],
+		['/api/admin/investor-review', { status: status || undefined, assigned_to: assigned || undefined, q: debouncedSearch || undefined, from: from || undefined, to: to || undefined, sort: sort || undefined, page, limit: 50 }],
 		{ dedupingInterval: 15_000 },
 	);
 	const { data: stats } = useSWR<Stats>(['/api/admin/investor-review/stats', { from: statsRange.from, to: statsRange.to }], { dedupingInterval: 15_000 });
@@ -126,6 +137,17 @@ export default function InvestorReviewPage() {
 		try { const r = await api<{ ids: string[] }>('GET', `/api/admin/investor-review/ids?${p.toString()}`); setSelected(new Set(r.ids)); }
 		catch (e) { toast.error((e as Error).message); }
 	};
+	const exportCsv = async () => {
+		setExporting(true);
+		try {
+			const params = Object.fromEntries(Object.entries({ status, assigned_to: assigned, q: search, from, to, sort }).filter(([, v]) => v));
+			const { rows: all, capped } = await fetchAllPages<QueueRow>('/api/admin/investor-review', params);
+			downloadCsv('investors-to-add.csv',
+				['Added', 'Name', 'Website', 'Category', 'Country', 'Status', 'Skip reason', 'Enrichment', 'Assigned to'],
+				all.map((r) => [r.created_at.slice(0, 10), r.name, r.website ?? '', r.category ? investorCategoryLabel(r.category) : '', r.country ?? '', tidy(r.status), r.skip_reason ?? '', tidy(r.enrichment_status), r.assigned_to ? adminName(r.assigned_to) : '']));
+			toast.success(`Exported ${all.length.toLocaleString()} row${all.length === 1 ? '' : 's'}${capped ? ' (capped)' : ''}`);
+		} catch (e) { toast.error((e as Error).message); } finally { setExporting(false); }
+	};
 	const remove = (id: string) => { void (async () => { if (await ask('Delete this candidate?')) void act(() => api('DELETE', `/api/admin/investor-review/${id}`), 'Deleted'); })(); };
 	const unskip = (id: string) => act(() => api('PATCH', `/api/admin/investor-review/${id}`, { status: 'pending', skip_reason: '' }), 'Moved back to pending');
 	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/investor-review/${id}/re-enrich`), 'Enrichment queued');
@@ -175,16 +197,18 @@ export default function InvestorReviewPage() {
 			</Section>
 			<div style={{ marginBottom: 'var(--space-5)' }} />
 
-			<div className="filter-bar" style={{ marginBottom: 'var(--space-4)', gap: 8, flexWrap: 'wrap' }}>
+			<FilterBar>
 				<Chip active={status === ''} onClick={() => refilter(setStatus)('')}>All</Chip>
-				{STATUSES.map((s) => <Chip key={s} active={status === s} onClick={() => refilter(setStatus)(s)}>{s}</Chip>)}
-				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={200} options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
-				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name…" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
-				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" />
-				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" />
+				{STATUSES.map((s) => <Chip key={s} active={status === s} onClick={() => refilter(setStatus)(s)}>{tidy(s)}</Chip>)}
+				<Select value={assigned} onChange={refilter(setAssigned)} searchable width={200} ariaLabel="Assignee" options={[{ value: '', label: 'Any assignee' }, { value: 'unassigned', label: 'Unassigned' }, ...admins.map((a) => ({ value: a.id, label: a.full_name || a.display_name || a.email }))]} />
+				<input className="search-input" style={{ flex: '0 0 200px', height: 30 }} placeholder="Search name / site…" aria-label="Search investors" value={search} onChange={(e) => refilter(setSearch)(e.target.value)} />
+				<input className="search-input" type="date" style={{ height: 30 }} value={from} onChange={(e) => refilter(setFrom)(e.target.value)} title="Added from" aria-label="Added from" />
+				<input className="search-input" type="date" style={{ height: 30 }} value={to} onChange={(e) => refilter(setTo)(e.target.value)} title="Added to" aria-label="Added to" />
+				{activeFilters > 0 && <button className="btn ghost" onClick={clearFilters}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 				<div style={{ flex: 1 }} />
+				<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}><Download size={12} /> {exporting ? 'Exporting…' : 'Export CSV'}</button>
 				<button className="btn" onClick={() => setCreating(true)}><Plus size={12} /> Add candidate</button>
-			</div>
+			</FilterBar>
 
 			{selected.size > 0 && (
 				<div className="card" style={{ padding: 12, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -210,31 +234,43 @@ export default function InvestorReviewPage() {
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
 			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
-			<div className="card">
-				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No candidates in this view." onRetry={refreshAll}>
+			<div className="card" ref={cols.ref}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
+					{data ? `${data.total.toLocaleString()} candidate${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort{sort ? '' : ' (default: pending first, newest first)'}
+					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
+</div>
+				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No candidates match these filters.' : 'No candidates in this view.'} onRetry={refreshAll}>
 					<table className="data-table">
 						<thead>
 							<tr>
 								<th style={{ width: 28 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-								<th>Name</th><th>Category</th><th>Country</th><th>Enrichment</th><th>Assigned</th><th>Status</th><th style={{ textAlign: 'right' }} />
+								<SortableTh label="Added" field="added" sort={sort} onSort={onSort} />
+								<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
+								<SortableTh label="Category" field="category" sort={sort} onSort={onSort} />
+								<SortableTh label="Country" field="country" sort={sort} onSort={onSort} />
+								<SortableTh label="Enrichment" field="enrichment" sort={sort} onSort={onSort} />
+								<th>Assigned</th>
+								<SortableTh label="Status" field="status" sort={sort} onSort={onSort} />
+								<th style={{ textAlign: 'right' }} />
 							</tr>
 						</thead>
 						<tbody>
 							{rows.map((r) => (
 								<tr key={r.id}>
 									<td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} /></td>
+									<td className="num">{new Date(r.created_at).toLocaleDateString()}</td>
 									<td><div style={{ fontWeight: 600 }}>{r.name}</div>{r.website && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.website}</div>}</td>
-									<td>{r.category ?? '—'}</td>
+									<td>{investorCategoryLabel(r.category)}</td>
 									<td>{r.country ?? '—'}</td>
 									<td title={r.website ? (r.enrichment_error ?? undefined) : 'Enrichment needs a website — add one with Edit'}>
 										{/* Most deal-queued candidates have no website, so "pending" here never moved. */}
 										{!r.website && r.enrichment_status !== 'enriched'
 											? <Tag>no website</Tag>
-											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{r.enrichment_status}</Tag>}
+											: <Tag variant={r.enrichment_status === 'enriched' ? 'pos' : r.enrichment_status === 'failed' ? 'warn' : ''}>{tidy(r.enrichment_status)}</Tag>}
 									</td>
 									<td>{adminName(r.assigned_to)}</td>
 									<td>
-										<Tag variant={r.status === 'completed' ? 'pos' : r.status === 'skipped' ? 'warn' : ''}>{r.status}</Tag>
+										<Tag variant={r.status === 'completed' ? 'pos' : r.status === 'skipped' ? 'warn' : ''}>{tidy(r.status)}</Tag>
 										{r.status === 'skipped' && r.skip_reason && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.skip_reason}</div>}
 									</td>
 									<td style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>

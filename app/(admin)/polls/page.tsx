@@ -35,7 +35,7 @@ export default function PollsAdminPage() {
 	);
 	// The endpoint's default page is 50; the library is past that, so older reports were unpickable.
 	const { data: reports } = useSWR<ReportsResponse>(['/api/reports', { limit: 200 }], { dedupingInterval: 5 * 60_000 });
-	const reportTitle = (id: string) => reports?.data.find((r) => r.id === id)?.title ?? id.slice(0, 8);
+	const reportTitle = (id: string) => reports?.data.find((r) => r.id === id)?.title ?? (reports ? 'Report removed or unpublished' : '…');
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/admin/polls');
 

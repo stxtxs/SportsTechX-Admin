@@ -6,6 +6,7 @@ import { ExternalLink } from 'lucide-react';
 import { Modal } from '@/components/modal';
 import { PageHeader, StatCard, StatsPanel, AsyncState, Section } from '@/components/atoms';
 import { HBarDrilldown, ComboBarLine, type HBarRow } from '@/components/charts';
+import { tidy } from '@/lib/labels';
 
 const QUEUE_COLORS = ['#79CABD', '#6CA8FF', '#FFB36C', '#D99CFF', '#FF9CA8', '#9CE0C0', '#C0F4DE'];
 
@@ -25,7 +26,7 @@ interface ErrorRow { method: string; route: string; status_code: number; error_m
 
 // ── Background job metrics (existing) ──
 interface SummaryRow { metric_type: string; total_requests: string; avg_duration_ms: string; p95_duration_ms: string; max_duration_ms: number; success_count: string; error_count: string }
-interface SlowestRow { metric_type: string; queue_name: string; entity_type: string | null; entity_id: string | null; duration_ms: number; completed_at: string }
+interface SlowestRow { metric_type: string; queue_name: string; entity_type: string | null; entity_id: string | null; entity_name?: string | null; duration_ms: number; completed_at: string }
 interface PerfResponse { summary: SummaryRow[]; slowest: SlowestRow[]; range: string }
 
 const RANGES = ['1h', '6h', '24h', '7d', '30d'] as const;
@@ -273,7 +274,7 @@ export default function PerformancePage() {
 							{slowest.map((r, i) => (
 								<tr key={`${r.queue_name}-${i}`}>
 									<td>{r.queue_name}</td>
-									<td>{r.entity_type ? `${r.entity_type}${r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}` : '—'}</td>
+									<td>{r.entity_type ? `${tidy(r.entity_type)}${r.entity_name ? ` · ${r.entity_name}` : r.entity_id ? ` · ${r.entity_id.slice(0, 8)}` : ''}` : '—'}</td>
 									<td className="num">{ms(r.duration_ms)}</td>
 									<td>{r.completed_at ? new Date(r.completed_at).toLocaleString() : '—'}</td>
 								</tr>

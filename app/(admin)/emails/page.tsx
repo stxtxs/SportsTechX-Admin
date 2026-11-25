@@ -277,6 +277,7 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 					<span style={{ marginLeft: 'auto' }}>{cols.menu}</span>
 </div>
 				<AsyncState loading={isLoading} error={error} empty={(data?.rows.length ?? 0) === 0} emptyMsg="No emails match." onRetry={() => void mutate()}>
+					<div className="table-scroll">
 					<table className="data-table">
 						<thead>
 							<tr>
@@ -303,6 +304,7 @@ function Log({ batch, clearBatch }: { batch: string | undefined; clearBatch: () 
 							))}
 						</tbody>
 					</table>
+					</div>
 					<Pager page={page} totalPages={data ? Math.ceil(data.total / PAGE) : undefined} onPage={setPage} />
 				</AsyncState>
 			</div>

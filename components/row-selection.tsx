@@ -47,7 +47,8 @@ function exportSelected(bar: HTMLElement | null, name: string) {
 	const heads = [...table.querySelectorAll(':scope > thead > tr:first-child > th')];
 	const cols = heads.map((th, i) => ({ i, label: (th.textContent ?? '').replace(/[↕▲▼]/g, '').trim() })).filter((c) => c.label && visible(heads[c.i]!));
 	const rows = [...table.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr')].filter((tr) => tr.querySelector('input.row-sel:checked'));
-	const esc = (v: string) => `"${v.replace(/\s+/g, ' ').trim().replace(/"/g, '""')}"`;
+	// A leading = + @ (or - not starting a number) would run as a formula in Excel: neutralise it.
+	const esc = (v: string) => { const t = v.replace(/\s+/g, ' ').trim(); return `"${(/^[=+@]|^-(?![\d.])/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`; };
 	const csv = [cols.map((c) => esc(c.label)).join(','), ...rows.map((tr) => cols.map((c) => esc((tr.cells[c.i] as HTMLElement | undefined)?.innerText ?? '')).join(','))].join('\n');
 	const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
 	const a = document.createElement('a'); a.href = url; a.download = `${name}-selected-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url);

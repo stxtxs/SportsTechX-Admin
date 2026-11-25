@@ -66,6 +66,9 @@ export const pipelineStatusLabel = lookup({ new: 'New', reviewing: 'Reviewing', 
 export const enrichmentStatusLabel = lookup({ pending: 'Not enriched yet', enriching: 'Enriching…', enriched: 'Enriched', failed: 'Failed' });
 
 /** Deal Flow (scout_deals) and the interest requests on it. */
+/** Funding round: Verified Raises carry the founder's code; Circle deals already carry a readable name (kept as is). */
+export const roundLabel = (v: string | null | undefined): string =>
+	v ? ({ pre_seed: 'Pre-seed', seed: 'Seed', series_a: 'Series A', series_b_plus: 'Series B+', bridge: 'Bridge', other: 'Other' } as Record<string, string>)[v] ?? v : '—';
 export const scoutDealStatusLabel = lookup({
 	draft: 'Draft', pending: 'Waiting for review', reviewing: 'In review', live: 'Live', changes_requested: 'Changes requested', closed: 'Closed',
 });

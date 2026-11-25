@@ -163,7 +163,7 @@ export default function ReportsAdminPage() {
 			return (x < y ? -1 : 1) * (sort.startsWith('-') ? -1 : 1);
 		});
 	const activeFilters = (term ? 1 : 0) + (status ? 1 : 0);
-	const pg = useClientPage(reports, `${term}|${status}|${sort}`);
+	const pg = useClientPage(reports, 'rep', `${term}|${status}|${sort}`);
 	const sel = useRowSelection(pg.rows.map((r) => r.id), `${term}|${status}|${sort}|${pg.rows[0]?.id ?? ''}`);
 	const bulkPublish = async (next: boolean) => {
 		if (!(await ask(`${next ? 'Publish' : 'Move to draft'} ${sel.size} report${sel.size === 1 ? '' : 's'}?`))) return;

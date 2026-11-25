@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useUrlNumber } from '@/hooks/use-url-state';
 
 /**
  * Tiny shared atoms for admin pages. Mirrors the small subset of components
@@ -379,17 +380,24 @@ export function Pager({ page, totalPages, onPage }: { page: number; totalPages?:
 }
 
 /**
- * Client-side paging for lists the server returns whole. Clamps the page when the list
- * shrinks (e.g. after filtering or a delete), so the view never lands on an empty page.
+ * Client-side paging for lists the server returns whole. The page lives in the URL
+ * (`?<ns>.page=2`), so reload, Back and shared links keep it. Clamps the page when the list
+ * shrinks (filtering, a delete), so the view never lands on an empty page.
  */
-export function useClientPage<T>(rows: T[], resetKey = '', size = 25): { rows: T[]; pager: React.ReactNode } {
-	// Back to page 1 whenever the filters/tab (resetKey) change.
-	const [st, setSt] = React.useState({ key: resetKey, page: 1 });
+export function useClientPage<T>(rows: T[], ns: string, resetKey = '', size = 25): { rows: T[]; pager: React.ReactNode } {
+	const [page, setPage] = useUrlNumber(ns, 'page', 1);
+	// Back to page 1 when the filters/tab (resetKey) change — not on first render, which may be a restored page.
+	const lastKey = React.useRef(resetKey);
+	React.useEffect(() => {
+		if (lastKey.current === resetKey) return;
+		lastKey.current = resetKey;
+		setPage(1);
+	}, [resetKey, setPage]);
 	const totalPages = Math.max(1, Math.ceil(rows.length / size));
-	const cur = Math.min(st.key === resetKey ? st.page : 1, totalPages);
+	const cur = Math.min(lastKey.current === resetKey ? page : 1, totalPages);
 	return {
 		rows: rows.slice((cur - 1) * size, cur * size),
-		pager: totalPages > 1 ? <div style={{ padding: '0 var(--space-4) 12px' }}><Pager page={cur} totalPages={totalPages} onPage={(page) => setSt({ key: resetKey, page })} /></div> : null,
+		pager: totalPages > 1 ? <div style={{ padding: '0 var(--space-4) 12px' }}><Pager page={cur} totalPages={totalPages} onPage={setPage} /></div> : null,
 	};
 }
 

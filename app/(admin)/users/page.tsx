@@ -16,6 +16,7 @@ import { Select } from '@/components/select';
 import { CreateAccountModal } from './account-access';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar } from '@/components/row-selection';
 
 interface UserStats { total: number; admins: number; by_tier: Bucket[]; by_role: Bucket[]; signups_by_month: Bucket[] }
 interface AuthRow { email: string | null; created_at?: string | null; last_sign_in_at?: string | null; provider?: string | null }
@@ -163,6 +164,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/admin/users');
 	const users = data?.data ?? [];
+	const sel = useRowSelection(users.map((u) => u.id));
 	const onSort = (s: string) => { setSort(s); setPage(1); };
 	const cols = useTableColumns('users');
 	const dateInput = (label: string, value: string, set: (v: string) => void) => (
@@ -353,10 +355,12 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 					{data ? `${data.total.toLocaleString()} user${data.total === 1 ? '' : 's'}${activeFilters ? ' match these filters' : ''}` : 'Loading…'} · click a column header to sort
 				</div>
 				<AsyncState loading={isLoading} error={error} empty={users.length === 0} emptyMsg={activeFilters ? 'No users match these filters.' : 'No users yet.'} onRetry={() => void refresh()}>
+				<SelectionBar sel={sel} exportName="users" />
 				<div className="table-scroll" ref={cols.ref}>
 				<table className="data-table">
 					<thead>
 						<tr>
+							{sel.headCell}
 							<SortableTh label="User" field="name" sort={sort} onSort={onSort} />
 							<th className="hide-md">Company</th>
 							<SortableTh label="Plan" field="tier" sort={sort} onSort={onSort} />
@@ -372,6 +376,7 @@ export function UsersView({ view }: { view: 'directory' | 'stats' | 'charts' }) 
 					<tbody>
 						{users.map((u) => (
 								<tr key={u.id} style={{ cursor: 'pointer' }} onClick={(e) => { if (!(e.target as HTMLElement).closest('a,button,input')) router.push(`/users/${u.id}`); }}>
+									{sel.cell(u.id)}
 									<td>
 										<div style={{ fontWeight: 600 }}>{u.display_name || u.email}</div>
 										{u.display_name && <div style={{ fontSize: 12, color: 'var(--fg-muted)' }}>{u.email}</div>}

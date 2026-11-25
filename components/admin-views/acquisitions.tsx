@@ -20,6 +20,7 @@ import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { GeoFacetFilter, DateRangeFilter, ListCount, fmtListDate } from '@/components/filters';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar } from '@/components/row-selection';
 import { acquisitionTypeLabel, businessModelLabel } from '@/lib/labels';
 
 interface Acquisition {
@@ -124,6 +125,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 	};
 
 	const rows = data?.data ?? [];
+	const sel = useRowSelection(rows.map((a) => a.id));
 	return (
 		<div>
 			{!embedded && <PageHeader kicker={`M&A · ${(stats.data?.total ?? data?.total ?? 0).toLocaleString()} deals`} title="Acquisitions" />}
@@ -193,9 +195,11 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 			<div className="card">
 				<ListCount total={data?.total} noun={['acquisition', 'acquisitions']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No acquisitions match these filters.' : 'No acquisitions yet.'} onRetry={() => void refresh()}>
+					<SelectionBar sel={sel} exportName="acquisitions" />
 					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
 						<thead><tr>
+							{sel.headCell}
 							<SortableTh label="Acquiree" field="acquiree_name" sort={sort} onSort={onSort} />
 							<SortableTh label="Acquirer" field="acquirer_name" sort={sort} onSort={onSort} />
 							<SortableTh label="Year" field="acquisition_date" sort={sort} onSort={onSort} />
@@ -209,6 +213,7 @@ export function AcquisitionsView({ embedded = false }: { embedded?: boolean }) {
 						<tbody>
 							{rows.map((a) => (
 								<tr key={a.id}>
+									{sel.cell(a.id)}
 									<td>{a.acquiree_name ?? '—'}</td>
 									<td>{a.acquirer_name ?? '—'}</td>
 									<td className="num">{a.acquisition_year ?? '—'}</td>

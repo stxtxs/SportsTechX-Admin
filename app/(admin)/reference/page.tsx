@@ -7,7 +7,7 @@ import { Plus, Trash2, Save, Search } from 'lucide-react';
 import { Modal } from '@/components/modal';
 import { api } from '@/lib/api';
 import { useConfirm } from '@/components/confirm';
-import { PageHeader, PillTabs } from '@/components/atoms';
+import { PageHeader, PillTabs, useClientPage } from '@/components/atoms';
 import { Select } from '@/components/select';
 import { confirmDelete } from '@/lib/delete-impact';
 
@@ -101,6 +101,7 @@ export default function ReferenceAdminPage() {
 	const showCountryCols = kind === 'countries';
 	const filtered = q.trim() ? rows.filter((r) => `${r.name} ${r.slug}`.toLowerCase().includes(q.trim().toLowerCase())) : null;
 	const tree = filtered ? filtered.map((r) => ({ ...r, depth: 0 })) : orderTree(rows);
+	const pg = useClientPage(tree, `${kind}|${q}`);
 
 	return (
 		<div>
@@ -148,7 +149,7 @@ export default function ReferenceAdminPage() {
 					<tbody>
 						{tree.length === 0 ? (
 							<tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--fg-muted)' }}>{q.trim() ? 'No matches.' : 'No entries.'}</td></tr>
-						) : tree.map((r) => {
+						) : pg.rows.map((r) => {
 							const parent = r.parent_id ? rows.find((x) => x.id === r.parent_id) : null;
 							return (
 								<tr key={r.id}>
@@ -168,6 +169,7 @@ export default function ReferenceAdminPage() {
 						})}
 					</tbody>
 				</table>
+				{pg.pager}
 			</div>
 		</>)}
 		</div>

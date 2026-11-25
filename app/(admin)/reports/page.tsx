@@ -9,7 +9,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Loading, SortableTh } from '@/components/atoms';
+import { PageHeader, AsyncState, Loading, SortableTh, useClientPage } from '@/components/atoms';
 import { FilterSelect } from '@/components/filters';
 import { ListCount, fmtListDate } from '@/components/filters';
 import { useUrlState } from '@/hooks/use-url-state';
@@ -20,6 +20,7 @@ import { ReportEditionsModal } from '@/components/report-editions-modal';
 import { confirmDelete } from '@/lib/delete-impact';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar, runBulk } from '@/components/row-selection';
 
 interface Report {
 	id: string;
@@ -162,6 +163,17 @@ export default function ReportsAdminPage() {
 			return (x < y ? -1 : 1) * (sort.startsWith('-') ? -1 : 1);
 		});
 	const activeFilters = (term ? 1 : 0) + (status ? 1 : 0);
+	const pg = useClientPage(reports, `${term}|${status}|${sort}`);
+	const sel = useRowSelection(pg.rows.map((r) => r.id), `${term}|${status}|${sort}|${pg.rows[0]?.id ?? ''}`);
+	const bulkPublish = async (next: boolean) => {
+		if (!(await ask(`${next ? 'Publish' : 'Move to draft'} ${sel.size} report${sel.size === 1 ? '' : 's'}?`))) return;
+		await runBulk(sel.ids, (id) => api('PATCH', `/api/admin/reports/${id}/flags`, { is_published: next }), next ? 'Published' : 'Moved to draft');
+		sel.clear(); void refresh();
+	};
+	const bulkReindex = async () => {
+		await runBulk(sel.ids, (id) => api('POST', `/api/admin/embeddings/reports/${id}/reindex`), 'Re-embedding queued');
+		sel.clear();
+	};
 	const onSort = (s: string) => setSort(s);
 	return (
 		<div>
@@ -230,9 +242,15 @@ export default function ReportsAdminPage() {
 				</div>
 				<ListCount total={data ? reports.length : undefined} noun={['report', 'reports']} filters={activeFilters} onClear={() => { setSearch(''); setStatus(''); }}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={reports.length === 0} emptyMsg={activeFilters ? 'No reports match these filters.' : 'No reports yet.'} onRetry={() => void refresh()}>
+				<SelectionBar sel={sel} exportName="reports">
+					<button className="btn ghost" onClick={() => void bulkPublish(true)}><Eye size={12} /> Publish</button>
+					<button className="btn ghost" onClick={() => void bulkPublish(false)}><EyeOff size={12} /> Move to draft</button>
+					<button className="btn ghost" onClick={() => void bulkReindex()}><RefreshCw size={12} /> Reindex</button>
+				</SelectionBar>
 				<div className="table-scroll" ref={cols.ref}>
 				<table className="data-table">
 					<thead><tr>
+						{sel.headCell}
 						<SortableTh label="Title" field="title" sort={sort} onSort={onSort} />
 						<th>Model</th>
 						<SortableTh label="Period" field="period" sort={sort} onSort={onSort} />
@@ -243,8 +261,9 @@ export default function ReportsAdminPage() {
 						<th style={{ textAlign: 'right' }}></th>
 					</tr></thead>
 					<tbody>
-						{reports.map((r) => (
+						{pg.rows.map((r) => (
 							<tr key={r.id}>
+								{sel.cell(r.id)}
 								<td>{r.title}{r.show_on_dashboard && <span className="tag" style={{ marginLeft: 6 }}>Featured</span>}</td>
 								<td>{r.has_sections ? <span className="tag pos">Sections</span> : <span className="tag">PDF</span>}</td>
 								<td className="num">{r.report_year ? `${r.report_month ? MONTHS[r.report_month - 1] + ' ' : ''}${r.report_year}` : '—'}</td>
@@ -287,6 +306,7 @@ export default function ReportsAdminPage() {
 					</tbody>
 				</table>
 				</div>
+				{pg.pager}
 				</AsyncState>
 			</div>
 		</div>

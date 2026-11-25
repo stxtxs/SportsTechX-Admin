@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { useConfirm } from '@/components/confirm';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Tag, Loading } from '@/components/atoms';
+import { PageHeader, AsyncState, Tag, Loading, useClientPage } from '@/components/atoms';
 import { TabbedForm, Field, useTabs } from '@/components/tabbed-form';
 import { YearSelect } from '@/components/year-select';
 import { useEditPayload } from '@/hooks/use-edit-payload';
@@ -67,6 +67,7 @@ export default function FeaturedListsPage() {
 	// has no page that renders a featured list yet. Bring it back with that page.
 
 	const lists = data ?? [];
+	const pg = useClientPage(lists);
 	return (
 		<div>
 			<PageHeader kicker="Curation · featured lists" title="Featured lists" subtitle="Curated collections, filter-based or hand-picked. Atlas doesn't show them yet — no public page or share link." />
@@ -85,7 +86,7 @@ export default function FeaturedListsPage() {
 					<table className="data-table">
 						<thead><tr><th>Name</th><th>Entity</th><th>Mode</th><th style={{ textAlign: 'right' }}>Items</th><th>Period</th><th>Visibility</th><th>Premium</th><th style={{ textAlign: 'right' }} /></tr></thead>
 						<tbody>
-							{lists.map((l) => (
+							{pg.rows.map((l) => (
 								<tr key={l.id}>
 									<td><div style={{ maxWidth: 420 }}><div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>{l.description && <div title={l.description} style={{ fontSize: 11, color: 'var(--fg-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.description}</div>}</div></td>
 									<td>{tidy(l.entity_type)}</td>
@@ -102,6 +103,7 @@ export default function FeaturedListsPage() {
 							))}
 						</tbody>
 					</table>
+					{pg.pager}
 				</AsyncState>
 			</div>
 		</div>

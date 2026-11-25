@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { useConfirm } from '@/components/confirm';
 import { FilterBar, FilterSelect } from '@/components/filters';
 import { Modal } from '@/components/modal';
-import { PageHeader, AsyncState, Section, Tag } from '@/components/atoms';
+import { PageHeader, AsyncState, Section, Tag, useClientPage } from '@/components/atoms';
 import { tidy, tierLabel } from '@/lib/labels';
 
 interface FeatureRow {
@@ -84,6 +84,7 @@ export default function FeaturesAdminPage() {
 		(!cat || r.category === cat) &&
 		(!q || r.name.toLowerCase().includes(q.toLowerCase()) || r.slug.toLowerCase().includes(q.toLowerCase())),
 	);
+	const pg = useClientPage(rows, `${cat}|${q}|${includeInactive}`);
 
 	return (
 		<div>
@@ -129,7 +130,7 @@ export default function FeaturesAdminPage() {
 						</tr>
 					</thead>
 					<tbody>
-						{rows.map((row) => (
+						{pg.rows.map((row) => (
 							<tr key={row.id} style={{ opacity: row.is_active ? 1 : 0.5 }}>
 								<td>
 									<div style={{ fontWeight: 600 }}>{row.name}{!row.is_active && <Tag>Inactive</Tag>}</div>
@@ -165,6 +166,7 @@ export default function FeaturesAdminPage() {
 						))}
 					</tbody>
 				</table>
+				{pg.pager}
 				</AsyncState>
 			</Section>
 		</div>

@@ -239,6 +239,43 @@ body {
 .data-table tbody td:not([colspan]):not(.wrap):has(input, textarea, select, [aria-expanded]) > div { overflow: visible; }
 .data-table tbody td.wrap { white-space: normal; min-width: 220px; }
 
+/* --- Action cells are never clipped. The one-line rule above capped them at 320px and hid
+ * the overflow, which cut off the first buttons of a row (e.g. Edit on Reports). */
+.data-table tbody td:not([colspan]):not(.wrap):has(button, .btn),
+.data-table tbody td:not([colspan]):not(.wrap):has(button, .btn) > div { overflow: visible; max-width: none; }
+
+/* --- The actions column stays pinned to the right edge while a wide table scrolls sideways,
+ * so a row can always be opened / acted on without scrolling to find its buttons. */
+.data-table:not(td *) > tbody > tr > td:last-child:not([colspan]):has(.btn),
+.data-table:not(td *):has(> tbody > tr > td:last-child .btn) > thead > tr > th:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: -10px 0 10px -10px rgba(0, 0, 0, 0.35);
+}
+.data-table:not(td *) > tbody > tr:hover > td:last-child:has(.btn) { background: var(--bg-2); }
+/* Some action cells set display:flex inline, which stops them being real table cells (they
+ * can't pin or line up). Keep them cells and space the buttons with margins instead. */
+.data-table td[style*="display: flex"] { display: table-cell !important; white-space: nowrap; vertical-align: middle; }
+.data-table td[style*="display: flex"][style*="flex-end"] { text-align: right; }
+.data-table td[style*="display: flex"] > * + * { margin-left: 6px; }
+
+/* --- List tables scroll inside their own frame, sized to the screen: the column headers stay
+ * visible at the top while scrolling, and the pager right below the frame stays in reach.
+ * Applies to the element that directly holds a list table (not tables inside detail rows or modals). */
+:is(div, section):has(> table.data-table:not(td *)):not(.modal-card *) {
+  max-height: calc(100vh - var(--topbar-h) - 120px);
+  overflow: auto !important; /* beats inline overflow:hidden on a few cards, which would clip rows */
+}
+table.data-table:not(td *) > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+.data-table:not(td *):has(> tbody > tr > td:last-child .btn) > thead > tr > th:last-child { z-index: 3; }
+
 /* --- Pills never spill out of their box ------------------------------------ */
 .tag { white-space: nowrap; flex-shrink: 0; max-width: 100%; }
 .tag:not(:has(svg)) {
@@ -795,3 +832,15 @@ textarea.search-input { border-radius: var(--radius-md); }
 .act-field { color: var(--fg-muted); }
 .act-old { color: var(--fg-muted); text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--neg) 60%, transparent); }
 .act-new { color: var(--fg); font-weight: 600; }
+
+/* --- Row selection (components/row-selection.tsx) */
+.data-table th.sel-col, .data-table td.sel-col { width: 36px; padding-left: 14px; padding-right: 0; }
+.data-table .sel-col input { cursor: pointer; width: 15px; height: 15px; vertical-align: middle; }
+.selection-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  position: sticky; left: 0; /* stays put if the card scrolls sideways */
+}
+.selection-bar[hidden] { display: none; }

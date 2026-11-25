@@ -26,6 +26,7 @@ import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber, forgetListQuery } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar, runBulk } from '@/components/row-selection';
 import { entityTypeLabel, tidy } from '@/lib/labels';
 import Link from 'next/link';
 
@@ -158,6 +159,12 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 	};
 
 	const entities = data?.data ?? [];
+	const sel = useRowSelection(entities.map((e) => e.id));
+	const bulkStatus = async (status: 'active' | 'inactive') => {
+		if (!(await ask(`Mark ${sel.size} ${sel.size === 1 ? type : `${type}s`} ${status}?`))) return;
+		await runBulk(sel.ids, (id) => api('PATCH', `/api/admin/ecosystem-entities/${id}`, { status }), `Marked ${status}`);
+		sel.clear(); void refresh();
+	};
 	return (
 		<div>
 			{!embedded && <PageHeader kicker={`Ecosystem · ${(stats.data?.total ?? 0).toLocaleString()} entities`} title="Programs & events" />}
@@ -252,9 +259,14 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 			<div className="card">
 				<ListCount total={data?.total} noun={[type, `${type}s`]} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={entities.length === 0} emptyMsg={activeFilters ? `No ${type}s match these filters.` : `No ${type}s yet.`} onRetry={() => void refresh()}>
+					<SelectionBar sel={sel} exportName={`${type}s`}>
+						<button className="btn ghost" onClick={() => void bulkStatus('active')}>Mark active</button>
+						<button className="btn ghost" onClick={() => void bulkStatus('inactive')}>Mark inactive</button>
+					</SelectionBar>
 					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
 						<thead><tr>
+							{sel.headCell}
 							<SortableTh label="Name" field="name" sort={effSort} onSort={onSort} />
 							<th className="hide-md">Slug</th><th>Category</th><th>Status</th><th>HQ</th>
 							<SortableTh label="Founded" field="founded_year" sort={effSort} onSort={onSort} />
@@ -265,6 +277,7 @@ export function EcosystemView({ embedded = false, entityType }: { embedded?: boo
 						<tbody>
 							{entities.map((e) => (
 								<tr key={e.id}>
+									{sel.cell(e.id)}
 									<td><button className="btn ghost" style={{ padding: '2px 4px', fontWeight: 600, textAlign: 'left' }} onClick={() => setViewingId(e.id)}>{e.name}</button></td>
 									<td className="num hide-md">{e.slug ?? '—'}</td>
 									<td>{e.category ?? '—'}</td>

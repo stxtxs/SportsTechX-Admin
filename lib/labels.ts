@@ -18,7 +18,7 @@ export const accessSourceLabel = lookup({
 	claim_trial: 'Claim reward trial (30 days)',
 	playmakers: 'Playmakers member',
 	admin_tier: 'Set by an admin (permanent)',
-	signup: 'Free signup',
+	signup: 'Free plan',
 	legacy: 'Carried over from the old Hub',
 	revoked: 'Revoked by an admin',
 	unknown: 'Trial or admin grant (before 24 Nov)',

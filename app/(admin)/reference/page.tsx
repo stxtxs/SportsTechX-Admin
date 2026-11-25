@@ -41,7 +41,11 @@ interface RefRow {
 	iso2?: string | null;
 	continent?: string | null;
 	region?: string | null;
+	display_heading?: string | null;
 }
+
+/** The five Preferences headings a tag can sit under (Rohn's Preferences doc, section 2). */
+const TAG_HEADINGS = ['Technology', 'Commerce', 'Engagement', 'Health', 'Impact'];
 
 interface RefResponse { data: RefRow[] }
 
@@ -99,6 +103,7 @@ export default function ReferenceAdminPage() {
 	const showParent = kind !== 'round-types' && kind !== 'countries';
 	const showSortOrder = kind === 'sectors' || kind === 'round-types';
 	const showCountryCols = kind === 'countries';
+	const showHeading = kind === 'tech-tags';
 	const filtered = q.trim() ? rows.filter((r) => `${r.name} ${r.slug}`.toLowerCase().includes(q.trim().toLowerCase())) : null;
 	const tree = filtered ? filtered.map((r) => ({ ...r, depth: 0 })) : orderTree(rows);
 	const pg = useClientPage(tree, 'ref', `${kind}|${q}`);
@@ -141,6 +146,7 @@ export default function ReferenceAdminPage() {
 							{showCountryCols && <th>ISO2</th>}
 							{showCountryCols && <th>Continent</th>}
 							{showCountryCols && <th>Region</th>}
+							{showHeading && <th>Heading</th>}
 							{showParent && <th>Parent</th>}
 							{showSortOrder && <th>Sort</th>}
 							<th />
@@ -158,6 +164,7 @@ export default function ReferenceAdminPage() {
 									{showCountryCols && <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>{r.iso2 ?? '—'}</td>}
 									{showCountryCols && <td style={{ fontSize: 12 }}>{r.continent ?? '—'}</td>}
 									{showCountryCols && <td style={{ fontSize: 12 }}>{r.region ?? '—'}</td>}
+									{showHeading && <td style={{ fontSize: 12 }}>{r.display_heading ?? '—'}</td>}
 									{showParent && <td style={{ color: 'var(--fg-muted)' }}>{parent?.name ?? '—'}</td>}
 									{showSortOrder && <td>{r.sort_order ?? '—'}</td>}
 									<td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -185,12 +192,14 @@ function RefModal({ kind, initial, parents, onClose, onSaved }: { kind: Kind; in
 	const [iso2, setIso2] = useState(initial?.iso2 ?? '');
 	const [continent, setContinent] = useState(initial?.continent ?? '');
 	const [region, setRegion] = useState(initial?.region ?? '');
+	const [heading, setHeading] = useState(initial?.display_heading ?? '');
 	const [pending, setPending] = useState(false);
 
 	const showParent = kind !== 'round-types' && kind !== 'countries';
 	const showDescription = kind === 'sectors';
 	const showSort = kind === 'sectors' || kind === 'round-types';
 	const showCountryFields = kind === 'countries';
+	const showHeadingField = kind === 'tech-tags';
 
 	const submit = async () => {
 		setPending(true);
@@ -205,6 +214,7 @@ function RefModal({ kind, initial, parents, onClose, onSaved }: { kind: Kind; in
 				body.continent = continent || null;
 				body.region = region || null;
 			}
+			if (showHeadingField) body.display_heading = heading || null;
 			if (initial) await api('PATCH', `/api/admin/reference/${kind}/${initial.id}`, body);
 			else await api('POST', `/api/admin/reference/${kind}`, body);
 			toast.success(initial ? 'Saved' : 'Created');
@@ -233,6 +243,11 @@ function RefModal({ kind, initial, parents, onClose, onSaved }: { kind: Kind; in
 				{showParent && (
 					<Field label="Parent (optional)">
 						<Select value={parentId} onChange={setParentId} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="— top level —" options={[{ value: '', label: '— top level —' }, ...parents.filter((p) => p.id !== initial?.id).map((p) => ({ value: p.id, label: p.name }))]} />
+					</Field>
+				)}
+				{showHeadingField && (
+					<Field label="Preferences heading">
+						<Select value={heading} onChange={setHeading} width="100%" style={{ display: 'block', width: '100%' }} placeholder="— none —" options={[{ value: '', label: '— none —' }, ...TAG_HEADINGS.map((h) => ({ value: h, label: h }))]} />
 					</Field>
 				)}
 				{showDescription && <Field label="Description"><textarea className="search-input" style={{ minHeight: 60 }} value={description} onChange={(e) => setDescription(e.target.value)} /></Field>}

@@ -20,6 +20,7 @@ interface AppSettings {
 	vc_benchmark_enabled: boolean;
 	vc_benchmark_survey_url: string | null;
 	vc_benchmark_release: string;
+	feedback_default_credits: number;
 	updated_at: string;
 }
 
@@ -28,6 +29,7 @@ export default function SystemSettingsPage() {
 	const [saving, setSaving] = useState(false);
 	const [survey, setSurvey] = useState('');
 	const [release, setRelease] = useState('');
+	const [fbCredits, setFbCredits] = useState('');
 	// Fill the inputs once; later revalidations (tab focus) must not wipe what's being typed.
 	const filled = useRef(false);
 	useEffect(() => {
@@ -35,6 +37,7 @@ export default function SystemSettingsPage() {
 		filled.current = true;
 		setSurvey(data.vc_benchmark_survey_url ?? '');
 		setRelease(data.vc_benchmark_release ?? '');
+		setFbCredits(String(data.feedback_default_credits ?? 50));
 	}, [data]);
 
 	const save = async (patch: Partial<AppSettings>, done: string) => {
@@ -53,6 +56,9 @@ export default function SystemSettingsPage() {
 	const benchmarkOn = data?.vc_benchmark_enabled ?? false;
 	const surveyChanged = data && survey.trim() !== (data.vc_benchmark_survey_url ?? '');
 	const releaseChanged = data && release !== data.vc_benchmark_release;
+	const fbN = Number(fbCredits);
+	const fbValid = Number.isInteger(fbN) && fbN >= 1 && fbN <= 10000;
+	const fbChanged = data && fbN !== data.feedback_default_credits;
 
 	return (
 		<>
@@ -101,6 +107,18 @@ export default function SystemSettingsPage() {
 								</div>
 							</label>
 						</div>
+					</Section>
+				</div>
+
+				<div style={{ marginTop: 'var(--space-4)' }}>
+					<Section title="Feedback rewards" meta="Review › Feedback">
+						<label style={{ display: 'grid', gap: 6, fontSize: 12.5, maxWidth: 420 }}>
+							<span style={{ fontWeight: 600 }}>Default STX credits for an approved report <span style={{ color: 'var(--fg-muted)', fontWeight: 400 }}>· pre-filled on the Feedback page, changeable per report</span></span>
+							<div style={{ display: 'flex', gap: 8 }}>
+								<input className="search-input" type="number" min={1} max={10000} style={{ flex: 1 }} value={fbCredits} onChange={(e) => setFbCredits(e.target.value)} />
+								<button className="btn" disabled={saving || !fbChanged || !fbValid} onClick={() => void save({ feedback_default_credits: fbN }, 'Default reward saved')}>Save</button>
+							</div>
+						</label>
 					</Section>
 				</div>
 			</AsyncState>

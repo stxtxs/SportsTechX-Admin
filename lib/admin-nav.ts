@@ -2,12 +2,12 @@ import {
 	LayoutDashboard, Briefcase, Users, FilePlus, FileText, Layers, Activity, ShoppingCart, CreditCard, ToggleLeft,
 	Banknote, Sparkles, Tag, BookOpen, Gauge, Receipt, Package, Handshake, Download, Coins, Newspaper, Undo2,
 	Images, Rocket, CalendarClock, SlidersHorizontal, ShieldCheck, DatabaseZap, Mail, Pin, Award, History,
-	Vote, Workflow, GraduationCap,
+	Vote, Workflow, GraduationCap, MessageSquareWarning,
 } from 'lucide-react';
 
 export type IconType = typeof LayoutDashboard;
 /** `count`: the key in /api/admin/stats/nav whose number shows beside the item (things waiting). */
-export interface NavItem { href: string; label: string; Icon: IconType; count?: Array<'claims' | 'data_changes' | 'startups' | 'investors' | 'deal_flow' | 'intros' | 'sessions' | 'refunds'>; keywords?: string }
+export interface NavItem { href: string; label: string; Icon: IconType; count?: Array<'claims' | 'data_changes' | 'startups' | 'investors' | 'deal_flow' | 'intros' | 'sessions' | 'refunds' | 'feedback'>; keywords?: string }
 export interface NavGroup { id: string; label: string; items: NavItem[]; collapsedByDefault?: boolean }
 
 /**
@@ -27,6 +27,7 @@ export const NAV_GROUPS: NavGroup[] = [
 		{ label: 'Intro requests', href: '/intro-requests', Icon: Handshake, count: ['intros'], keywords: 'introductions founders investors' },
 		{ label: 'Strategy sessions', href: '/strategy-sessions', Icon: CalendarClock, count: ['sessions'], keywords: 'calls bookings meetings' },
 		{ label: 'Refunds', href: '/refunds', Icon: Undo2, count: ['refunds'], keywords: 'money back downgrade' },
+		{ label: 'Feedback', href: '/feedback', Icon: MessageSquareWarning, count: ['feedback'], keywords: 'bugs reports feature requests users' },
 	] },
 	{ id: 'catalog', label: 'Catalog', items: [
 		{ label: 'Companies & Deals', href: '/companies', Icon: Briefcase, keywords: 'startups funding rounds m&a acquisitions' },

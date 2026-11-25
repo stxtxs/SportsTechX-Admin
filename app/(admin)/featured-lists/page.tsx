@@ -67,7 +67,7 @@ export default function FeaturedListsPage() {
 	// has no page that renders a featured list yet. Bring it back with that page.
 
 	const lists = data ?? [];
-	const pg = useClientPage(lists);
+	const pg = useClientPage(lists, 'flist');
 	return (
 		<div>
 			<PageHeader kicker="Curation · featured lists" title="Featured lists" subtitle="Curated collections, filter-based or hand-picked. Atlas doesn't show them yet — no public page or share link." />

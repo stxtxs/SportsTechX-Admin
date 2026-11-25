@@ -34,6 +34,7 @@ import { MergeModal } from '@/components/merge-modal';
 import { useUrlState, useUrlNumber, forgetListQuery } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar, runBulk } from '@/components/row-selection';
 import { companyStatusLabel } from '@/lib/labels';
 
 interface Company {
@@ -124,6 +125,12 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 	const sectorSegments = toSegments(stats.data?.by_sector ?? []);
 
 	const refresh = () => mutate((key) => Array.isArray(key) && key[0] === '/api/companies');
+	const sel = useRowSelection((data?.data ?? []).map((c) => c.id), JSON.stringify([filterState.map(([v]) => v), sort, page]));
+	const bulkHide = async (hide: boolean) => {
+		if (!(await ask(`${hide ? 'Hide' : 'Show'} ${sel.size} compan${sel.size === 1 ? 'y' : 'ies'} ${hide ? 'from' : 'to'} Atlas users?`))) return;
+		await runBulk(sel.ids, (id) => api('PATCH', `/api/admin/companies/${id}`, { is_hidden: hide }), hide ? 'Hidden' : 'Shown');
+		sel.clear(); void refresh();
+	};
 
 	const remove = async (id: string, name: string) => {
 		if (!(await confirmDelete(ask, 'company', id, name))) return;
@@ -219,9 +226,14 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 			<div className="card">
 				<ListCount total={data?.total} noun={['company', 'companies']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={companies.length === 0} emptyMsg={activeFilters ? 'No companies match these filters.' : 'No companies yet.'} onRetry={() => void refresh()}>
+					<SelectionBar sel={sel} exportName="companies">
+						<button className="btn ghost" onClick={() => void bulkHide(true)}>Hide from users</button>
+						<button className="btn ghost" onClick={() => void bulkHide(false)}>Show to users</button>
+					</SelectionBar>
 					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
 						<thead><tr>
+							{sel.headCell}
 							<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
 							<th className="hide-md">Slug</th><th>Sector</th><th>HQ</th>
 							<SortableTh label="Founded" field="founded_year" sort={sort} onSort={onSort} />
@@ -233,6 +245,7 @@ export function CompaniesView({ embedded = false }: { embedded?: boolean }) {
 						<tbody>
 							{companies.map((c) => (
 								<tr key={c.id}>
+									{sel.cell(c.id)}
 									<td>{c.name}</td>
 									<td className="num hide-md">{c.slug ?? '—'}</td>
 									<td>{c.primary_sector ?? '—'}</td>

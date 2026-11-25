@@ -19,6 +19,7 @@ import { useEditPayload } from '@/hooks/use-edit-payload';
 import { useEditParam } from '@/hooks/use-edit-param';
 import { qk } from '@/lib/query-keys';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar } from '@/components/row-selection';
 import { businessModelLabel, dealSizeLabel, dealStatusLabel } from '@/lib/labels';
 import {
 	CompanySelectOne, RoundTypeSelect, CurrencySelect, InvestorPicker, SectorCascade, InvestorSelectOne,
@@ -131,6 +132,7 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 	};
 
 	const deals = data?.data ?? [];
+	const sel = useRowSelection(deals.map((d) => d.id));
 	return (
 		<div>
 			{!embedded && <PageHeader kicker={`Funding · ${(stats.data?.total ?? data?.total ?? 0).toLocaleString()} deals`} title="Deals" />}
@@ -198,9 +200,11 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 			<div className="card">
 				<ListCount total={data?.total} noun={['deal', 'deals']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={deals.length === 0} emptyMsg={activeFilters ? 'No deals match these filters.' : 'No deals yet.'} onRetry={() => void refresh()}>
+					<SelectionBar sel={sel} exportName="deals" />
 					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table">
 						<thead><tr>
+							{sel.headCell}
 							<SortableTh label="Company" field="company_name" sort={sort} onSort={onSort} />
 							<SortableTh label="Round" field="round_type_name" sort={sort} onSort={onSort} />
 							<SortableTh label="Year" field="announced_date" sort={sort} onSort={onSort} />
@@ -215,6 +219,7 @@ export function DealsView({ embedded = false }: { embedded?: boolean }) {
 						<tbody>
 							{deals.map((d) => (
 								<tr key={d.id}>
+									{sel.cell(d.id)}
 									<td>{d.company_name ?? '—'}</td>
 									<td>{d.round_type_name ?? '—'}</td>
 									<td className="num">{d.announced_year ?? '—'}</td>

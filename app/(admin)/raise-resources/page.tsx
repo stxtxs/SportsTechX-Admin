@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { toast } from 'sonner';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
-import { PageHeader, Section, AsyncState, Tag } from '@/components/atoms';
+import { PageHeader, Section, AsyncState, Tag, useClientPage } from '@/components/atoms';
 import { useConfirm } from '@/components/confirm';
 
 /**
@@ -29,6 +29,7 @@ const items = (body: string) => body.split(/\r?\n/).filter((l) => /^\s*-\s\[\s?\
 export default function RaiseResourcesAdminPage() {
 	const { data, mutate, isLoading, error } = useSWR<{ data: Resource[] }>(['/api/admin/raise-resources']);
 	const rows = data?.data ?? [];
+	const pg = useClientPage(rows);
 	const ask = useConfirm();
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -108,7 +109,7 @@ export default function RaiseResourcesAdminPage() {
 							<table className="data-table">
 								<thead><tr><th>Resource</th><th>Phase</th><th>Type</th><th style={{ textAlign: 'right' }}>Founders using</th><th>Status</th><th /></tr></thead>
 								<tbody>
-									{rows.map((r) => (
+									{pg.rows.map((r) => (
 										<tr key={r.id} style={{ opacity: r.is_published ? 1 : 0.6 }}>
 											<td>
 												<div style={{ fontWeight: 600 }}>{r.title}</div>
@@ -132,6 +133,7 @@ export default function RaiseResourcesAdminPage() {
 								</tbody>
 							</table>
 						</div>
+						{pg.pager}
 					</AsyncState>
 				</Section>
 			</div>

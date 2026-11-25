@@ -26,6 +26,7 @@ import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useEditPayload } from '@/hooks/use-edit-payload';
 import { GeoFacetFilter, ListCount, fmtListDate } from '@/components/filters';
 import { useTableColumns } from '@/hooks/use-table-columns';
+import { useRowSelection, SelectionBar, runBulk } from '@/components/row-selection';
 import { investorCategoryLabel, tidy } from '@/lib/labels';
 import Link from 'next/link';
 
@@ -151,6 +152,12 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 	};
 
 	const rows = data?.data ?? [];
+	const sel = useRowSelection(rows.map((r) => r.id));
+	const bulkStatus = async (status: 'active' | 'inactive') => {
+		if (!(await ask(`Mark ${sel.size} investor${sel.size === 1 ? '' : 's'} ${status}?`))) return;
+		await runBulk(sel.ids, (id) => api('PATCH', `/api/admin/investors/${id}`, { status }), `Marked ${status}`);
+		sel.clear(); void refresh();
+	};
 	return (
 		<div>
 			{!embedded && <PageHeader kicker={`Capital · ${(stats.data?.total ?? data?.total ?? 0).toLocaleString()} investors`} title="Investors" />}
@@ -225,10 +232,15 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 			<div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 				<ListCount total={data?.total} noun={['investor', 'investors']} filters={activeFilters} onClear={clearFilters}  right={cols.menu} />
 				<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg={activeFilters ? 'No investors match these filters.' : 'No investors yet.'} onRetry={() => void refresh()}>
+					<SelectionBar sel={sel} exportName="investors">
+						<button className="btn ghost" onClick={() => void bulkStatus('active')}>Mark active</button>
+						<button className="btn ghost" onClick={() => void bulkStatus('inactive')}>Mark inactive</button>
+					</SelectionBar>
 					<div className="table-scroll" ref={cols.ref}>
 					<table className="data-table" style={{ width: '100%' }}>
 						<thead>
 							<tr>
+								{sel.headCell}
 								<SortableTh label="Name" field="name" sort={sort} onSort={onSort} />
 								<SortableTh label="Category" field="category" sort={sort} onSort={onSort} />
 								<SortableTh label="Launched" field="year_launched" sort={sort} onSort={onSort} />
@@ -243,6 +255,7 @@ export function InvestorsView({ embedded = false }: { embedded?: boolean }) {
 						<tbody>
 							{rows.map((r) => (
 								<tr key={r.id}>
+									{sel.cell(r.id)}
 									<td><div style={{ fontWeight: 600 }}>{r.name}</div>{r.website && <div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{r.website}</div>}</td>
 									<td>{investorCategoryLabel(r.category)}</td>
 									<td>{r.year_launched ?? '—'}</td>

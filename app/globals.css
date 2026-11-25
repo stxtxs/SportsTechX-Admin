@@ -273,6 +273,7 @@ table.data-table:not(td *) > thead > tr > th {
   top: 0;
   z-index: 2;
   background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--border); /* collapsed borders don't travel with a stuck cell */
 }
 .data-table:not(td *):has(> tbody > tr > td:last-child .btn) > thead > tr > th:last-child { z-index: 3; }
 
@@ -844,3 +845,5 @@ textarea.search-input { border-radius: var(--radius-md); }
   position: sticky; left: 0; /* stays put if the card scrolls sideways */
 }
 .selection-bar[hidden] { display: none; }
+.data-table tbody tr:has(> td.sel-col input:checked) { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.data-table:not(td *) > tbody > tr:has(> td.sel-col input:checked) > td:last-child:has(.btn) { background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }

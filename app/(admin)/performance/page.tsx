@@ -186,6 +186,7 @@ export default function PerformancePage() {
 					))}
 				</div>
 				<AsyncState loading={http.isLoading} error={http.error} empty={routes.length === 0} emptyMsg={routeQ ? 'No endpoints match that filter.' : 'No requests in this range.'} onRetry={() => void http.mutate()}>
+					<div className="table-scroll">
 					<table className="data-table">
 						<thead><tr><th>Method</th><th>Route</th><th>Requests</th><th>Avg</th><th>p95</th><th>p99</th><th>Max</th><th>4xx</th><th>Errors</th></tr></thead>
 						<tbody>
@@ -216,6 +217,7 @@ export default function PerformancePage() {
 							))}
 						</tbody>
 					</table>
+					</div>
 				</AsyncState>
 			</div>
 

@@ -1,20 +1,25 @@
 import type { Metadata, Viewport } from 'next';
-import { IBM_Plex_Sans, JetBrains_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import { Providers } from './providers';
 import './globals.css';
 
 // Admin font stack — IBM Plex Sans (display + body) to match the STX-WebApp
 // admin's clean SaaS look; JetBrains Mono kept for numeric/tabular cells.
-const sans = IBM_Plex_Sans({
+// Self-hosted (latin, variable weight): next/font/google fetches from gstatic AT BUILD
+// TIME and that fetch flakes on cold Vercel builds, failing the whole deploy (25 Nov 2026).
+// Re-download: Google Fonts CSS2 API, latin subset.
+const sans = localFont({
+	src: './fonts/ibm-plex-sans.woff2',
 	variable: '--font-ibm-plex-sans',
-	subsets: ['latin'],
-	weight: ['300', '400', '500', '600', '700'],
+	display: 'swap',
+	weight: '100 700',
 });
 
-const mono = JetBrains_Mono({
+const mono = localFont({
+	src: './fonts/jetbrains-mono.woff2',
 	variable: '--font-jetbrains-mono',
-	subsets: ['latin'],
-	weight: ['400', '500', '700'],
+	display: 'swap',
+	weight: '100 800',
 });
 
 export const metadata: Metadata = {

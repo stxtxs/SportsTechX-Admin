@@ -101,7 +101,7 @@ export default function ReferenceAdminPage() {
 	const showCountryCols = kind === 'countries';
 	const filtered = q.trim() ? rows.filter((r) => `${r.name} ${r.slug}`.toLowerCase().includes(q.trim().toLowerCase())) : null;
 	const tree = filtered ? filtered.map((r) => ({ ...r, depth: 0 })) : orderTree(rows);
-	const pg = useClientPage(tree, `${kind}|${q}`);
+	const pg = useClientPage(tree, 'ref', `${kind}|${q}`);
 
 	return (
 		<div>

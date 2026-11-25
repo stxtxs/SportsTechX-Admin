@@ -77,13 +77,20 @@ export function SelectionBar({ sel, exportName, children }: { sel: RowSelection;
  * Uses the same per-row endpoints as the row buttons, so every server-side check
  * and audit-log entry still applies.
  */
+let bulkRunning = false;
 export async function runBulk(ids: string[], fn: (id: string) => Promise<unknown>, verb: string): Promise<number> {
-	let ok = 0; const errors: string[] = [];
-	for (let i = 0; i < ids.length; i += 4) {
-		const res = await Promise.allSettled(ids.slice(i, i + 4).map(fn));
-		for (const r of res) { if (r.status === 'fulfilled') ok++; else errors.push((r.reason as Error)?.message ?? 'failed'); }
-	}
-	if (errors.length) toast.error(`${verb}: ${ok} done, ${errors.length} failed — ${errors[0]}`);
-	else toast.success(`${verb}: ${ok} done`);
-	return ok;
+	// A second click (or a second confirm) while one run is in flight would send every request twice.
+	if (bulkRunning) { toast.info('Still working on the previous bulk action'); return 0; }
+	bulkRunning = true;
+	const progress = toast.loading(`Working on ${ids.length} row${ids.length === 1 ? '' : 's'}…`);
+	try {
+		let ok = 0; const errors: string[] = [];
+		for (let i = 0; i < ids.length; i += 4) {
+			const res = await Promise.allSettled(ids.slice(i, i + 4).map(fn));
+			for (const r of res) { if (r.status === 'fulfilled') ok++; else errors.push((r.reason as Error)?.message ?? 'failed'); }
+		}
+		if (errors.length) toast.error(`${verb}: ${ok} done, ${errors.length} failed — ${errors[0]}`, { id: progress });
+		else toast.success(`${verb}: ${ok} done`, { id: progress });
+		return ok;
+	} finally { bulkRunning = false; }
 }

@@ -84,7 +84,7 @@ export default function FeaturesAdminPage() {
 		(!cat || r.category === cat) &&
 		(!q || r.name.toLowerCase().includes(q.toLowerCase()) || r.slug.toLowerCase().includes(q.toLowerCase())),
 	);
-	const pg = useClientPage(rows, `${cat}|${q}|${includeInactive}`);
+	const pg = useClientPage(rows, 'feat', `${cat}|${q}|${includeInactive}`);
 
 	return (
 		<div>

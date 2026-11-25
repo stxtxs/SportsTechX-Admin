@@ -484,7 +484,8 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 		const byId = new Map((data?.data ?? []).map((r) => [r.id, r]));
 		for (const id of [...selected]) {
 			const r = byId.get(id);
-			if (r && only && !only(r)) { skipped++; continue; }
+			// Not on this page (shouldn't happen — selection clears on page change): never act on it blind.
+			if (!r || (only && !only(r))) { skipped++; continue; }
 			try { await fn(id); ok++; } catch (e) { fail++; firstError ||= `${r?.target_name_snapshot ?? 'A request'}: ${(e as Error).message}`; }
 		}
 		const skip = skipped ? ` · ${skipped} skipped (profile updates / funds / portfolio / already resolved — use Review)` : '';
@@ -623,7 +624,7 @@ export function DataRequestsView({ embedded = false }: { embedded?: boolean }) {
 				</table>
 				</AsyncState>
 			</div>
-			<Pager page={page} totalPages={data?.totalPages} onPage={setPage} />
+			<Pager page={page} totalPages={data?.totalPages} onPage={(p) => { setPage(p); setSelected(new Set()); }} />
 
 			{modalRow && (() => {
 				const r = modalRow;

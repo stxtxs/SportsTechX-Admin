@@ -120,6 +120,16 @@ export default function StartupsPipelinePage() {
 	};
 	const update = (id: string, next: Status) => act(() => api('PATCH', `/api/admin/startups-pipeline/${id}`, { status: next }), 'Updated');
 	const reEnrich = (id: string) => act(() => api('POST', `/api/admin/startups-pipeline/${id}/re-enrich`), 'Re-enrichment queued');
+	const bulkEnrich = async () => {
+		try {
+			const r = await api<{ queued: number; no_website: number; already_enriched: number }>('POST', '/api/admin/startups-pipeline/bulk-enrich', { ids: [...selected] });
+			const skipped = [r.already_enriched ? `${r.already_enriched} already enriched` : '', r.no_website ? `${r.no_website} without a website` : ''].filter(Boolean).join(', ');
+			if (r.queued) toast.success(`Enriching ${r.queued} — results fill in over the next minutes${skipped ? ` (skipped: ${skipped})` : ''}`);
+			else toast.message(`Nothing to enrich${skipped ? ` — ${skipped}` : ''}.`);
+			setSelected(new Set());
+			refreshAll();
+		} catch (e) { toast.error((e as Error).message); }
+	};
 	const saveEdit = async (id: string, body: { name?: string; website?: string | null }) => {
 		await api('PATCH', `/api/admin/startups-pipeline/${id}`, body);
 		toast.success(body.website ? 'Saved — enrichment queued for the new website' : 'Saved');
@@ -219,6 +229,7 @@ export default function StartupsPipelinePage() {
 					<button className="btn ghost" onClick={() => void bulkStatus('added')}><Check size={12} /> Added</button>
 					<button className="btn ghost" onClick={() => void bulkStatus('rejected')}><X size={12} /> Reject</button>
 					<button className="btn ghost" onClick={() => void bulkStatus('new')} title="Undo an Added / Reject"><Undo2 size={12} /> Back to new</button>
+					<button className="btn ghost" onClick={() => void bulkEnrich()} title="Look the selected companies up in Apollo (Attio for gaps). Needs a website."><RefreshCw size={12} /> Enrich</button>
 					<div style={{ flex: 1 }} />
 					<button className="btn ghost" style={{ color: 'var(--accent)' }} onClick={() => void bulkDelete()}><Trash2 size={12} /> Delete</button>
 				</div>
@@ -228,7 +239,7 @@ export default function StartupsPipelinePage() {
 			{importing && <ImportModal admins={admins.map((a) => ({ id: a.id, name: a.full_name || a.display_name || a.email }))} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); refreshAll(); }} />}
 			{promoting && <PromoteModal row={promoting} onClose={() => setPromoting(null)} onDone={() => { setPromoting(null); refreshAll(); }} />}
 			{viewing && <ViewModal row={viewing} onClose={() => setViewing(null)} />}
-			{editing && <EditCandidateModal name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
+			{editing && <EditCandidateModal websiteRequired name={editing.name} website={editing.website} onClose={() => setEditing(null)} onSave={(b) => saveEdit(editing.id, b)} />}
 
 			<div className="card" ref={cols.ref}>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px var(--space-4)', borderBottom: '1px solid var(--border)', fontSize: 12, color: 'var(--fg-muted)' }}>
@@ -415,8 +426,8 @@ function ImportModal({ admins, onClose, onSaved }: { admins: Array<{ id: string;
 		if (!approved.length) { toast.error('No candidates approved'); return; }
 		setBusy(true);
 		try {
-			const r = await api<{ inserted: number; skipped: number; enqueued: number }>('POST', '/api/admin/startups-pipeline/import', { rows: approved, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
-			toast.success(`Imported ${r.inserted}${r.skipped ? `, ${r.skipped} dup skipped` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`);
+			const r = await api<{ inserted: number; skipped: number; no_website?: number; enqueued: number }>('POST', '/api/admin/startups-pipeline/import', { rows: approved, ...(assignees.length ? { assigned_to_list: assignees } : {}) });
+			toast.success(`Imported ${r.inserted}${r.skipped ? `, ${r.skipped} dup skipped` : ''}${r.no_website ? `, ${r.no_website} skipped without a website` : ''}${r.enqueued ? ` · ${r.enqueued} queued for enrichment` : ''}`);
 			onSaved();
 		} catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
 	};
@@ -482,12 +493,13 @@ function AddModal({ admins, onClose, onSaved }: { admins: AdminUser[]; onClose: 
 		<Modal title="Add candidate" onClose={onClose} width={480} footer={
 			<>
 				<button className="btn ghost" onClick={onClose}>Cancel</button>
-				<button className="btn" disabled={!f.name.trim() || pending} onClick={() => void submit()}>{pending ? 'Saving…' : 'Add'}</button>
+				<button className="btn" disabled={!f.name.trim() || !f.website.trim() || pending} title={f.website.trim() ? undefined : 'A website is required'} onClick={() => void submit()}>{pending ? 'Saving…' : 'Add'}</button>
 			</>
 		}>
 			<div style={{ display: 'grid', gap: 12 }}>
 				<L label="Name"><input className="search-input" value={f.name} onChange={(e) => set('name', e.target.value)} /></L>
-				<L label="Website"><input className="search-input" value={f.website} onChange={(e) => set('website', e.target.value)} placeholder="https://" /></L>
+				<L label="Website (required)"><input className="search-input" required aria-required value={f.website} onChange={(e) => set('website', e.target.value)} placeholder="acme.com" /></L>
+				<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: -6 }}>The website identifies the company: it’s how duplicates are caught and what enrichment looks up.</div>
 				<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
 					<L label="HQ country"><input className="search-input" value={f.hq_country} onChange={(e) => set('hq_country', e.target.value)} /></L>
 					<L label="HQ city"><input className="search-input" value={f.hq_city} onChange={(e) => set('hq_city', e.target.value)} /></L>

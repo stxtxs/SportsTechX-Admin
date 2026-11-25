@@ -205,7 +205,8 @@ function RefModal({ kind, initial, parents, onClose, onSaved }: { kind: Kind; in
 		setPending(true);
 		try {
 			const body: Record<string, unknown> = { name: name.trim() };
-			if (slug.trim()) body.slug = slug.trim();
+			// The slug is fixed once created (the field is read-only on edit), so an edit never sends it.
+			if (!initial && slug.trim()) body.slug = slug.trim();
 			if (showParent) body.parent_id = parentId || null;
 			if (showDescription) body.description = description.trim() || null;
 			if (showSort) body.sort_order = Number(sortOrder) || 0;
@@ -239,7 +240,7 @@ function RefModal({ kind, initial, parents, onClose, onSaved }: { kind: Kind; in
 		>
 			<div style={{ display: 'grid', gap: 12 }}>
 				<Field label="Name"><input className="search-input" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-				<Field label="Slug (optional — auto from name)"><input className="search-input" style={{ fontFamily: 'var(--font-mono)' }} value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))} disabled={!!initial} /></Field>
+				<Field label="Slug (optional — auto from name)"><input className="search-input" style={{ fontFamily: 'var(--font-mono)' }} value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, kind === 'countries' ? '-' : '_'))} disabled={!!initial} /></Field>
 				{showParent && (
 					<Field label="Parent (optional)">
 						<Select value={parentId} onChange={setParentId} searchable width="100%" style={{ display: 'block', width: '100%' }} placeholder="— top level —" options={[{ value: '', label: '— top level —' }, ...parents.filter((p) => p.id !== initial?.id).map((p) => ({ value: p.id, label: p.name }))]} />

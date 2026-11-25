@@ -103,3 +103,8 @@ export const creditPoolLabel = lookup({ ai: 'AI', integration: 'Export', stx: 'W
 
 /** User roles. */
 export const roleLabel = lookup({ user: 'User', admin: 'Admin' });
+
+/** In-app feedback. */
+export const feedbackKindLabel = lookup({ bug: 'Bug', feedback: 'Feedback', feature_request: 'Feature request', enhancement: 'Improvement' });
+export const feedbackStatusLabel = lookup({ new: 'New', verified: 'Approved', fixed: 'Fixed', discarded: 'Discarded' });
+export const feedbackSeverityLabel = lookup({ blocking: 'Blocks them', major: 'Gets in the way', minor: 'Minor' });

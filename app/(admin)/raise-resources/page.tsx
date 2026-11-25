@@ -29,7 +29,7 @@ const items = (body: string) => body.split(/\r?\n/).filter((l) => /^\s*-\s\[\s?\
 export default function RaiseResourcesAdminPage() {
 	const { data, mutate, isLoading, error } = useSWR<{ data: Resource[] }>(['/api/admin/raise-resources']);
 	const rows = data?.data ?? [];
-	const pg = useClientPage(rows);
+	const pg = useClientPage(rows, 'rres');
 	const ask = useConfirm();
 	const [draft, setDraft] = useState<Draft | null>(null);
 	const [busy, setBusy] = useState(false);

@@ -39,6 +39,14 @@ interface UserDetail {
 	is_test_account?: boolean;
 	email_confirmed_at?: string | null;
 	claims_count?: number;
+	job_title?: string | null;
+	linkedin_url?: string | null;
+	org_type?: string | null;
+	org_website?: string | null;
+	org_country?: string | null;
+	org_city?: string | null;
+	org_size_amount?: number | null;
+	org_size_currency?: 'USD' | 'EUR' | null;
 }
 interface Logins { data: { occurred_at: string; provider: string | null }[]; total: number }
 interface Related {
@@ -179,6 +187,19 @@ function Overview({ user }: { user: UserDetail }) {
 						{user.is_legacy_user && row('Old Hub account', user.migrated_at ? `First signed in to Atlas ${fmt(user.migrated_at)}` : 'Hasn’t signed in to Atlas yet')}
 						{row('Email confirmed', user.email_confirmed_at ? fmt(user.email_confirmed_at) : muted('Not confirmed'))}
 					</tbody></table>
+				</Section>
+				<Section title="Work & organisation" meta="from the user's Account page" padded={false}>
+					{user.job_title || user.company_name || user.org_type || user.org_website || user.linkedin_url ? (
+						<table className="data-table"><tbody>
+							{row('Role', user.job_title || muted('—'))}
+							{row('Organisation', user.company_name || muted('—'))}
+							{user.org_type && row('Type', user.org_type)}
+							{user.org_website && row('Website', <a href={user.org_website} target="_blank" rel="noopener noreferrer">{user.org_website.replace(/^https?:\/\//, '')}</a>)}
+							{(user.org_city || user.org_country) && row('Headquarters', [user.org_city, user.org_country].filter(Boolean).join(', '))}
+							{user.org_size_amount != null && row('Size', `${user.org_size_currency === 'EUR' ? '€' : '$'}${Number(user.org_size_amount).toLocaleString()}`)}
+							{user.linkedin_url && row('LinkedIn', <a href={user.linkedin_url} target="_blank" rel="noopener noreferrer">{user.linkedin_url.replace(/^https?:\/\/(www\.)?/, '')}</a>)}
+						</tbody></table>
+					) : <div style={{ padding: 16, fontSize: 13, color: 'var(--fg-muted)' }}>Not filled in yet.</div>}
 				</Section>
 				<Section title="Recent sign-ins" meta={logins.data ? `${logins.data.total.toLocaleString()} recorded` : undefined} padded={false}>
 					<AsyncState loading={logins.isLoading} error={logins.error} empty={(logins.data?.data.length ?? 0) === 0} emptyMsg="No sign-ins recorded.">

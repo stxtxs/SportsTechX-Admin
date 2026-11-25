@@ -14,7 +14,7 @@ import { FilterBar, FilterSelect, StatStrip } from '@/components/filters';
 import { useUrlState, useUrlNumber } from '@/hooks/use-url-state';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useTableColumns } from '@/hooks/use-table-columns';
-import { scoutDealStatusLabel, scoutInterestStatusLabel, tidy } from '@/lib/labels';
+import { roundLabel, scoutDealStatusLabel, scoutInterestStatusLabel, tidy } from '@/lib/labels';
 
 /**
  * Deal Flow — the eligibility queue.
@@ -253,7 +253,7 @@ export default function ScoutDealsPage() {
 										</div>
 									</td>
 									<td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
-										{r.round_type ?? '—'}
+										{roundLabel(r.round_type)}
 										{money(r.target_amount, r.currency_code) && (
 											<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>{money(r.target_amount, r.currency_code)}</div>
 										)}
@@ -434,7 +434,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 							{/* A verified raise copies no numbers on opt-in — the Scout read paths
 							    project them from raise_profiles, so show that overlay or an admin
 							    reviews a row of NULLs. */}
-							<Row label="Type">{d.round_type ?? d.live_round_type}</Row>
+							<Row label="Type">{roundLabel(d.round_type ?? d.live_round_type)}</Row>
 							<Row label="Instrument">{d.instrument && tidy(d.instrument)}</Row>
 							<Row label="Target">
 								{money(d.target_amount, d.currency_code)

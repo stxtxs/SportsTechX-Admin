@@ -118,10 +118,15 @@ const SAMPLES: Record<Entity, string[][]> = {
 	],
 };
 
-function csvCell(v: string): string { return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
+function csvCell(raw: string): string {
+	// A cell starting with = + - @ (or tab/CR) runs as a formula in Excel; user text never should.
+	const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+	return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
 export function downloadCsv(filename: string, header: string[], rows: string[][]): void {
 	const body = [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n');
-	const url = URL.createObjectURL(new Blob([body], { type: 'text/csv;charset=utf-8' }));
+	// The BOM makes Excel read the file as UTF-8 (accented names stay intact).
+	const url = URL.createObjectURL(new Blob(['\uFEFF' + body], { type: 'text/csv;charset=utf-8' }));
 	const a = document.createElement('a');
 	a.href = url; a.download = filename; a.click();
 	URL.revokeObjectURL(url);

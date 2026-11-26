@@ -61,6 +61,11 @@ interface DealRow {
 	target_amount: string | null;
 	is_featured: boolean;
 	featured_until: string | null;
+	/** Position on the Featured tab (1 first); null = after the ordered ones. */
+	featured_order: number | null;
+	featured_at: string | null;
+	/** A test raise: admins see it, members never do. */
+	is_test: boolean;
 	submitted_at: string | null;
 	created_at: string;
 	submitter_fund: string | null;
@@ -235,6 +240,8 @@ export default function ScoutDealsPage() {
 										<div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
 											{r.company_name ?? '—'}
 											{r.is_featured && <Star size={12} aria-label="Featured" style={{ color: 'var(--warn, #c90)' }} />}
+											{r.is_featured && r.featured_order != null && <span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>#{r.featured_order}</span>}
+											{r.is_test && <Tag variant="pill">test</Tag>}
 										</div>
 										<div style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
 											{r.company_hq ?? ''}
@@ -313,6 +320,8 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 	const [notes, setNotes] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [featuredUntil, setFeaturedUntil] = useState('');
+	// Empty = keep the current order (or none for a new feature).
+	const [featuredOrder, setFeaturedOrder] = useState('');
 
 	// Seed the form from the row once it arrives, without clobbering edits.
 	const current = d?.status ?? '';
@@ -360,8 +369,43 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 			await api('PATCH', `/api/admin/scout-deals/${id}/featured`, {
 				is_featured: !d.is_featured,
 				featured_until: !d.is_featured && featuredUntil ? featuredUntil : null,
+				featured_order: !d.is_featured && featuredOrder ? Number(featuredOrder) : null,
 			});
 			toast.success(d.is_featured ? 'Removed from Featured' : 'Added to Featured');
+			setFeaturedOrder('');
+			void mutate(); onChanged();
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setBusy(false); }
+	};
+
+	/** Moves a featured raise on the Featured tab; keeps its feature date and end date. */
+	const saveOrder = async () => {
+		if (!d) return;
+		setBusy(true);
+		try {
+			await api('PATCH', `/api/admin/scout-deals/${id}/featured`, {
+				is_featured: true,
+				featured_until: d.featured_until,
+				featured_order: featuredOrder ? Number(featuredOrder) : null,
+			});
+			toast.success(featuredOrder ? `Featured position set to ${featuredOrder}` : 'Featured position cleared');
+			setFeaturedOrder('');
+			void mutate(); onChanged();
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setBusy(false); }
+	};
+
+	const toggleTest = async () => {
+		if (!d) return;
+		if (!d.is_test && !(await ask({
+			title: 'Mark as a test raise?',
+			message: 'Members stop seeing it at once; only admins see it. scripts/remove-test-raises.ts deletes every test raise.',
+			confirmLabel: 'Mark as test',
+		}))) return;
+		setBusy(true);
+		try {
+			await api('PATCH', `/api/admin/scout-deals/${id}/test`, { is_test: !d.is_test });
+			toast.success(d.is_test ? 'No longer a test raise' : 'Marked as a test raise');
 			void mutate(); onChanged();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setBusy(false); }
@@ -495,6 +539,34 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 								{d.is_featured && d.featured_until && (
 									<span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>until {d.featured_until}</span>
 								)}
+								{d.is_featured && d.featured_at && (
+									<span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>featured {new Date(d.featured_at).toLocaleDateString()}</span>
+								)}
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+								<label style={{ fontSize: 12, color: 'var(--fg-muted)' }} htmlFor="featured-order">Position on Featured (1 first)</label>
+								<input
+									id="featured-order" type="number" min={1} max={999} step={1} className="search-input" style={{ height: 32, flex: '0 0 90px' }}
+									value={featuredOrder} placeholder={d.featured_order != null ? String(d.featured_order) : 'none'}
+									onChange={(e) => setFeaturedOrder(e.target.value)}
+								/>
+								{d.is_featured && (
+									<button className="btn ghost" disabled={busy || (featuredOrder === '' && d.featured_order == null)} onClick={() => void saveOrder()}>
+										{featuredOrder === '' ? 'Clear position' : 'Save position'}
+									</button>
+								)}
+								<span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>Unnumbered raises follow, newest feature first.</span>
+							</div>
+						</Section2>
+
+						<Section2 title="Test raise">
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+								<button className="btn ghost" disabled={busy} onClick={() => void toggleTest()}>
+									{d.is_test ? 'Not a test raise' : 'Mark as test raise'}
+								</button>
+								<span style={{ fontSize: 11, color: 'var(--fg-muted)' }}>
+									{d.is_test ? 'Only admins see it in Atlas. Members never do.' : 'Members see this raise once it is live.'}
+								</span>
 							</div>
 						</Section2>
 

@@ -183,7 +183,7 @@ export default function ScoutDealsPage() {
 	const exportCsv = async () => {
 		setExporting(true);
 		try {
-			const q = new URLSearchParams(Object.entries({ status, source, q: debouncedSearch.trim(), sort, limit: '100' }).filter(([, v]) => v) as [string, string][]);
+			const q = new URLSearchParams(Object.entries({ status, source, reviewed_by: assigned, q: debouncedSearch.trim(), sort, limit: '100' }).filter(([, v]) => v) as [string, string][]);
 			const all: DealRow[] = [];
 			for (let offset = 0; offset < 5000; offset += 100) {
 				const page = await api<{ data: DealRow[] }>('GET', `/api/admin/scout-deals?${q}&offset=${offset}`);
@@ -364,8 +364,9 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 	const [notes, setNotes] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [featuredUntil, setFeaturedUntil] = useState('');
-	/** Verified Raise, Request changes: the required fields to fix (shown to the founder). */
-	const [flagged, setFlagged] = useState<string[]>([]);
+	/** Verified Raise, Request changes: the required fields to fix (shown to the founder). Starts from what is flagged now. */
+	const [flaggedEdit, setFlagged] = useState<string[] | null>(null);
+	const flagged = flaggedEdit ?? d?.review_fields ?? [];
 	// Empty = keep the current order (or none for a new feature).
 	const [featuredOrder, setFeaturedOrder] = useState('');
 
@@ -398,11 +399,22 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 		try {
 			// A note with no transition sends no status: the server then keeps the status as is and
 			// doesn't re-notify the submitter (and a `draft` deal can take a note).
-			await api('PATCH', `/api/admin/scout-deals/${id}/review`, {
+			const body = {
 				...(chosen !== current ? { status: chosen } : {}),
 				review_notes: notes.trim() || null,
 				...(d.source === 'verified_raise' && chosen === 'changes_requested' ? { review_fields: flagged } : {}),
-			});
+			};
+			try {
+				await api('PATCH', `/api/admin/scout-deals/${id}/review`, body);
+			} catch (e) {
+				// Required fields missing (11.3): publish only on a deliberate second click; it goes in the history.
+				if (chosen === 'live' && /Required fields are missing/.test((e as Error).message) && await ask({
+					title: 'Publish with required fields missing?',
+					message: `${(e as Error).message} Publishing anyway is recorded in this raise's history.`,
+					confirmLabel: 'Publish anyway', danger: true,
+				})) await api('PATCH', `/api/admin/scout-deals/${id}/review`, { ...body, override_missing: true });
+				else throw e;
+			}
 			toast.success(chosen !== current ? `Marked ${scoutDealStatusLabel(chosen).toLowerCase()}` : 'Note saved');
 			onSaved();
 		} catch (e) { toast.error((e as Error).message); }
@@ -472,7 +484,8 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 						ariaLabel="Status"
 						width={190}
 						// Admins can't move a deal TO draft (that's the submitter's state); a draft deal still shows it.
-						options={DEAL_STATUSES.filter((s) => s !== 'draft' || current === 'draft').map((s) => ({ value: s, label: scoutDealStatusLabel(s) }))}
+						// A listing SportsTechX started waits for the founder: until they confirm it can only be closed.
+						options={DEAL_STATUSES.filter((s) => (current === 'draft' && !d?.founder_consent ? s === 'draft' || s === 'closed' : s !== 'draft' || current === 'draft')).map((s) => ({ value: s, label: scoutDealStatusLabel(s) }))}
 					/>
 					{/* A note with no transition is a legitimate triage action, so this
 					    stays enabled when only the note changed. */}
@@ -644,7 +657,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 									<span style={{ fontSize: 12, color: 'var(--fg-muted)', width: '100%' }}>Fields to fix (the founder sees them marked):</span>
 									{REQUIRED.map(([k, label]) => (
 										<label key={k} style={{ fontSize: 12, display: 'flex', gap: 4, alignItems: 'center' }}>
-											<input type="checkbox" checked={flagged.includes(k)} onChange={(e) => setFlagged((f) => e.target.checked ? [...f, k] : f.filter((x) => x !== k))} /> {label}
+											<input type="checkbox" checked={flagged.includes(k)} onChange={(e) => setFlagged(e.target.checked ? [...flagged, k] : flagged.filter((x) => x !== k))} /> {label}
 										</label>
 									))}
 								</div>
@@ -826,7 +839,7 @@ function RaisingCompanies({ onChanged }: { onChanged: () => void }) {
 								<td style={{ fontSize: 12 }}>{r.founder_email ? <>{r.founder_name ?? '—'}<div style={{ color: 'var(--fg-muted)' }}>{r.founder_email}</div></> : <span style={{ color: 'var(--fg-muted)' }}>None yet: they need to claim the company</span>}</td>
 								<td>{r.deal_status ? <span className="chip">{scoutDealStatusLabel(r.deal_status)}</span> : <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Not listed</span>}</td>
 								<td>
-									{r.founder_id && (!r.deal_status || ['draft', 'closed', 'changes_requested'].includes(r.deal_status)) && (
+									{r.founder_id && (!r.deal_status || ['draft', 'closed'].includes(r.deal_status)) && (
 										<button className="btn ghost" disabled={busy === r.id} onClick={() => void invite(r)}>{r.deal_status === 'draft' ? 'Send again' : 'Invite'}</button>
 									)}
 								</td>

@@ -70,7 +70,8 @@ export default function RaiseIntrosPage() {
 	const [pending, setPending] = useState<string | null>(null);
 	const [exporting, setExporting] = useState(false);
 	const f = (set: (v: string) => void) => (v: string) => { set(v); setPage(1); };
-	const activeFilters = (status ? 1 : 0) + (search ? 1 : 0);
+	// "Waiting for SportsTechX" is the page's home view, not a filter to clear.
+	const activeFilters = (status && status !== 'open' ? 1 : 0) + (search ? 1 : 0);
 	const query = { status: status || undefined, search: debounced || undefined, sort };
 
 	const { data, error, isLoading, mutate } = useSWR<Resp>(
@@ -89,6 +90,8 @@ export default function RaiseIntrosPage() {
 		try {
 			await api('POST', `/api/admin/raise-intros/${r.id}/${action}`, {});
 			toast.success(action === 'approve' ? 'Sent to the founder' : 'Declined');
+			// In the waiting view the row leaves the list; don't strand the admin on an empty page.
+			if (status === 'open' && rows.length === 1 && page > 1) setPage(page - 1);
 			void mutate();
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(null); }
@@ -128,7 +131,7 @@ export default function RaiseIntrosPage() {
 					onChange={(e) => f(setSearch)(e.target.value)}
 				/>
 				<FilterSelect ariaLabel="Status" value={status} onChange={f(setStatus)} allLabel="All statuses" options={FILTERS} />
-				{activeFilters > 0 && <button className="btn ghost" onClick={() => { setStatus(''); setSearch(''); setPage(1); }}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
+				{activeFilters > 0 && <button className="btn ghost" onClick={() => { setStatus('open'); setSearch(''); setPage(1); }}>Clear {activeFilters} filter{activeFilters === 1 ? '' : 's'}</button>}
 			</FilterBar>
 
 			<div className="card">

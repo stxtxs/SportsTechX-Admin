@@ -4,7 +4,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
 import { toast } from 'sonner';
-import { RefreshCw, Star, ShieldAlert, Building2 } from 'lucide-react';
+import { RefreshCw, Star, ShieldAlert, Building2, Download, Send } from 'lucide-react';
+import { downloadCsv } from '@/components/csv-import';
 import { api } from '@/lib/api';
 import { Select } from '@/components/select';
 import { Modal } from '@/components/modal';
@@ -104,6 +105,13 @@ interface DealDetail extends DealRow {
 	live_target_close_date: string | null;
 	raise_dealflow_status: string | null;
 	founder_account_email: string | null;
+	/** Verified Raise: required fields (11.3) still empty, by key. */
+	missing_fields?: string[];
+	review_fields?: string[];
+	invited_by?: string | null;
+	founder_confirmed_at?: string | null;
+	/** Every status change (11.6). */
+	events?: Array<{ status: string; actor_role: string; actor_email: string | null; note: string | null; fields: string[]; created_at: string }>;
 }
 
 interface Stats {
@@ -124,6 +132,14 @@ const money = (amount: string | null, ccy: string | null) => {
 		style: 'currency', currency: (ccy || 'eur').toUpperCase(), maximumFractionDigits: 0,
 	}).format(n);
 };
+
+/** Required to go live (Deal Flow 11.3); keys match the server's REQUIRED_FIELDS. */
+const REQUIRED: [string, string][] = [
+	['company', 'Company'], ['description', 'One-line description'], ['sector', 'Sector'], ['hq', 'HQ'], ['round', 'Round'],
+	['target', 'Target amount and currency'], ['committed', 'Committed so far'], ['instrument', 'Instrument'],
+	['close_date', 'Target close date'], ['lead', 'Lead status'], ['deck', 'Pitch deck'], ['contact', 'Contact person'],
+];
+const requiredLabel = (k: string) => REQUIRED.find(([key]) => key === k)?.[1] ?? k;
 
 export default function ScoutDealsPage() {
 	const cols = useTableColumns('scout-deals');
@@ -161,6 +177,29 @@ export default function ScoutDealsPage() {
 	const rows = list.data?.data ?? [];
 
 	const refresh = () => { void list.mutate(); void stats.mutate(); };
+	const [raising, setRaising] = useState(false);
+	const [exporting, setExporting] = useState(false);
+	/** Every submission in the current filters, with review dates and notes (11.6). */
+	const exportCsv = async () => {
+		setExporting(true);
+		try {
+			const q = new URLSearchParams(Object.entries({ status, source, q: debouncedSearch.trim(), sort, limit: '100' }).filter(([, v]) => v) as [string, string][]);
+			const all: DealRow[] = [];
+			for (let offset = 0; offset < 5000; offset += 100) {
+				const page = await api<{ data: DealRow[] }>('GET', `/api/admin/scout-deals?${q}&offset=${offset}`);
+				all.push(...page.data);
+				if (page.data.length < 100) break;
+			}
+			downloadCsv('deal-flow-submissions.csv',
+				['submitted', 'company', 'source', 'status', 'featured', 'test', 'submitter', 'reviewed_at', 'review_notes', 'interest_requests'],
+				all.map((r) => {
+					const x = r as DealRow & { reviewed_at?: string | null; review_notes?: string | null };
+					return [r.submitted_at ?? r.created_at, r.company_name ?? '', r.source, scoutDealStatusLabel(r.status), r.is_featured ? 'yes' : '', r.is_test ? 'yes' : '',
+						r.submitter_email ?? '', x.reviewed_at ?? '', x.review_notes ?? '', String(r.interest_count ?? 0)];
+				}));
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setExporting(false); }
+	};
 
 	return (
 		<div>
@@ -168,8 +207,13 @@ export default function ScoutDealsPage() {
 				kicker="Review queue"
 				title="Deal Flow"
 				subtitle="Raises shared with the Investor Circle. This is an eligibility check — that the round is real and the founder consented — not due diligence or an endorsement."
-				action={<button className="btn ghost" onClick={refresh}><RefreshCw size={12} /> Refresh</button>}
+				action={<div style={{ display: 'flex', gap: 8 }}>
+					<button className="btn ghost" onClick={() => setRaising((v) => !v)}><Send size={12} /> Raising companies</button>
+					<button className="btn ghost" disabled={exporting} onClick={() => void exportCsv()}><Download size={12} /> {exporting ? 'Exporting…' : 'Export CSV'}</button>
+					<button className="btn ghost" onClick={refresh}><RefreshCw size={12} /> Refresh</button>
+				</div>}
 			/>
+			{raising && <RaisingCompanies onChanged={refresh} />}
 
 			<StatsPanel title="Queue">
 				<StatStrip cols={5}>
@@ -320,6 +364,8 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 	const [notes, setNotes] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [featuredUntil, setFeaturedUntil] = useState('');
+	/** Verified Raise, Request changes: the required fields to fix (shown to the founder). */
+	const [flagged, setFlagged] = useState<string[]>([]);
 	// Empty = keep the current order (or none for a new feature).
 	const [featuredOrder, setFeaturedOrder] = useState('');
 
@@ -355,6 +401,7 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 			await api('PATCH', `/api/admin/scout-deals/${id}/review`, {
 				...(chosen !== current ? { status: chosen } : {}),
 				review_notes: notes.trim() || null,
+				...(d.source === 'verified_raise' && chosen === 'changes_requested' ? { review_fields: flagged } : {}),
 			});
 			toast.success(chosen !== current ? `Marked ${scoutDealStatusLabel(chosen).toLowerCase()}` : 'Note saved');
 			onSaved();
@@ -572,9 +619,35 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 
 						<InterestPanel dealId={id} companyName={d.company_name} anonymous={d.company_anonymous} onChanged={onChanged} />
 
+						{d.source === 'verified_raise' && (
+							<Section2 title="Required to go live">
+								{(d.missing_fields ?? []).length === 0
+									? <span style={{ fontSize: 12, color: 'var(--pos, #2a7)' }}>Every required field is filled.</span>
+									: <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+										<span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Missing:</span>
+										{(d.missing_fields ?? []).map((k) => <span key={k} className="chip warn">{requiredLabel(k)}</span>)}
+									</div>}
+								{d.invited_by && (
+									<div style={{ fontSize: 12, color: 'var(--fg-muted)', marginTop: 6 }}>
+										Started by SportsTechX. {d.founder_confirmed_at ? `Founder confirmed ${new Date(d.founder_confirmed_at).toLocaleDateString()}.` : 'Waiting for the founder to confirm from the emailed link.'}
+									</div>
+								)}
+							</Section2>
+						)}
+
 						<Section2 title="Decision">
 							{d.review_notes && (
 								<Row label="Previous note">{d.review_notes}</Row>
+							)}
+							{d.source === 'verified_raise' && chosen === 'changes_requested' && (
+								<div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '6px 0' }}>
+									<span style={{ fontSize: 12, color: 'var(--fg-muted)', width: '100%' }}>Fields to fix (the founder sees them marked):</span>
+									{REQUIRED.map(([k, label]) => (
+										<label key={k} style={{ fontSize: 12, display: 'flex', gap: 4, alignItems: 'center' }}>
+											<input type="checkbox" checked={flagged.includes(k)} onChange={(e) => setFlagged((f) => e.target.checked ? [...f, k] : f.filter((x) => x !== k))} /> {label}
+										</label>
+									))}
+								</div>
 							)}
 							{d.reviewed_at && <Row label="Last reviewed">{new Date(d.reviewed_at).toLocaleString()}</Row>}
 							<textarea
@@ -582,11 +655,27 @@ function ReviewModal({ id, onClose, onSaved, onChanged, ask }: {
 								style={{ width: '100%', minHeight: 72, padding: 8, marginTop: 6 }}
 								placeholder={chosen === 'changes_requested'
 									? 'Required — what does the submitter need to change?'
-									: 'Review note (optional)'}
+									: chosen === 'closed' && d.source === 'verified_raise'
+										? 'Reason, shown to the founder (Decline)'
+										: 'Review note (optional)'}
 								value={notes}
 								onChange={(e) => setNotes(e.target.value)}
 							/>
 						</Section2>
+
+						{(d.events ?? []).length > 0 && (
+							<Section2 title="History">
+								{(d.events ?? []).map((e, i) => (
+									<div key={i} style={{ fontSize: 12, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : undefined }}>
+										<span style={{ color: 'var(--fg-muted)' }}>{new Date(e.created_at).toLocaleString()}</span>
+										{' · '}<strong>{scoutDealStatusLabel(e.status)}</strong>
+										{' · '}{e.actor_role === 'admin' ? (e.actor_email ?? 'SportsTechX') : e.actor_role === 'founder' ? 'Founder' : 'Automatic'}
+										{e.fields.length > 0 && ` · fields: ${e.fields.map(requiredLabel).join(', ')}`}
+										{e.note && <div style={{ color: 'var(--fg-2)' }}>{e.note}</div>}
+									</div>
+								))}
+							</Section2>
+						)}
 					</>
 				)}
 			</AsyncState>
@@ -701,5 +790,51 @@ function Section2({ title, children }: { title: string; children: React.ReactNod
 			</div>
 			{children}
 		</div>
+	);
+}
+
+/**
+ * Actively raising companies and where each stands in Verified Raises. "Invite" starts a listing
+ * from the company's data and emails its verified founder a link to confirm; nothing is shown to
+ * investors until they confirm and SportsTechX accepts it here.
+ */
+function RaisingCompanies({ onChanged }: { onChanged: () => void }) {
+	const ask = useConfirm();
+	const { data, error, isLoading, mutate } = useSWR<{ data: Array<{ id: string; name: string; round: string | null; amount: string | null; founder_id: string | null; founder_email: string | null; founder_name: string | null; deal_id: string | null; deal_status: string | null }> }>('/api/admin/scout-deals/raising-candidates');
+	const [busy, setBusy] = useState<string | null>(null);
+	const rows = data?.data ?? [];
+	const invite = async (r: (typeof rows)[number]) => {
+		if (!(await ask({ title: `Invite ${r.name}?`, message: `${r.founder_name ?? 'The founder'} (${r.founder_email}) gets an email from Atlas asking to confirm a Verified Raise listing built from ${r.name}'s data. It goes to this review queue only after they confirm.`, confirmLabel: 'Send invite' }))) return;
+		setBusy(r.id);
+		try {
+			await api('POST', `/api/admin/scout-deals/invite/${r.id}`, {});
+			toast.success(`Invite sent to ${r.founder_email}`);
+			void mutate(); onChanged();
+		} catch (e) { toast.error((e as Error).message); }
+		finally { setBusy(null); }
+	};
+	return (
+		<StatsPanel title={`Actively raising companies · ${rows.length}`}>
+			<AsyncState loading={isLoading} error={error} empty={rows.length === 0} emptyMsg="No company is marked actively raising." onRetry={() => void mutate()}>
+				<table className="data-table">
+					<thead><tr><th>Company</th><th>Raising</th><th>Verified founder</th><th>Verified Raises</th><th /></tr></thead>
+					<tbody>
+						{rows.map((r) => (
+							<tr key={r.id}>
+								<td>{r.name}</td>
+								<td style={{ fontSize: 12, color: 'var(--fg-2)' }}>{[r.round, r.amount ? `$${Number(r.amount).toLocaleString()}` : null].filter(Boolean).join(' · ') || '—'}</td>
+								<td style={{ fontSize: 12 }}>{r.founder_email ? <>{r.founder_name ?? '—'}<div style={{ color: 'var(--fg-muted)' }}>{r.founder_email}</div></> : <span style={{ color: 'var(--fg-muted)' }}>None yet: they need to claim the company</span>}</td>
+								<td>{r.deal_status ? <span className="chip">{scoutDealStatusLabel(r.deal_status)}</span> : <span style={{ fontSize: 12, color: 'var(--fg-muted)' }}>Not listed</span>}</td>
+								<td>
+									{r.founder_id && (!r.deal_status || ['draft', 'closed', 'changes_requested'].includes(r.deal_status)) && (
+										<button className="btn ghost" disabled={busy === r.id} onClick={() => void invite(r)}>{r.deal_status === 'draft' ? 'Send again' : 'Invite'}</button>
+									)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</AsyncState>
+		</StatsPanel>
 	);
 }

@@ -7,7 +7,7 @@ import {
 
 export type IconType = typeof LayoutDashboard;
 /** `count`: the key in /api/admin/stats/nav whose number shows beside the item (things waiting). */
-export interface NavItem { href: string; label: string; Icon: IconType; count?: Array<'claims' | 'data_changes' | 'startups' | 'investors' | 'deal_flow' | 'intros' | 'sessions' | 'refunds' | 'feedback'>; keywords?: string }
+export interface NavItem { href: string; label: string; Icon: IconType; count?: Array<'claims' | 'data_changes' | 'startups' | 'investors' | 'deal_flow' | 'raise_intros' | 'intros' | 'sessions' | 'refunds' | 'feedback'>; keywords?: string }
 export interface NavGroup { id: string; label: string; items: NavItem[]; collapsedByDefault?: boolean }
 
 /**
@@ -24,6 +24,7 @@ export const NAV_GROUPS: NavGroup[] = [
 		{ label: 'Startups to add', href: '/startups-pipeline', Icon: FilePlus, count: ['startups'], keywords: 'pipeline new companies' },
 		{ label: 'Investors to add', href: '/investor-review', Icon: Banknote, count: ['investors'], keywords: 'candidates review' },
 		{ label: 'Deal Flow', href: '/scout-deals', Icon: Rocket, count: ['deal_flow'], keywords: 'scout raises submissions' },
+		{ label: 'Deal Flow introductions', href: '/raise-intros', Icon: Handshake, count: ['raise_intros'], keywords: 'scout request introduction founder raise accept' },
 		{ label: 'Intro requests', href: '/intro-requests', Icon: Handshake, count: ['intros'], keywords: 'introductions founders investors' },
 		{ label: 'Strategy sessions', href: '/strategy-sessions', Icon: CalendarClock, count: ['sessions'], keywords: 'calls bookings meetings' },
 		{ label: 'Refunds', href: '/refunds', Icon: Undo2, count: ['refunds'], keywords: 'money back downgrade' },

@@ -605,7 +605,6 @@ interface InterestRow {
 	scout_email: string | null;
 }
 
-const INTEREST_STATUSES = ['received', 'source_confirmed', 'shared', 'connected', 'declined'] as const;
 const interestChip: Record<string, string> = {
 	received: 'warn', source_confirmed: 'warn', shared: 'on', connected: 'on', declined: '',
 };
@@ -638,8 +637,6 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 	const ask = useConfirm();
 	const { data, error, isLoading, mutate } = useSWR<InterestRow[]>(`/api/admin/scout-deals/${dealId}/interest`);
 	const [pending, setPending] = useState<string | null>(null);
-	/** Chosen-but-not-yet-applied status, per row. */
-	const [draft, setDraft] = useState<Record<string, string>>({});
 	const rows = data ?? [];
 
 	const act = async (r: InterestRow, status: string, disclose = false) => {
@@ -655,7 +652,6 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 		try {
 			await api('PATCH', `/api/admin/scout-deals/interest/${r.id}`, { status, ...(disclose ? { disclose: true } : {}) });
 			toast.success(disclose ? `Disclosed to ${who}` : `Marked ${scoutInterestStatusLabel(status).toLowerCase()}`);
-			setDraft((p) => { const { [r.id]: _drop, ...rest } = p; return rest; });
 			void mutate(); onChanged();   // interest count + Disclosed stat behind the modal
 		} catch (e) { toast.error((e as Error).message); }
 		finally { setPending(null); }
@@ -678,21 +674,8 @@ function InterestPanel({ dealId, companyName, anonymous, onChanged }: {
 						</div>
 						{r.note && <div style={{ color: 'var(--fg-2)', margin: '4px 0' }}>{r.note}</div>}
 						<div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
-							{/* Picking a status does NOT apply it. The server emails the
-							    investor on every transition, so a mis-click on a dropdown
-							    would send real mail — it takes a deliberate Apply. */}
-							<Select
-								value={draft[r.id] ?? r.status}
-								onChange={(v) => setDraft((p) => ({ ...p, [r.id]: v }))}
-								ariaLabel="Interest status" width={180} disabled={pending === r.id}
-								options={INTEREST_STATUSES.map((s) => ({ value: s, label: scoutInterestStatusLabel(s) }))}
-							/>
-							<button
-								className="btn" disabled={pending === r.id || (draft[r.id] ?? r.status) === r.status}
-								onClick={() => void act(r, draft[r.id] ?? r.status)}
-							>
-								{pending === r.id ? 'Working…' : 'Apply'}
-							</button>
+							{/* Introductions move only through the approval flow (Send to founder → Accept / Decline). */}
+							<a className="btn" href={`/raise-intros?ri.status=&ri.q=${encodeURIComponent(companyName ?? '')}`}>Manage in Deal Flow introductions</a>
 							{/* One-way, and emailed — so it is never a side effect of the
 							    dropdown above. */}
 							{!r.disclosed_at && (
